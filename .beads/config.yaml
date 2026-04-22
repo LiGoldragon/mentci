@@ -53,8 +53,4 @@
 # - github.org
 # - github.repo
 
-sync.remote: "https://doltremoteapi.dolthub.com/ligoldragon/mentci-next"
-
-dolt.shared-server: true
-
-export.auto: false
+sync.remote: "git+ssh://git@github.com/LiGoldragon/mentci-next.git"
