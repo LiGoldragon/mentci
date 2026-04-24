@@ -1,5 +1,23 @@
 # Report 005 — resume state after bd backfill
 
+**⚠ Superseded** — this is a point-in-time snapshot from early
+April 2026, preserved for the decision-journey record. The
+open questions it listed have since been re-distributed:
+
+- P1/P2 design decisions → individual bd issues in each repo's
+  bd (e.g. `sema-5d3` opus identity, `nexus-schema-5rw` cross-
+  ref representation, `nexus-schema-wq3` Callable split,
+  `mentci-next-ef3` capstone feature).
+- Code-sharing direction → [reports/011](011-code-sharing-and-deferred.md).
+- Nexus Tier-1 syntax → [reports/012](012-nexus-vision.md).
+- Architectural layering → [reports/007](007-nota-nexus-layer-split.md).
+
+Do not treat the task-list below as current work. Consult the
+reports above or `bd list --status=open` in the relevant repo
+for canonical live state.
+
+---
+
 Snapshot after the context reset. Supersedes the deleted
 `SESSION-HANDOFF.md`. Delete or archive this report once the
 decisions below are resolved.
