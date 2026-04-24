@@ -150,8 +150,11 @@ themselves.
 - **Layer 4 — daemons** — criomed, forged, lojix-stored,
   nexusd.
 - **Layer 5 — clients + build helpers** — nexus-cli
-  (flag-less CLI), rsc (pure records-to-source library), lojix
-  (compile-orchestration helpers reused by forged).
+  (flag-less CLI), rsc (pure records-to-source library),
+  horizond (CriomOS deploy CLI — currently named `lojix`, rename
+  pending per [reports/018](../reports/018-lojix-positioning.md);
+  reads cluster proposals, projects horizons via horizon-lib,
+  invokes `nixos-rebuild`).
 
 **Shelved**: `arbor` (prolly-tree versioning) — post-MVP.
 
@@ -291,7 +294,9 @@ Foundational rules observed across sessions.
 ## 9 · Reading order for a new session
 
 1. **This file** — the canonical shape.
-2. [reports/017](../reports/017-architecture-refinements.md) —
+2. [reports/018](../reports/018-lojix-positioning.md) —
+   where horizond (currently `lojix`) fits; rename rationale.
+3. [reports/017](../reports/017-architecture-refinements.md) —
    latest refinements (Opus/Derivation, schema-bound patterns,
    no-Launch, no-kind-bytes, tokens).
 3. [reports/013](../reports/013-nexus-syntax-proposal.md) —
