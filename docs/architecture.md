@@ -30,23 +30,26 @@ they're decision-journey records.
 
 The engine is a **runtime (criome)** hosting two pillars — a
 **records database (sema)** and an **artifacts family (lojix,
-Li's expanded-and-more-correct nix)**. `criome` is the runtime
-layer — four daemons (`nexusd` the messenger, `criomed` the
-guardian, `lojix-forged` the compile daemon, `lojix-stored` the
-blob guardian). `sema` owns records, schemas, patterns, query
-ops — stored in a records database (`sema` crate) and described
-by types in `nexus-schema`. `lojix` owns build, compile, store,
-deploy — everything nix covers — with its own family of crates
-(`lojix-schema`, `lojix-store`, `lojix-forge`, `lojix-deploy`,
-…). `nexus` is the communication skin spanning all of criome:
-text at the human boundary, rkyv internally. The MVP target is
-**self-hosting**: the engine's own source lives as records in
-sema; `lojix-forged` projects those records to Rust source and
-compiles them; the resulting binary can re-edit its own records.
+Li's expanded-and-more-correct nix)**. Three daemons run the
+whole thing: `nexusd` (text ↔ rkyv messenger), `criomed` (sema
+guardian; resolves schema-bound patterns; overlord of lojix),
+`lojixd` (the single lojix daemon — owns the blob store,
+evaluates build specs, orchestrates compile and deploy). `sema`
+owns records, schemas, patterns, query ops, all stored in a
+records database and described by types in `nexus-schema`.
+`lojix` owns build, compile, store, deploy — everything nix
+covers — with a family of crates (`lojix-schema`, `lojix-store`,
+`lojix-msg`, `lojixd`) and the current `lojix` repo slot
+reserved for a spec README. `nexus` is the communication skin
+spanning all of criome: text at the human boundary, rkyv
+internally. The MVP target is **self-hosting**: the engine's
+own source lives as records in sema; `lojixd` projects those
+records to Rust source and compiles them; the resulting binary
+can re-edit its own records.
 
 ---
 
-## 2 · The four daemons
+## 2 · The three daemons
 
 ```
      nexus text (humans, LLMs, nexus-cli)
@@ -61,31 +64,31 @@ compiles them; the resulting binary can re-edit its own records.
           │ rkyv (criome-msg contract)
           ▼
      ┌─────────┐
-     │ criomed │ guardian of sema-db; overlord of lojix-store.
+     │ criomed │ guardian of sema; overlord of lojix.
      │         │ • owns the records database
      │         │ • runs pattern resolvers against sema snapshots
      │         │ • fires subscriptions on commits
-     │         │ • dispatches compile requests to lojix-forged
-     │         │ • signs capability tokens lojix-forged uses to
-     │         │   Put directly into lojix-store
-     │         │ • tracks what's in lojix-store (so it can direct
-     │         │   GC); never moves binary bytes itself
-     └────┬────┴──────────────────────────┐
-          │                               │
-  rkyv (lojix-forge-msg)     rkyv (lojix-store-msg)
-          ▼                               ▼
-     ┌───────────────┐               ┌──────────────┐
-     │ lojix-forged  │───capability  │ lojix-stored │
-     │               │──token────────►              │
-     │               │               │              │
-     │ compile       │ blake3 → bytes│    blob      │
-     │ daemon        │               │   guardian   │
-     │ (lojix family)│ • pulls records from criomed (read)
-     │               │ • calls rsc (pure projection lib)
-     │               │ • invokes cargo/rustc
-     │               │ • Puts binary directly to lojix-stored via token
-     │               │ • replies { binary-hash } to criomed
-     └───────────────┘
+     │         │ • dispatches compile/store/deploy to lojixd
+     │         │ • signs capability tokens for lojix-store access
+     │         │ • never touches binary bytes itself
+     └────┬────┘
+          │ rkyv (lojix-msg — single contract)
+          ▼
+     ┌──────────┐   owns lojix-store directory
+     │  lojixd  │   (lojix family; the single lojix daemon)
+     │          │ internal actors:
+     │          │   • ForgeCoordinator + CargoBuilder (rust compile)
+     │          │   • StoreWriter + StoreReaderPool (blob access)
+     │          │   • DeployCoordinator + HorizonProjector (CriomOS
+     │          │     deploy — currently shells out to nixos-rebuild)
+     │          │   • NixShellout (transitional; retires Phase C)
+     │          │ • pulls records from criomed (read)
+     │          │ • calls rsc (pure projection lib)
+     │          │ • invokes cargo/rustc for Rust opera
+     │          │ • invokes nix/nixos-rebuild for deploy
+     │          │ • writes binaries into lojix-store (in-process)
+     │          │ • replies {binary-hash} to criomed
+     └──────────┘
 ```
 
 **Invariants**:
@@ -142,7 +145,7 @@ themselves.
 
 ## 4 · Repo layout
 
-~19 code repos plus `tools-documentation` (docs). **[L]**
+~16 code repos + 1 spec-only + `tools-documentation`. **[L]**
 marks lojix-family members.
 
 - **Layer 0 — text grammars** — nota (spec), nota-serde-core
@@ -153,17 +156,19 @@ marks lojix-family members.
   lojix-schema **[L]** (Opus, Derivation, nix newtypes like
   `NarHashSri` / `FlakeRef` / `TargetTriple`).
 - **Layer 2 — contract crates** — criome-msg (nexusd↔criomed),
-  lojix-forge-msg **[L]** (criomed↔lojix-forged), lojix-store-msg
-  **[L]** (store traffic).
-- **Layer 3 — storage** — sema (records DB), lojix-store **[L]**
-  (blobs).
-- **Layer 4 — daemons** — criomed (guardian), nexusd (messenger),
-  lojix-forged **[L]** (compile daemon), lojix-stored **[L]**
-  (blob daemon).
+  lojix-msg **[L]** (criomed↔lojixd; covers compile + store +
+  deploy verbs; single contract).
+- **Layer 3 — storage** — sema (records DB, backs criomed),
+  lojix-store **[L]** (blob directory + reader library — no
+  daemon; writes via lojixd, reads via mmap).
+- **Layer 4 — daemons** — nexusd (messenger), criomed (guardian),
+  lojixd **[L]** (single lojix daemon — forge + store + deploy
+  as internal actors).
 - **Layer 5 — clients + build libs** — nexus-cli (flag-less
-  CLI), rsc (pure records-to-source library; lojix-forged uses
-  it but it stays unprefixed), lojix-forge **[L]** (forge lib),
-  lojix-deploy **[L]** (CriomOS deploy lib + CLI).
+  CLI; the only text client), rsc (pure records-to-source
+  library; lojixd links it).
+- **Spec-only** — lojix **[L]** (README for the namespace;
+  parallels `nexus` and `nota` spec repos).
 
 **Lojix family membership** is a second axis orthogonal to
 layer. A crate is lojix-family iff it participates in the
@@ -194,10 +199,10 @@ all of criome, not a fourth pillar.
 |---|---|---|
 | `nexusd` | criome | criome (nexus skin) |
 | `criomed` | criome | criome |
-| `lojix-forged` | criome | lojix |
-| `lojix-stored` | criome | lojix |
+| `lojixd` | criome | lojix |
 
-All daemons run at criome-runtime; some are also lojix-family.
+All daemons run at the criome-runtime layer; `lojixd` is also
+a lojix-family member.
 
 **Shelved**: `arbor` (prolly-tree versioning) — post-MVP.
 
@@ -236,11 +241,15 @@ their shapes.
 - **CriomeRequest / CriomeReply** — the nexusd↔criomed
   protocol verbs (lookup, query, assert, mutate, subscribe,
   compile, …).
-- **CompileRequest / CompileReply** — the criomed↔lojix-forged
+- **CompileRequest / CompileReply** — part of the criomed↔lojixd
   protocol, carrying opus identity, sema snapshot, and a
-  capability token. Lives in `lojix-forge-msg`.
-- **LojixStoreRequest / LojixStoreReply** — put/get/contains,
-  plus streaming variants for large blobs.
+  capability token. Lives in `lojix-msg`.
+- **LojixStoreRequest / LojixStoreReply** — put/get/contains
+  verbs, plus streaming variants for large blobs. Also in
+  `lojix-msg`; criomed invokes these for GC and admin, lojixd
+  handles them internally for forge writes.
+- **DeployRequest / DeployReply** — deploy-verb pair (cluster,
+  node, horizon projection); also in `lojix-msg`.
 
 Concrete field lists live in
 [reports/017 §1, §2](../reports/017-architecture-refinements.md)
@@ -274,12 +283,12 @@ its report (or write a new one); don't inline the shape here.
 ```
  human: (Compile (Opus nexusd))
         ▼
- nexusd → criomed → lojix-forged (with capability token)
+ nexusd → criomed → lojixd (with capability token)
         │
-        ▼ lojix-forged pulls records from criomed
+        ▼ lojixd pulls records from criomed
         ▼ rsc projects records → in-memory crate
         ▼ cargo build
-        ▼ Put binary bytes → lojix-stored (direct, via token)
+        ▼ Put binary bytes → lojix-store (in-process; no wire)
         ▼ reply { binary-hash } → criomed
         ▼ criomed asserts a CompiledBinary record in sema
         ▼ reply flows back to human
@@ -341,13 +350,16 @@ Foundational rules observed across sessions.
 ## 9 · Reading order for a new session
 
 1. **This file** — the canonical shape.
-2. [reports/019](../reports/019-lojix-as-pillar.md) — lojix
-   as the artifacts pillar; broad-lojix framing; rename table;
-   `lojix-schema` crate rationale.
-3. [reports/017](../reports/017-architecture-refinements.md) —
+2. [reports/020](../reports/020-lojix-single-daemon.md) —
+   latest lojix shape: one daemon (`lojixd`), one contract
+   (`lojix-msg`), no lojix CLI. Supersedes 019 §5–§6.
+3. [reports/019](../reports/019-lojix-as-pillar.md) — lojix as
+   the artifacts pillar; broad-lojix framing; three-pillar
+   model. §5–§6 superseded by 020; rest stands.
+4. [reports/017](../reports/017-architecture-refinements.md) —
    refinements (Opus/Derivation shapes, schema-bound patterns,
-   no-Launch, no-kind-bytes, tokens). Some parts superseded by
-   019 on type-home (lojix-schema instead of nexus-schema).
+   no-Launch, no-kind-bytes, tokens). Type-home updated in 019
+   (lojix-schema, not nexus-schema).
 3. [reports/013](../reports/013-nexus-syntax-proposal.md) —
    delimiter-family matrix (grammar canon).
 4. [reports/015](../reports/015-architecture-landscape.md) v4 —
