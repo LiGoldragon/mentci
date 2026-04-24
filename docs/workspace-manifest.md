@@ -44,7 +44,7 @@ to find them at `~/git/<name>/` and symlinked at
 | `nexus-serde` | nexus's public façade. | `reports/014` |
 | `nexus-schema` | Record-kind vocabulary (Fn, Struct, Opus, Derivation, …). | `reports/004`, `reports/033` |
 | `sema` | Records DB (redb-backed). | `docs/architecture.md §3` |
-| `lojix-store` | Content-addressed filesystem + index DB (nix-store analogue; holds real unix files). Renamed from `criome-store` on 2026-04-24; code is a seed-only prototype that will be replaced when lojixd scaffolds (report 030 Phase C). | `docs/architecture.md §3`, `reports/037 §3` |
+| `lojix-store` | Content-addressed filesystem + index DB (nix-store analogue). **Scaffolded; real implementation deferred until the nix-replacement phase** (report 059). During the bootstrap era, `/nix/store` serves this role — compile outputs from `RunNix` land in `/nix/store`, and sema records reference nix narhashes. | `docs/architecture.md §5`, `reports/037 §3`, `reports/059` |
 | `nexusd` | Messenger daemon (text ↔ rkyv). | `docs/architecture.md §2` |
 | `nexus-cli` | Text client. | `docs/architecture.md §4` |
 | `rsc` | Records → Rust source projector. | `reports/004`, `reports/033` |

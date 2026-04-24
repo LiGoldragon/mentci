@@ -49,15 +49,29 @@ sema:
   `Mutate`, `Retract`, `Query`, `Compile`, …) and serialises
   replies back.
 - **lojixd** is the hands. It performs effects sema can't
-  (spawning cargo / nix subprocesses; reading and writing the
-  lojix-store filesystem; materialising files). Inputs are
-  plan records read from sema; outputs become outcome records
+  (spawning `nix` subprocesses; reading and writing
+  filesystem paths; materialising files). Inputs are plan
+  records read from sema; outputs become outcome records
   written back.
-- **rsc** projects sema → `.rs` text for rustc/cargo to
-  consume. One-way emission.
+- **rsc** projects sema → `.rs` + `Cargo.toml` + `flake.nix`
+  for nix to consume. One-way emission.
 - **lojix-store** is a content-addressed filesystem (nix-store
   analogue) holding real unix files, referenced from sema by
-  hash.
+  hash. **During the bootstrap era, `/nix/store` is the
+  de-facto store**; lojix-store's real implementation is
+  deferred until we're actively replacing nix.
+
+**Build backend for this era**: **nix via crane + fenix**.
+fenix pins the Rust toolchain; crane builds packages. rsc
+emits the workdir that these consume. Direct `rustc`
+orchestration is a post-nix-replacement concern.
+
+**Macro philosophy**: we **author no macros** ourselves (no
+`macro_rules!`, no proc-macro crates). Our internal code-gen
+patterns live as sema rules that run before rsc emission. We
+**freely call** third-party macros — `#[derive(Serialize)]`,
+`#[tokio::main]`, `format!`, `println!`, etc. — and rsc emits
+those invocations verbatim for rustc to expand.
 
 ---
 
@@ -168,11 +182,12 @@ schema-invalid shapes, unauthorised actions all fail here.
      │          │   • StoreWriter + StoreReaderPool (store-entry
      │          │     placement + path lookup + index updates)
      │          │   • FileMaterialiser (store entries → workdir)
-     │          │ • receives concrete plans: RunCargo, RunNix,
-     │          │   RunNixosRebuild, PutStoreEntry, GetStorePath,
-     │          │   MaterializeFiles, …
-     │          │ • executes; places binary file tree into
-     │          │   lojix-store under its blake3-derived path
+     │          │ • receives concrete plans: RunNix (primary
+     │          │   compile + build), RunNixosRebuild (deploy),
+     │          │   PutStoreEntry, GetStorePath, MaterializeFiles, …
+     │          │ • invokes nix (crane + fenix) against the workdir
+     │          │   rsc emitted; output lands in /nix/store during
+     │          │   the bootstrap era
      │          │ • replies {output-hash, warnings, wall_ms}
      └──────────┘
 ```
@@ -215,12 +230,19 @@ schema-invalid shapes, unauthorised actions all fail here.
 - **Scope**: slots are **global** (not opus-scoped); one name
   per slot, globally consistent.
 
-### lojix-store — content-addressed filesystem
+### lojix-store — content-addressed filesystem (future)
 
-An analogue to the nix-store, hashed by blake3. **Holds actual
-unix files and directory trees**, not blobs inside a single
-packed file. A compiled Rust binary lives as a real executable
-at a hash-derived path; you `exec` it directly.
+**Bootstrap era**: `/nix/store` serves this role. Compile
+outputs land there; sema records reference nix narhashes /
+store paths. lojix-store's real implementation is deferred
+until we're actively replacing nix (there's no hurry — nix's
+store already gives us the filesystem semantics we want).
+
+**Terminal state** (post-nix-replacement): an analogue to the
+nix-store, hashed by blake3. **Holds actual unix files and
+directory trees**, not blobs inside a single packed file. A
+compiled Rust binary lives as a real executable at a
+hash-derived path; you `exec` it directly.
 
 - **Owner**: lojixd.
 - **Layout**: hash-keyed subdirectory per store entry, close
@@ -229,8 +251,8 @@ at a hash-derived path; you `exec` it directly.
   `blake3 → { path, metadata, reachability }`. The index does
   not contain the files; it maps to them.
 - **Holds**: compiled binaries and their runtime trees;
-  user file attachments referenced by sema; nix-produced
-  artifacts sema points at. Always real files on disk.
+  user file attachments referenced by sema. Always real files
+  on disk.
 - **No typing**. The type of a store entry is known only
   through the sema record that references its hash.
 - **Access control**: capability tokens, signed by criomed.
@@ -272,7 +294,8 @@ Concrete field lists live in reports; this file only names.
 - **CriomeRequest / CriomeReply** — nexusd↔criomed protocol
   verbs.
 - **lojix-msg verbs** — concrete execution in criomed→lojixd
-  direction: RunCargo, RunNix, RunNixosRebuild, PutStoreEntry,
+  direction: **RunNix** (primary compile + package builder,
+  via crane + fenix), RunNixosRebuild (deploy), PutStoreEntry,
   GetStorePath, MaterializeFiles, DeleteStoreEntry. No
   `CompileRequest { opus: OpusId }` — criomed plans; lojixd
   executes.
@@ -331,13 +354,17 @@ Edit-time (requests accumulate):
 
 Run-time (plan dispatch):
 - User issues `(Compile (Opus :slot N))`.
-- criomed reads the relevant plan record from sema; dispatches
-  `RunCargo { workdir-spec, fetch_files, … }` to lojixd.
-- lojixd materialises store entries into the workdir; spawns
-  cargo; hashes the output tree; places it in lojix-store at
-  its hash path; replies.
-- criomed writes `CompiledBinary` record to sema pointing at
-  the store-entry hash.
+- criomed reads the Opus + transitive OpusDeps from sema.
+- rsc projects records → scratch workdir containing `.rs` +
+  `Cargo.toml` + `flake.nix` (crane + fenix call).
+- criomed emits `RunNix { flake_ref, attr, overrides, target }`
+  to lojixd.
+- lojixd invokes `nix build`; nix/crane run cargo + rustc with
+  the fenix-pinned toolchain; proc-macros expand in rustc;
+  output lands in /nix/store.
+- lojixd replies with narhash + store path.
+- criomed writes `CompiledBinary { opus, narhash, store_path,
+  … }` to sema.
 
 Self-host close:
 - User runs the new binary directly from its lojix-store path.
@@ -436,6 +463,15 @@ Foundational rules. Every session follows these.
 
 - **Rust is only an output.** No `.rs` → sema parsing. rsc
   emits one-way.
+- **Nix is the build backend until we replace it.** Compile
+  plans become `RunNix` invocations (crane + fenix); lojixd
+  spawns `nix build`. Direct rustc orchestration is a post-
+  nix-replacement concern. rsc emits `.rs` + `Cargo.toml` +
+  `flake.nix`; nix drives the rest.
+- **We author no macros.** No `macro_rules!`, no proc-macro
+  crates. Our code-gen patterns are sema rules. We freely
+  **call** third-party macros (derive, attribute, function-
+  like) and rsc emits the invocations.
 - **Nexus is a request language.** Sema is rkyv. There are no
   "nexus records."
 - **Sema is all we are concerned with.** Everything else
@@ -529,6 +565,10 @@ Foundational rules. Every session follows these.
 22. [reports/058](../reports/058-canonical-state-after-sweep.md)
     — session-close snapshot after the sweep; full list of
     deletions + what remains canonical.
+23. [reports/059](../reports/059-nix-as-build-backend-and-macro-philosophy.md)
+    — nix (crane + fenix) is the build backend during the
+    bootstrap era; we author no macros but freely call
+    third-party ones.
 22. [reports/016](../reports/016-tier-b-decisions.md),
     [reports/014](../reports/014-serde-refactor-review.md),
     [reports/009-binds-and-patterns.md](../reports/009-binds-and-patterns.md),
