@@ -198,8 +198,17 @@ marks lojix-family members.
 - **Layer 5 — clients + build libs** — nexus-cli (flag-less
   CLI; the only text client), rsc (pure records-to-source
   library; lojixd links it).
-- **Spec-only** — lojix **[L]** (README for the namespace;
-  parallels `nexus` and `nota` spec repos).
+- **Spec-only (terminal state)** — lojix **[L]** (README for
+  the namespace; parallels `nexus` and `nota` spec repos).
+
+> **Transitional-state warning**: `/home/li/git/lojix/` is
+> *currently* a working Rust crate containing Li's CriomOS
+> deploy orchestrator (CLI + ractor actor pipeline). The
+> "spec-only" entry above is the **terminal** shape after the
+> migration in [reports/030](../reports/030-lojix-transition-plan.md).
+> Until Phase F of that plan, the lojix repo's code is
+> production infrastructure. Agents must not treat the layout
+> above as an instruction to delete the existing crate.
 
 **Lojix family membership** is a second axis orthogonal to
 layer. A crate is lojix-family iff it participates in the
@@ -446,18 +455,34 @@ Foundational rules observed across sessions.
 9. [reports/022](../reports/022-records-as-evaluation-prior-art.md)
    — prior art for records-as-evaluation (Datomic, DBSP, Salsa,
    Unison, Eve, Prolog).
-10. [reports/023](../reports/023-sema-as-rust-checker.md),
+10. [reports/027](../reports/027-adversarial-review-of-026.md)
+    — adversarial critique of 026; the shaky specifics
+    surfaced (hash-vs-name refs, ingester scope, edit UX,
+    diagnostic spans, cascade cost).
+11. [reports/028](../reports/028-doc-propagation-inventory.md)
+    — per-repo doc-alignment inventory; items actioned this
+    session.
+12. [reports/029](../reports/029-ra-chalk-polonius-structural-lessons.md)
+    — rust-analyzer / chalk / polonius structural lessons
+    stripped of text-layer framing.
+13. [reports/030](../reports/030-lojix-transition-plan.md) —
+    **critical**: lojix repo is a working monolith today, not
+    a spec-only README. Transition plan preserves the
+    production CLI while routing toward lojixd.
+14. [reports/031](../reports/031-uncertainties-and-open-questions.md)
+    — session-close uncertainties list; prioritised decisions.
+15. [reports/023](../reports/023-sema-as-rust-checker.md),
     [reports/024](../reports/024-self-hosting-cascade-walkthrough.md),
     [reports/025](../reports/025-sema-schema-inventory.md) —
     the text-layer-contaminated first pass; read the
     correction banners then 026 for corrections.
-11. [reports/015](../reports/015-architecture-landscape.md) v4 —
+16. [reports/015](../reports/015-architecture-landscape.md) v4 —
     full architecture synthesis (parts superseded by 017 — read
     after 017 so you know what's current).
-12. [reports/016](../reports/016-tier-b-decisions.md) — open
+17. [reports/016](../reports/016-tier-b-decisions.md) — open
     questions (most answered by 017).
-13. `reports/014` — serde-refactor history.
-14. `reports/009-binds-and-patterns` — technical reference.
+18. `reports/014` — serde-refactor history.
+19. `reports/009-binds-and-patterns` — technical reference.
 
 Older reports have been deleted to prevent context poisoning.
 
