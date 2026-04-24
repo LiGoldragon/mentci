@@ -230,19 +230,26 @@ schema-invalid shapes, unauthorised actions all fail here.
 - **Scope**: slots are **global** (not opus-scoped); one name
   per slot, globally consistent.
 
-### lojix-store — content-addressed filesystem (future)
+### lojix-store — canonical artifact store (built on nix)
 
-**Bootstrap era**: `/nix/store` serves this role. Compile
-outputs land there; sema records reference nix narhashes /
-store paths. lojix-store's real implementation is deferred
-until we're actively replacing nix (there's no hurry — nix's
-store already gives us the filesystem semantics we want).
+lojix-store is the **canonical artifact store from day one**.
+It's an analogue to the nix-store, hashed by blake3. It holds
+**actual unix files and directory trees**, not blobs. A
+compiled binary lives at a hash-derived path; you `exec` it
+directly.
 
-**Terminal state** (post-nix-replacement): an analogue to the
-nix-store, hashed by blake3. **Holds actual unix files and
-directory trees**, not blobs inside a single packed file. A
-compiled Rust binary lives as a real executable at a
-hash-derived path; you `exec` it directly.
+nix produces artifacts into `/nix/store` during the build.
+lojixd immediately bundles them into `~/.lojix/store/` (copy
+closure with RPATH rewrite) and returns the lojix-store hash.
+**sema records reference lojix-store hashes as canonical
+identity** — `/nix/store` is a transient build-intermediate,
+not a destination.
+
+Why not defer lojix-store: dogfooding the real interface now
+reveals what it actually needs; deferred implementations rot.
+The gradualist path "nix builds; lojix-store stores; loosen
+dep on nix over time" is strictly safer than "nix forever
+until Big Bang replace."
 
 - **Owner**: lojixd.
 - **Layout**: hash-keyed subdirectory per store entry, close
@@ -295,10 +302,11 @@ Concrete field lists live in reports; this file only names.
   verbs.
 - **lojix-msg verbs** — concrete execution in criomed→lojixd
   direction: **RunNix** (primary compile + package builder,
-  via crane + fenix), RunNixosRebuild (deploy), PutStoreEntry,
-  GetStorePath, MaterializeFiles, DeleteStoreEntry. No
-  `CompileRequest { opus: OpusId }` — criomed plans; lojixd
-  executes.
+  via crane + fenix), **BundleIntoLojixStore** (copy /nix/store
+  output into lojix-store with RPATH rewrite, returns blake3
+  hash), RunNixosRebuild (deploy), PutStoreEntry, GetStorePath,
+  MaterializeFiles, DeleteStoreEntry. No `CompileRequest {
+  opus: OpusId }` — criomed plans; lojixd executes.
 
 ---
 
@@ -361,10 +369,15 @@ Run-time (plan dispatch):
   to lojixd.
 - lojixd invokes `nix build`; nix/crane run cargo + rustc with
   the fenix-pinned toolchain; proc-macros expand in rustc;
-  output lands in /nix/store.
-- lojixd replies with narhash + store path.
-- criomed writes `CompiledBinary { opus, narhash, store_path,
-  … }` to sema.
+  output lands in `/nix/store`.
+- lojixd runs `BundleIntoLojixStore` on the nix output: copy-
+  closure, RPATH rewrite via patchelf, deterministic bundle,
+  blake3 hash, write tree under `~/.lojix/store/<blake3>/`.
+- lojixd replies with `{ store_entry_hash, narhash,
+  wall_ms }`.
+- criomed asserts `CompiledBinary { opus, store_entry_hash,
+  narhash, toolchain_pin, … }` to sema. The canonical identity
+  is `store_entry_hash`; narhash is kept for nix cache lookup.
 
 Self-host close:
 - User runs the new binary directly from its lojix-store path.

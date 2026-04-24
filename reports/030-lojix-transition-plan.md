@@ -92,11 +92,19 @@ breaks the hand-operation tool.
 ### Phase B — extract the message shapes (no runtime change)
 
 *Unlocks: lojix-msg contract exists for future clients to
-target.*
+target. Alongside, the lojix-store skeleton (already landed
+2026-04-25 in `/home/li/git/lojix-store/src/` as types +
+traits + `todo!()` bodies) gets wired into lojixd's internal
+layout.*
 
 - Create new crate `/home/li/git/lojix-msg/`.
-- Define rkyv-archived message types mirroring today's
-  in-process types:
+- Define rkyv-archived message types including the primary
+  verbs under the nix-backend model:
+  `RunNix { flake_ref, attr, overrides, target }`,
+  `BundleIntoLojixStore { nix_store_closure, policy }`,
+  `RunNixosRebuild { … }`, `PutStoreEntry`, `GetStorePath`,
+  `MaterializeFiles`, `DeleteStoreEntry`.
+- Mirror today's in-process types for backward continuity:
   - `DeployRun { cluster, node, action, source: ProposalSourceRef, criomos: FlakeRef } → DeployOutcome`
   - Supporting newtypes (`ClusterName`, `NodeName`,
     `ProposalSourceRef`, `FlakeRef`, `BuildAction`,

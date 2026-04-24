@@ -44,7 +44,7 @@ to find them at `~/git/<name>/` and symlinked at
 | `nexus-serde` | nexus's public façade. | `reports/014` |
 | `nexus-schema` | Record-kind vocabulary (Fn, Struct, Opus, Derivation, …). | `reports/004`, `reports/033` |
 | `sema` | Records DB (redb-backed). | `docs/architecture.md §3` |
-| `lojix-store` | Content-addressed filesystem + index DB (nix-store analogue). **Scaffolded; real implementation deferred until the nix-replacement phase** (report 059). During the bootstrap era, `/nix/store` serves this role — compile outputs from `RunNix` land in `/nix/store`, and sema records reference nix narhashes. | `docs/architecture.md §5`, `reports/037 §3`, `reports/059` |
+| `lojix-store` | Content-addressed filesystem + index DB (nix-store analogue). **MVP-required alongside lojixd** (report 030 Phase C). nix builds into `/nix/store`; lojixd's `BundleIntoLojixStore` copies the closure into `~/.lojix/store/<blake3>/` with RPATH rewrite; sema records reference lojix-store hashes as canonical identity. Skeleton types + traits in `lojix-store/src/`. | `docs/architecture.md §5`, `reports/030`, `lojix-store/AGENTS.md` |
 | `nexusd` | Messenger daemon (text ↔ rkyv). | `docs/architecture.md §2` |
 | `nexus-cli` | Text client. | `docs/architecture.md §4` |
 | `rsc` | Records → Rust source projector. | `reports/004`, `reports/033` |
