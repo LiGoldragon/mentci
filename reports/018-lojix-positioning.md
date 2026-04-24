@@ -1,254 +1,210 @@
-# 018 — lojix positioning and the naming collision
+# 018 — lojix positioning (v2)
 
 *Claude Opus 4.7 / 2026-04-24 · synthesis of two research
-passes (current-lojix inventory + positioning options).
-Answers Li's "where is lojix in all this?" question with a
-concrete rename + scope recommendation.*
+passes (current-lojix inventory + positioning options). v1 of
+this report proposed renaming the `lojix` crate to `horizond`;
+Li corrected: "lojix was a play on nix — it is my take on an
+expanded and more correct nix." The name is load-bearing. v2
+treats `lojix` as a namespace, not a mislabel.*
 
-## 1 · Current state of `lojix` (one paragraph)
+## 1 · `lojix` is a namespace, not a single crate
 
-`lojix` is a **single-binary Rust CLI** (~580 LoC, edition 2024,
-ractor-based) that orchestrates CriomOS deploys. Given a cluster
-proposal nota file and a `(cluster, node)` pair, it reads the
-nota, projects a `Horizon` in-process via `horizon-lib`, writes
-a content-addressed wrapper flake to `~/.cache/lojix/horizon/
-<cluster>/<node>/` and a parallel system flake to `~/.cache/
-lojix/system/<system>/`, then shells out to `nix` / `nixos-
-rebuild` with those directories as `--override-input horizon …`
-and `--override-input system …`. Five actors:
-`DeployCoordinator → {ProposalReader, HorizonProjector,
-HorizonArtifact, NixBuilder}`. The e2e test against
-goldragon/tiger passes; the actor skeleton is done. Its sole
-user today is CriomOS (which names `lojix` as its flake input
-producer). 13 open beads track hardening: atomic materialization,
-streaming subprocess I/O, upload target, root-check, concurrent-
-deploy safety, watch-mode daemon, etc.
+"lojix" is Li's vision of an expanded, more-correct nix. It's
+the umbrella, same way "nix" umbrellas `nix`, `nix-store`,
+`nix-daemon`, `nix-build`, `nix-shell`, `nixos`, `nixpkgs`.
 
-## 2 · The naming collision — three uses of "lojix"
+Current members of the `lojix-*` family:
 
-| Use | Where | Meaning |
-|---|---|---|
-| `lojix` crate | `/home/li/git/lojix/` | CriomOS deploy orchestrator (current binary) |
-| `lojix-store` | `docs/architecture.md` §3 | content-addressed blob store (renamed from criome-store) |
-| `lojix-stored` | `docs/architecture.md` §2 | blob-store daemon |
-| `~/.cache/lojix/` | `lojix/src/artifact.rs:39` | deploy-cache path |
-| `lojix-archive` | `/home/li/git/lojix-archive/` | old shelved aski build-dialect design |
+| Name | Role |
+|---|---|
+| `lojix` (crate at `/home/li/git/lojix/`) | CriomOS deploy orchestrator — reads cluster proposals, projects horizons, invokes `nixos-rebuild` |
+| `lojix-store` | content-addressed blob store (renamed from criome-store); holds compiled binaries + opaque blobs |
+| `lojix-stored` | blob-store daemon; guards lojix-store, serves put/get over rkyv |
+| `lojix-store-msg` | contract crate (wire types for blob-store traffic) |
+| `~/.cache/lojix/` | on-disk cache path used by the current `lojix` CLI (deploy artifacts) |
+| `lojix-archive` | older shelved aski build-dialect experiment; not active |
 
-A new reader encountering "lojix" can reasonably think any of
-five things. The deploy crate is the outlier — everywhere else,
-"lojix" has converged on **content-addressed blob storage**
-inside the sema engine.
+The namespace is healthy: every name has a specific, non-
+overlapping meaning inside the umbrella "expanded nix."
 
-## 3 · Recommended rename — `lojix` crate → `forged`
+Future `lojix-*` crates are expected. This report does not
+prescribe what else joins the family — that emerges as the
+engine grows.
 
-Wait — that's the compile daemon. Let me think again.
+## 2 · Current state of `lojix` (the deploy crate)
 
-The rename candidates:
+Inventory from research pass:
 
-| Candidate | Reading | Verdict |
-|---|---|---|
-| `horizond` | "horizon-daemon" — but it's a CLI, not a daemon | Suggestive of future daemonization; slightly misleading today |
-| `criodeploy` | explicit CriomOS-scope CLI | Clear; ties to CriomOS rather than being engine-agnostic |
-| `zoned` | mirrors CriomOS's `crioZones.<cluster>.<node>` | Concise; neutral; daemon-ready |
-| `viewpointer` | horizon-lib's `Viewpoint` projection | Too technical, no user-facing intuition |
+- **Shape**: single-binary Rust CLI, edition 2024, ~580 LoC,
+  ractor-based. Status per README: "scaffold" — but actor
+  skeleton is done and e2e test passes against goldragon/tiger.
+- **Flow**: reads a cluster-proposal `.nota`, projects a
+  `Horizon` in-process via `horizon-lib`, writes a content-
+  addressed wrapper flake to `~/.cache/lojix/horizon/<cluster>/
+  <node>/` and a parallel system flake to `~/.cache/lojix/
+  system/<system>/`, shells out to `nix` / `nixos-rebuild` with
+  `--override-input horizon …` and `--override-input system …`.
+- **Actors**: `DeployCoordinator → {ProposalReader,
+  HorizonProjector, HorizonArtifact, NixBuilder}`. Single-
+  object-in / single-object-out at each boundary.
+- **CLI surface**: `lojix {deploy | build | eval}` plus
+  `--action {Eval | Build | Boot | Switch | Test}`.
+- **Shell-out surface**: `nix hash path --type sha256 --sri`,
+  `nix eval --raw …#drvPath`, `nix build --no-link
+  --print-out-paths`, `nixos-rebuild {switch | boot | test}
+  --flake`.
+- **Typed newtypes** in `src/cluster.rs`: `FlakeRef`,
+  `OverrideUri`, `NarHashSri`, `ProposalSource`, and
+  `System`/`ClusterName`/`NodeName`/`Viewpoint`/`ClusterProposal`/
+  `Horizon` re-exported from horizon-lib.
+- **Dependents**: zero Rust library consumers. Operationally,
+  CriomOS's `flake.nix` names lojix as its flake-input producer
+  (`--override-input horizon` and `--override-input system` are
+  exactly what lojix supplies).
+- **13 open beads** in `/home/li/git/lojix/.beads/`. Priorities:
+  P0 atomic-materialization + streaming-stdout; P1 root-check,
+  upload target, error-path tests, concurrent-deploy safety;
+  P2 timeouts, all-actions tests, `--target-host` passthrough;
+  P3 watch-mode daemon.
 
-**Recommendation: `horizond`.**
+## 3 · Where `lojix` sits in the architecture
 
-Reasoning: the artifact it produces is a horizon (per
-horizon-lib's type). The suffix `-d` previews the eventual
-daemon (CLI today; daemon post-MVP per §4 below). Naming after
-the output is how most unix tools work (`httpd` serves http;
-`horizond` produces horizons). `zoned` is a close second —
-better if Li wants to stay cluster-topology-flavoured.
+**Layer 5 — clients + build helpers.** Peer to nexus-cli and
+rsc (in the sema engine's sense) but unique in domain: it
+bridges sema records (eventually) to nixos-rebuild. It runs as
+a CLI from userland. It does not sit in the daemon graph
+(nexusd / criomed / forged / lojix-stored).
 
-**Keep** `lojix-store` + `lojix-stored` as-is. They already own
-the `lojix` noun in the engine; the deploy crate is the
-collision source.
+**Relationship to `forged`**: peer, not child. Both daemons (or
+in lojix's case, CLI-then-daemon) follow a `Coordinator →
+{Reader, Projector, Artifact, Builder}` pattern:
 
-## 4 · Where horizond fits — scoping recommendation
-
-**Three framings of the core question**:
-
-- **(A) First-class nexus-driven.** `(Deploy (Cluster foo))`
-  comes through nexusd → criomed → dispatches to horizond
-  (daemon). Cluster proposals live as sema records; deploy
-  history is queryable. **Cost**: new daemon, new contract
-  crate (`deploy-msg`), migration of proposals from `.nota`
-  files to sema records. Heavy surface for an MVP still
-  figuring out self-hosting compile.
-
-- **(B) Standalone tool.** horizond stays a CLI outside the
-  daemon graph. Reads proposals from local `.nota` files (as
-  today) or later from sema via nexusd once criomed is alive.
-  **Cost**: two internal universes (engine vs ops). **Benefit**:
-  zero blast radius on MVP; Li keeps `horizond deploy --cluster
-  goldragon --node tiger` working uninterrupted.
-
-- **(C) Hybrid — library + CLI now, daemon later.** Split
-  horizond into a library (actor topology, `HorizonProjector`,
-  `HorizonArtifact`, `NixBuilder`) and a thin CLI. Post-MVP, a
-  deploy daemon can be written atop the same library, exposing
-  `(Deploy …)` via criomed.
-
-**Recommendation: (C) for MVP, paving toward (A) post-MVP.**
-
-The deploy workflow is genuinely adjacent to compile:
-proposal→horizon→nix-flake mirrors opus→records→cargo-build.
-But deploy is **not** the critical path to self-hosting; making
-it first-class now doubles the daemon count before the first
-daemon ships.
-
-## 5 · Relationship to the sema engine
-
-### horizond is a peer of forged, not a child
-
-Both daemons (or future-daemons) have similar shape: a
-`Coordinator → {Reader, Projector, Artifact, Builder}` pipeline.
-But they are **peer concerns**, not parent/child:
-
-- `forged` drives `rsc + cargo` against an `Opus` record.
-- `horizond` drives `horizon-lib + nixos-rebuild` against a
+- `forged` drives `rsc + cargo` against an `Opus`.
+- `lojix` drives `horizon-lib + nixos-rebuild` against a
   `ClusterProposal`.
 
-Mixing nix and cargo concerns in one daemon would violate the
-"one artifact per repo" rule. They stay separate.
+Nix and cargo concerns stay in separate crates; "one artifact
+per repo" is preserved.
 
-### Shared types belong in nexus-schema
+**Shared ractor-coordinator pattern — defer extraction.**
+Discussed multiple times; still not worth extracting a shared
+`ractor-coordinator` / `lojix-core` library. ~40 LoC of
+boilerplate per coordinator is cheap to duplicate until both
+crates exist and the pattern is demonstrably identical.
 
-These newtypes exist in lojix's `cluster.rs` today and should
-lift into `nexus-schema::names`:
+**HorizonProjector is already a specialized `Derivation`
+builder.** A horizon flake produced by lojix is exactly what
+[reports/017 §1](017-architecture-refinements.md)'s
+`Derivation` type describes: a flake-output derivation with
+override inputs and a `NarHashSri`. Once `Derivation` lands in
+nexus-schema, lojix-the-crate's `HorizonArtifact` naturally
+emits `Derivation` records.
 
-- `NarHashSri` — SRI content-hash of a nix store path. Already
-  called out in [reports/017 §1](017-architecture-refinements.md)
-  for reuse by `Derivation`.
-- `FlakeRef` — nix flake URI.
-- `OverrideUri` — `path:...` or `tarball+url?narHash=...` forms.
-- `TargetTriple` / `System` — platform triples (already planned
-  in 017 for `Opus`).
+**Shared newtypes lift into nexus-schema**:
+- `NarHashSri` (already anticipated in
+  [017 §1](017-architecture-refinements.md))
+- `FlakeRef`
+- `OverrideUri`
+- `TargetTriple` / `System`
 
-After the lift, horizond and forged both depend on nexus-schema
-for these. Neither duplicates. Neither depends on the other.
+After the lift, lojix depends on nexus-schema for the
+vocabulary; nexus-schema does not depend on lojix.
 
-### HorizonProjector is a specialized Derivation builder
+## 4 · Scoping — CLI now, daemon maybe later
 
-The `Derivation` record type proposed in
-[reports/017 §1](017-architecture-refinements.md) wraps any nix
-build: `Derivation { builder: DerivationBuilder::FlakeOutput { … }, … }`.
+Three framings of "should lojix be engine-integrated?":
 
-A horizon flake produced by horizond today **is** a Derivation
-— its `flake_url` points at CriomOS, its `overrides` map
-`horizon` and `system` inputs to content-addressed local paths,
-its `nar_hash` is the SRI hash.
+- **(A) First-class nexus-driven.** `(Deploy (Cluster foo))`
+  goes through nexusd → criomed → dispatches to a lojix daemon.
+  Cluster proposals live as sema records; deploy history
+  queryable. **Cost**: a new daemon, a `deploy-msg` contract
+  crate, a migration of proposals from `.nota` files to sema
+  records. Heavy surface for a not-yet-self-hosting MVP.
 
-So:
-- horizond **consumes** the CriomOS `Derivation` (flake input).
-- horizond **produces** the horizon `Derivation` (override
-  input).
-- Once these types live in nexus-schema, horizond's
-  HorizonArtifact can emit `Derivation` records; criomed can
-  store them; future nexus queries can answer "what horizon did
-  we deploy on tiger last Tuesday?" via a `DeployOutcome` record.
+- **(B) Standalone tool.** lojix stays a CLI outside the daemon
+  graph. Reads proposals from `.nota` files (today) or later
+  from sema via nexusd. **Benefit**: zero MVP blast radius;
+  Li's current workflow keeps working. **Cost**: two internal
+  universes (engine vs ops).
 
-The convergence is natural. No redesign needed — just a
-dependency inversion (horizond → nexus-schema).
+- **(C) Hybrid — library + CLI now, daemon later.** Split lojix
+  into a library (actor pipeline, `HorizonProjector`, etc.) +
+  thin CLI. Post-MVP, a `lojix` daemon can be written atop the
+  same library, exposing `(Deploy …)` via criomed.
 
-### Shared ractor-coordinator pattern — defer extraction
+**Recommendation: (C), paving toward (A) post-MVP.** Deploy is
+genuinely adjacent to compile (same-shape pipelines) but it's
+not on the critical path to self-hosting. Making it first-class
+now doubles daemon count before the first daemon ships.
 
-lojix and forged will share a 4-actor pipeline pattern. An
-extracted `ractor-coordinator` or `lojix-core` crate was
-discussed in [reports/015 §6](015-architecture-landscape.md).
-Recommendation: **defer** until both crates exist and the
-pattern is demonstrably identical. ~40 LoC of boilerplate per
-coordinator is cheap to duplicate; extracting early risks
-over-fitting to lojix's specific shape.
+## 5 · Records a future deploy daemon would need
 
-## 6 · Records a future `deployd` would need
-
-If and when deploy becomes first-class (path (A) or the
-post-MVP stage of (C)), these would land in nexus-schema under
-a new `deploy` module:
+If/when lojix gains a daemon face (path (A) or post-MVP (C)),
+these records land in nexus-schema:
 
 - **`ClusterProposal`** — root declarative record; lift of
-  horizon-lib's type with rkyv derives. Contains nodes, schema
-  version, cluster name.
-- **`ClusterNode`** — per-node proposal entry (system,
-  hostname, role, module toggles).
-- **`Horizon`** — projected view for one `(cluster, node)` pair;
-  carries `NarHashSri` identity and a `System` field.
-- **`DeployRequest`** — rkyv wire type on `deploy-msg`.
-- **`DeployOutcome`** — stored in sema for history:
-  `{ request_hash, exit_status, horizon_nar, toplevel_drv,
-  stdout_hash, stderr_hash, … }`.
+  horizon-lib's `ClusterProposal` with rkyv derives.
+- **`ClusterNode`** — per-node proposal entry.
+- **`Horizon`** — projected `(cluster, node)` view; carries
+  `NarHashSri`.
+- **`DeployRequest`** — wire type on `deploy-msg`.
+- **`DeployOutcome`** — durable record of a deploy (request
+  hash, exit status, horizon nar, toplevel drv, stdout/stderr
+  hashes, wall time).
 
-Concrete shapes go in a later report when the daemon actually
-lands. Today: just the names.
+Concrete shapes land in a later report when the daemon actually
+ships.
 
-## 7 · Repo layout after the rename
+## 6 · Low-touch migration (no naming changes)
 
-Rename changes `/home/li/git/lojix/` → `/home/li/git/horizond/`.
-Update:
+Crate does NOT rename. The only moves are:
 
-- `Cargo.toml` package name + bin name (`lojix` → `horizond`)
-- `README.md`, `AGENTS.md`
-- Cache path `~/.cache/lojix/` → `~/.cache/horizond/`
-- CriomOS's `flake.nix` text references (cosmetic; no build-
-  time coupling)
-- `lojix/src/cluster.rs` path reference in
-  [reports/017 §1](017-architecture-refinements.md) → update
-  when lifting types
-
-No Rust library dependents to worry about; nothing imports the
-lojix crate.
-
-Workspace `linkedRepos` in mentci-next gains `horizond` in
-Layer 5 (clients + tools). Count stays at 18 code repos.
-
-## 8 · Migration steps (no ETAs)
-
-1. Rename the crate: `/home/li/git/lojix/` → `/home/li/git/horizond/`.
-   Update package name, binary name, README.md, AGENTS.md. New
-   cache path. Update one reference in reports/017 §1.
-2. Update `/home/li/git/CriomOS/flake.nix:2, :25, :38` text.
-3. Lift `NarHashSri`, `FlakeRef`, `OverrideUri`, `TargetTriple`
-   into `nexus-schema::names`. horizond then depends on
+1. **Lift shared newtypes** — `NarHashSri`, `FlakeRef`,
+   `OverrideUri`, `TargetTriple` — from `lojix/src/cluster.rs`
+   into `nexus-schema::names`. Update lojix to depend on
    nexus-schema.
-4. Add `horizond` to mentci-next's `devshell.nix` linkedRepos.
-5. Update `docs/architecture.md` to mention horizond in Layer 5.
-6. Keep horizond's CLI surface identical (`deploy | build | eval`
-   + `--action`). No daemon work now.
+2. **Add lojix to mentci-next's linkedRepos** so mentci-next's
+   workspace can see it.
+3. **Document the namespace** — architecture.md (done) notes
+   that `lojix-*` is Li's expanded-nix family.
+4. **No CriomOS flake.nix changes needed** — naming stays.
+5. **13 open beads** in lojix's bd can be worked independently
+   of the sema engine; none are blockers for the engine's MVP.
 
-**Post-MVP, optional**:
-- Extract `horizond-core` (actor pipeline library).
-- Write a `deployd` binary.
-- Add `deploy-msg` contract crate.
-- Add `Deploy` dispatch branch in criomed.
-- Land `ClusterProposal` / `Horizon` / `DeployOutcome` records in
-  nexus-schema.
+## 7 · Open questions for Li
 
-## 9 · Open questions for Li
+**Q1 — Confirm scoping = (C)** (hybrid; CLI for MVP, path to
+daemon post-MVP)? Or (B) pure-CLI indefinitely?
 
-**Q1 — Rename to `horizond`?** Or prefer another name (`zoned`,
-`criodeploy`, something else)? `horizond` is my recommendation
-because the artifact is the horizon.
+**Q2 — Type lift timing**: lift `NarHashSri` et al. into
+nexus-schema **now** (touches lojix's Cargo.toml) or **later**
+when `Derivation` actually lands?
 
-**Q2 — Confirm scoping = (C)** — keep as CLI for MVP, paving
-toward daemon post-MVP? Or prefer (B) — CLI indefinitely, never
-subsume into the engine?
+**Q3 — Is `lojix` in the 18-repo count?** Today mentci-next
+describes an 18-repo engine. lojix is engine-family by name
+(lojix-store, lojix-stored) but deploy is adjacent to
+sema-engine compile. Include in the count (→ 19) or keep
+adjacent / CriomOS-specific?
 
-**Q3 — Lift shared newtypes now, or when nexus-schema gains
-`Derivation`?** Coupling horizond to nexus-schema could happen
-in the same pass that lifts `NarHashSri` et al; or defer until
-the `Derivation` record lands.
+**Q4 — Any of lojix's 13 open beads priority-block engine
+work?** P0 atomic-materialization + streaming-stdout are
+correctness improvements for lojix itself; they don't block
+the engine. Confirm.
 
-**Q4 — Does horizond belong in the 18-repo count or outside?**
-Today the count is "18 code repos for the engine." If horizond
-is a sema-ecosystem citizen (reads proposals from sema
-eventually), include it. If it stays CriomOS-specific ops, keep
-it adjacent.
-
-**Q5 — 13 open beads on horizond** — are any of these priority
-blockers for the rename, or can they land independently?
+**Q5 — Are there other `lojix-*` crates Li has in mind?**
+e.g., a `lojix-build` that does something nix-build-y? A
+`lojix-hash` for content addressing primitives? Knowing the
+namespace's intended shape helps future-proof.
 
 ---
 
-*End report 018.*
+## Superseded framings from v1
+
+For the record — v1 of this report recommended renaming the
+`lojix` crate to `horizond`. That recommendation is withdrawn.
+"lojix" is not a misnomer; it is Li's expanded-nix namespace.
+The `lojix` crate belongs in the family by its very name.
+
+---
+
+*End report 018 v2.*

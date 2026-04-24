@@ -150,11 +150,24 @@ themselves.
 - **Layer 4 — daemons** — criomed, forged, lojix-stored,
   nexusd.
 - **Layer 5 — clients + build helpers** — nexus-cli
-  (flag-less CLI), rsc (pure records-to-source library),
-  horizond (CriomOS deploy CLI — currently named `lojix`, rename
-  pending per [reports/018](../reports/018-lojix-positioning.md);
-  reads cluster proposals, projects horizons via horizon-lib,
-  invokes `nixos-rebuild`).
+  (flag-less CLI), rsc (pure records-to-source library), lojix
+  (CriomOS deploy CLI; reads cluster proposals, projects
+  horizons via horizon-lib, invokes `nixos-rebuild`). See
+  [reports/018](../reports/018-lojix-positioning.md) for
+  lojix's role and relationship to the engine.
+
+### A note on the `lojix-*` namespace
+
+"lojix" is Li's play on nix — their take on an expanded and
+more correct nix. The prefix is an umbrella, not a collision:
+
+- `lojix` — deploy orchestrator (current CLI)
+- `lojix-store` — content-addressed blob store
+- `lojix-stored` — blob-store daemon
+- `lojix-store-msg` — wire contract for blob-store traffic
+
+Future `lojix-*` crates join the family as the expanded-nix
+vision grows. The namespace is intentional; treat it as such.
 
 **Shelved**: `arbor` (prolly-tree versioning) — post-MVP.
 
