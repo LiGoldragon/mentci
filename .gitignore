@@ -11,5 +11,3 @@ result-*
 .beads-credential-key
 .beads/issues.jsonl
 
-# Sibling-repo symlinks created by devshell entry (devshell.nix)
-/repos/

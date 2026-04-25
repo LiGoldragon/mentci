@@ -1,0 +1,60 @@
+[submodule "repos/criome"]
+	path = repos/criome
+	url = git@github.com:LiGoldragon/criome.git
+[submodule "repos/CriomOS"]
+	path = repos/CriomOS
+	url = git@github.com:LiGoldragon/CriomOS.git
+[submodule "repos/CriomOS-emacs"]
+	path = repos/CriomOS-emacs
+	url = git@github.com:LiGoldragon/CriomOS-emacs.git
+[submodule "repos/CriomOS-home"]
+	path = repos/CriomOS-home
+	url = git@github.com:LiGoldragon/CriomOS-home.git
+[submodule "repos/horizon-rs"]
+	path = repos/horizon-rs
+	url = git@github.com:LiGoldragon/horizon-rs.git
+[submodule "repos/lojix"]
+	path = repos/lojix
+	url = git@github.com:LiGoldragon/lojix.git
+[submodule "repos/lojix-cli"]
+	path = repos/lojix-cli
+	url = git@github.com:LiGoldragon/lojix-cli.git
+[submodule "repos/lojix-schema"]
+	path = repos/lojix-schema
+	url = git@github.com:LiGoldragon/lojix-schema.git
+[submodule "repos/lojix-store"]
+	path = repos/lojix-store
+	url = git@github.com:LiGoldragon/lojix-store.git
+[submodule "repos/nexus"]
+	path = repos/nexus
+	url = git@github.com:LiGoldragon/nexus.git
+[submodule "repos/nexus-cli"]
+	path = repos/nexus-cli
+	url = git@github.com:LiGoldragon/nexus-cli.git
+[submodule "repos/nexus-schema"]
+	path = repos/nexus-schema
+	url = git@github.com:LiGoldragon/nexus-schema.git
+[submodule "repos/nexus-serde"]
+	path = repos/nexus-serde
+	url = git@github.com:LiGoldragon/nexus-serde.git
+[submodule "repos/nota"]
+	path = repos/nota
+	url = git@github.com:LiGoldragon/nota.git
+[submodule "repos/nota-serde"]
+	path = repos/nota-serde
+	url = git@github.com:LiGoldragon/nota-serde.git
+[submodule "repos/nota-serde-core"]
+	path = repos/nota-serde-core
+	url = git@github.com:LiGoldragon/nota-serde-core.git
+[submodule "repos/rsc"]
+	path = repos/rsc
+	url = git@github.com:LiGoldragon/rsc.git
+[submodule "repos/sema"]
+	path = repos/sema
+	url = git@github.com:LiGoldragon/sema.git
+[submodule "repos/signal"]
+	path = repos/signal
+	url = git@github.com:LiGoldragon/signal.git
+[submodule "repos/tools-documentation"]
+	path = repos/tools-documentation
+	url = git@github.com:LiGoldragon/tools-documentation.git
