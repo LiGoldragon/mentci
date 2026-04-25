@@ -1,6 +1,6 @@
 # Sema-ecosystem architecture
 
-*Living document · last revision 2026-04-24 · canonical reference for the engine's shape*
+*Canonical reference for the engine's shape. Edited with extreme care.*
 
 ---
 
@@ -57,9 +57,8 @@ sema:
   for nix to consume. One-way emission.
 - **lojix-store** is a content-addressed filesystem (nix-store
   analogue) holding real unix files, referenced from sema by
-  hash. **During the bootstrap era, `/nix/store` is the
-  de-facto store**; lojix-store's real implementation is
-  deferred until we're actively replacing nix.
+  hash. Canonical from day one — see §5 for how it relates to
+  `/nix/store` during the bootstrap era.
 
 **Build backend for this era**: **nix via crane + fenix**.
 fenix pins the Rust toolchain; crane builds packages. rsc
@@ -72,6 +71,19 @@ patterns live as sema rules that run before rsc emission. We
 **freely call** third-party macros — `#[derive(Serialize)]`,
 `#[tokio::main]`, `format!`, `println!`, etc. — and rsc emits
 those invocations verbatim for rustc to expand.
+
+**The code category in sema is named *machina*** — the subset
+of records that compiles to Rust in v1. The native checker
+over machina records is *machina-chk*. World-fact records,
+operational-state records, and authz records are separate
+categories.
+
+**Bootstrap is rung by rung.** The engine bootstraps using
+its own primitives starting from rung 0. There is no "before
+the engine runs" mode; criomed runs from the first instant,
+sema starts empty, nexus messages populate it. Each rung's
+capability comes from the data already loaded; that
+capability is what populates the next rung. See §10.
 
 ---
 
@@ -121,9 +133,8 @@ can't perform directly — outcomes return as sema. rsc = sema →
   criomed ─────── validates:
       │            • schema conformance
       │            • reference resolution (slot-refs exist)
+      │            • invariant preservation (Rule records with `is_must_hold`)
       │            • authorization (capability tokens; BLS quorum post-MVP)
-      │            • rule-engine feasibility
-      │            • invariant preservation
       │
       │          if valid → apply to sema; otherwise → reject
       │
@@ -141,6 +152,16 @@ can't perform directly — outcomes return as sema. rsc = sema →
 mutations, retractions can all be rejected. This is the
 hallucination wall: unknown names, broken references,
 schema-invalid shapes, unauthorised actions all fail here.
+
+**Genesis runs the same flow.** At first boot, criomed
+dispatches a `genesis.nexus` text file (shipping with the
+criomed binary) through the same path: nexusd parses it,
+criome-msg envelopes flow to criomed, the validator runs,
+records land in sema. The first messages validate against
+the built-in Rust types in `criome-schema` (no in-sema
+KindDecls yet); subsequent ones validate against records
+the genesis stream has already asserted. Once the
+`SemaGenesis` marker lands, normal mode begins.
 
 ---
 
@@ -177,8 +198,8 @@ schema-invalid shapes, unauthorised actions all fail here.
      ┌──────────┐   owns lojix-store directory
      │  lojixd  │   (lojix family; thin executor; no evaluation)
      │          │ internal actors:
-     │          │   • CargoRunner (spawns cargo per RunCargo plan)
-     │          │   • NixRunner (spawns nix/nixos-rebuild)
+     │          │   • NixRunner (spawns nix/nixos-rebuild;
+     │          │     cargo runs inside via crane, not directly)
      │          │   • StoreWriter + StoreReaderPool (store-entry
      │          │     placement + path lookup + index updates)
      │          │   • FileMaterialiser (store entries → workdir)
@@ -216,18 +237,19 @@ schema-invalid shapes, unauthorised actions all fail here.
 - **Backend**: redb-backed, content-addressed records keyed
   by blake3 of their canonical rkyv encoding.
 - **Reference model**: records store **slot-refs** (`Slot(u64)`),
-  not content hashes. Sema's index maps `slot → {
-  current_content_hash, display_name, valid_from, valid_to }`
-  as `SlotBinding` records. Content edits update the slot's
+  not content hashes. Sema's index maps each slot to its
+  current content hash plus a bitemporal display-name binding
+  (`SlotBinding` records). Content edits update the slot's
   current-hash (no ripple-rehash of dependents). Renames
   update the slot's display-name (no record rewrites
   anywhere). Display-name is global — one name per slot; rsc
   projections pick it up everywhere.
 - **Change log**: per-kind. Each record-kind has its own redb
-  table keyed `(Slot, seq)` carrying `ChangeLogEntry { rev,
-  op, new/old hash, principal, sig_proof }`. Per-kind is
-  ground truth; `index::K` + global `rev_index` are derivable
-  views. Concrete schema in [reports/048](../reports/048-change-log-design-research.md).
+  table keyed by `(Slot, seq)` carrying `ChangeLogEntry`
+  records (rev, op, content hashes, principal, sig-proof for
+  quorum-authored changes). Per-kind logs are ground truth;
+  per-kind index tables and a global revision index are
+  derivable views.
 - **Scope**: slots are **global** (not opus-scoped); one name
   per slot, globally consistent.
 
@@ -289,12 +311,11 @@ Concrete field lists live in reports; this file only names.
 - **Slot** — `u64` content-agnostic identity. Counter-minted
   by criomed with freelist-reuse. Seed range `[0, 1024)`
   reserved.
-- **SlotBinding** — `{ slot, content_hash, display_name,
-  valid_from, valid_to }`. Bitemporal; slot-reuse is safe for
-  historical queries.
-- **MemberEntry** — `{ slot, visibility, kind }` attached to
-  an opus, declaring which slots it contributes at what
-  visibility.
+- **SlotBinding** — slot-keyed binding to current content
+  hash and global display name. Bitemporal; slot-reuse is
+  safe for historical queries.
+- **MemberEntry** — opus-membership record declaring which
+  slots an opus contributes and at what visibility.
 - **RawPattern** — wire form of a nexus pattern, carrying
   user-facing names. Transient on criome-msg.
 - **PatternExpr** — resolved form, carrying slot-refs. Pinned
@@ -414,13 +435,11 @@ Currently `criome-msg`, `lojix-msg`, `criomed`, `lojixd` are
 CANON-MISSING — not yet scaffolded. See
 `docs/workspace-manifest.md` for status.
 
-> **Transitional-state note**: `/home/li/git/lojix/` is
-> currently Li's working CriomOS deploy orchestrator
-> (CLI + ractor actor pipeline). The "spec-only" terminal
-> shape is reached after the migration in
-> [reports/030](../reports/030-lojix-transition-plan.md).
-> Agents must not treat the layout above as an instruction
-> to delete the existing crate.
+> Some repos in this layout are not yet at terminal shape;
+> see `docs/workspace-manifest.md` for current vs. terminal
+> status (e.g., `lojix` is currently a working monolith and
+> must not be rewritten — its own AGENTS.md carries the
+> binding warning).
 
 ### Three-pillar framing
 
@@ -464,10 +483,6 @@ to. Parsing rejects top-level expressions that aren't requests.
 (byte-literal prefix), `~` (mutate), `@` (bind), `!` (negate),
 `=` (bind-alias, narrow use). New features land as delimiter-
 matrix slots or Pascal-named records — **never new sigils**.
-
-See [reports/013](../reports/013-nexus-syntax-proposal.md) for
-the matrix derivation and [reports/056](../reports/056-nexus-grammar-under-request-lens.md)
-for the request-only lens refinements.
 
 ---
 
@@ -590,69 +605,29 @@ blob-DB, banner-wrong-reports.
 
 ---
 
-## 11 · Reading order for a new session
+## 11 · Update policy
 
-This file first. Then the minimal canonical report set (12):
+This file is the golden document. Edits are deliberate and
+surgical.
 
-1. **This file** — canonical shape.
-2. [reports/030](../reports/030-lojix-transition-plan.md) —
-   **read early**: the `lojix/` repo is a working CriomOS
-   deploy orchestrator today, not a spec-only README. Agents
-   must not rewrite it.
-3. [reports/004](../reports/004-sema-types-for-rust.md) —
-   Rust-code record kinds (Fn, Struct, Expr, Type).
-4. [reports/013](../reports/013-nexus-syntax-proposal.md) —
-   delimiter-family grammar matrix.
-5. [reports/017](../reports/017-architecture-refinements.md) —
-   Opus/Derivation shapes; capability tokens.
-6. [reports/019](../reports/019-lojix-as-pillar.md) — three-
-   pillar framing; 11 nix problems lojix fixes; wrap→replace
-   migration phases.
-7. [reports/033](../reports/033-record-catalogue-and-cascade-consolidated.md)
-   — MVP record-kind catalogue + cascade walkthrough.
-8. [reports/048](../reports/048-change-log-design-research.md)
-   — per-kind change log schema + stress-tests.
-9. [reports/051](../reports/051-self-hosting-under-nexus-only.md)
-   — self-hosting as a crate-by-crate gradient; bootstrap order.
-10. [reports/057](../reports/057-edit-ux-freshly-reconsidered.md)
-    — edit UX under request-only invariants.
-11. [reports/059](../reports/059-nix-as-build-backend-and-macro-philosophy.md)
-    — nix (crane + fenix) is the build backend; we author no
-    macros but freely call third-party ones.
-12. [reports/060](../reports/060-post-mvp-directions.md) —
-    post-MVP directions (multi-category sema, BLS quorum authz,
-    world-model data, semachk, migration, change-log mechanics).
-13. [reports/009](../reports/009-binds-and-patterns.md) —
-    narrow CS reference on binds + unification.
-
-**Skeleton code** (design-as-types, co-resident with the reports):
-- [`lojix-store/src/`](../../lojix-store/src/) — content-
-  addressed filesystem: `StoreEntryHash`, `StoreReader`,
-  `StoreWriter`, `BundleFromNix`, `IndexReader/Writer`,
-  `BundlePolicy`.
-
-Reports before this list have been deleted over successive
-consolidation sweeps (2026-04-24, 2026-04-25) — their content
-lives here, in surviving reports, or in skeleton code.
-
----
-
-## 12 · Update policy
-
-When architecture changes:
-
-1. Update this file first. Keep it prose + diagrams only.
-2. Prefer **skeleton code** (types, trait signatures, enums)
-   in the relevant repo over prose. Skeleton code is compiler-
-   checked; prose drifts.
-3. Write a report only when the decision carries a journey
-   worth recording, or cross-cutting philosophy that doesn't
-   fit in one repo. Reports are for WHY; skeleton code is for
-   WHAT.
-4. Update implementation in the affected repos.
-5. If a report is superseded, **delete it**. Don't banner.
-   The report tree stays small so future sessions can read it
-   in one pass.
+1. **No report links here.** Cross-references go *into* this
+   file from reports, not *out of* this file to reports.
+   Reading lists, decision histories, type-spec details all
+   live in reports or in `docs/workspace-manifest.md` —
+   never inline here.
+2. **Prose + diagrams only.** Type sketches, field lists,
+   enum variants belong in skeleton code (compiler-checked)
+   or in reports.
+3. **Update this file first**, then update implementation
+   in the affected repos, then write a report only if the
+   decision carries a journey worth recording.
+4. **If a framing is rejected, name the rejection in §10
+   "Rejected framings."** Stating only the acceptance lets
+   agents rediscover the wrong frame.
+5. **If a report is superseded, delete it.** Don't banner.
+6. **Skeleton-as-design over prose-as-design.** Prefer
+   compiler-checked types in the relevant repo over prose
+   here.
 
 ---
 
