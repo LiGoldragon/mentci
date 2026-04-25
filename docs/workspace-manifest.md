@@ -9,7 +9,7 @@ file to decide what to touch.*
 instruction. `devshell.nix`'s `linkedRepos` list mirrors this
 manifest's CANON + TRANSITIONAL entries.
 
-Last reviewed: 2026-04-24.
+Last reviewed: 2026-04-25.
 
 ---
 

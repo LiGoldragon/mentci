@@ -34,7 +34,7 @@ likely redb) maps `blake3 → path + metadata + reachability`; the
 index is bookkeeping, it does not contain the bytes. See
 `docs/architecture.md` §3 for the full spec.
 
-**Three daemons.** criomed owns sema + semachk + subscription
+**Three daemons.** criomed owns sema + machina-chk + subscription
 delivery + capability enforcement; lojixd owns lojix-store + every
 filesystem-touching / process-spawning verb (cargo, rustc,
 nix-build, nixos-rebuild, proc-macro sandbox); nexusd is the
@@ -50,7 +50,7 @@ tree is placed into lojix-store under its blake3 hash, and
 diagnostics are parsed back into `CompileDiagnostic` records
 whose `site: RecordId` fields point at the producing sema
 records. This lets us ship with a real borrow-checked Rust
-compiler on day one. Post-MVP, semachk subsumes cheap phases
+compiler on day one. Post-MVP, machina-chk subsumes cheap phases
 (parse, module graph, name resolution) — they are mostly *free*
 under code-as-logic because sema already is the resolved
 structure — then trait solving (chalk-like), then body-level
@@ -193,16 +193,16 @@ contract lives in the `lojix-store-msg` crate per report
 
 Crate: `nexus-schema`.
 
-### Analyses — semachk's record-level output
+### Analyses — machina-chk's record-level output
 
 - **Obligation** — "this program requires X": a trait bound, a
   type equation, a borrow fact. Emitted by rules (post-MVP) or
-  by semachk (as semachk phases arrive).
+  by machina-chk (as machina-chk phases arrive).
 - **CoherenceCheck** — trait-impl coherence verdicts.
 - **TypeAssignment** *(optional MVP)* — `(exprId → typeId)` when
-  semachk runs body-level typeck; otherwise typeck results are
+  machina-chk runs body-level typeck; otherwise typeck results are
   implied by the absence of `CompileDiagnostic`.
-- **Diagnostic** — unified severity-bearing record (semachk-side
+- **Diagnostic** — unified severity-bearing record (machina-chk-side
   counterpart to `CompileDiagnostic`).
 - **BorrowFacts / BorrowResult** *(deferred)* — polonius-style;
   not MVP.
@@ -252,7 +252,7 @@ Crate: `nexus-schema`.
 expansion, AST lowering, name resolution, HIR, trait solving,
 type check, borrow check, MIR, optimisation, codegen), phases
 1–10 answer "is this program valid?" and phase 11 (codegen)
-produces the artifact. The semachk subsystem eventually wants to
+produces the artifact. The machina-chk subsystem eventually wants to
 subsume some of 1–10 at the record level; codegen is staying in
 rustc for the foreseeable future.
 
@@ -281,12 +281,12 @@ rustc for the foreseeable future.
    each span.
 
 **Record-level invariant.** Every analysis verdict — MVP's
-rustc-mediated ones, and post-MVP's semachk-native ones — is a
+rustc-mediated ones, and post-MVP's machina-chk-native ones — is a
 record whose `site` fields are `RecordId`s, not `(path, line,
 col)`. Text coordinates exist only in the scratch workdir,
 which is ephemeral.
 
-**Post-MVP semachk migration.** The cheap phases are mostly free
+**Post-MVP machina-chk migration.** The cheap phases are mostly free
 under code-as-logic:
 
 - **Parse / AST lowering** — not needed; sema already holds
@@ -294,7 +294,7 @@ under code-as-logic:
 - **Name resolution / module graph** — near-free; references are
   already `RecordId`s. Semachk just has to validate that
   `Visibility` rules aren't violated.
-- **Macro expansion** — for `derive(…)` proc macros, semachk can
+- **Macro expansion** — for `derive(…)` proc macros, machina-chk can
   stay in record-land by running the macro inside a lojixd
   sandbox verb and asserting the result back as records. For
   function-like macros, some text detour likely remains.
@@ -303,7 +303,7 @@ under code-as-logic:
 - **Body-level typeck** — r-a-like; also meaningful cost.
 - **Borrow check** — stays in rustc indefinitely.
 
-The migration is incremental: as each semachk phase becomes
+The migration is incremental: as each machina-chk phase becomes
 stable, it takes over from the rustc round-trip for that class
 of question. Until the final phase graduates, `RunCargoPlan`
 remains the backstop that guarantees real-Rust semantics.
@@ -330,9 +330,9 @@ agents) writes nexus requests to assert the records that
 describe the engine itself. The current hand-written `.rs`
 in canonical repos is scaffolding that produces the MVP
 binary via cargo; over time each crate is rewritten into sema
-and rsc's projection supersedes the hand-written text. See
-reports/051 for the self-hosting gradient and reports/054 for
-the no-ingester invariant.
+and rsc's projection supersedes the hand-written text.
+(Self-hosting gradient + no-ingester invariant are in
+architecture.md §10.)
 
 **Warm edit.** The user (or an agent) sends, over nexusd →
 criomed, something like:
@@ -429,7 +429,7 @@ by this report:
   holds `slot → { current_content_hash, display_name }`. See
   architecture.md §5.
 - **Edit UX** — resolved: nexus requests only (Assert, Mutate,
-  Patch, Retract). No text round-trip. See reports/054, 057.
+  Patch, Retract). No text round-trip. See reports/057.
 - (remaining open questions — if any — listed below)
   pick one, and has not.
 - **Diagnostic translation granularity.** Rustc gives us

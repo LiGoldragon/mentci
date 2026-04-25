@@ -15,15 +15,6 @@ property that reviewers of report 012 called out as nexus's
 strongest single trait: **first-token decidability with a
 pronouncable grammar of <10 atoms.**
 
-Reference material:
-- [repos/aski/spec/v020/](../repos/aski/spec/v020/) — aski
-  pre-multi-surface spec, restored to the aski repo from
-  `aski@6004ca4`. Not to be confused with current aski
-  (v0.21, post-II-L switch); v0.20 is what the user pointed
-  at as the relevant design record. Promoted there rather
-  than kept in this tree so the research stays alongside its
-  home repo.
-
 ---
 
 ## 1 · Answering the eight open questions
@@ -735,9 +726,6 @@ If this proposal is accepted, concrete next steps:
 
 **mentci-next:**
 - This doc lives at [reports/013](013-nexus-syntax-proposal.md).
-- The aski-v020 reference is restored to
-  [repos/aski/spec/v020/](../repos/aski/spec/v020/) — not
-  kept in this tree.
 
 **Implementation (Phase 1):**
 - nexus-serde lexer: four new token pairs (~80 LoC of lexer
