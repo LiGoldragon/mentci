@@ -8,7 +8,7 @@ status: actionable plan; supersedes 076 §4 Tier-1/Tier-2 once landed
 
 # 078 — implementation roadmap (multi-angle research)
 
-Four parallel research agents studied existing systems with similar function and recommended how to implement criome's design within its stricter constraints. This report synthesises the findings into an ordered roadmap from where we are today (skeleton-as-design across all canonical repos) to **Stage A** — `nexus-cli '(Query (KindDecl :name "KindDecl"))'` returning the bound seed record.
+Four parallel research agents studied existing systems with similar function and recommended how to implement criome's design within its stricter constraints. This report synthesises the findings into an ordered roadmap from where we are today (skeleton-as-design across all canonical repos) to **Stage A** — `nexus-cli '(| KindDecl :name "KindDecl" |)'` returning the bound seed record.
 
 ## 1. Research findings (one paragraph each)
 
@@ -26,25 +26,40 @@ The framing question (where one frame ends on the byte stream when "the schema i
 
 ### 1.4 End-to-end sequencing
 
-A `(Query (KindDecl :name "KindDecl"))` round-trip touches every layer: nexus-cli → client-msg → nexus daemon → signal → criome → sema → reply path back. **The bootstrap blocker**: querying for `KindDecl` requires `KindDecl` to exist as a record in sema, but sema starts empty. Resolution: genesis-via-nexus per architecture.md §10. **Pre-Stage-A milestones M0-M5 are sequenced below.** Total estimate ~9-10 days of focused body-fill work given current skeleton.
+A `(| KindDecl :name "KindDecl" |)` round-trip touches every layer: nexus-cli → client-msg → nexus daemon → signal → criome → sema → reply path back. **The bootstrap blocker**: querying for `KindDecl` requires `KindDecl` to exist as a record in sema, but sema starts empty. Resolution: genesis-via-nexus per architecture.md §10. **Pre-Stage-A milestones M0-M5 are sequenced below.** Total estimate ~9-10 days of focused body-fill work given current skeleton.
 
 ## 2. The schema-of-schema question
 
-Four research agents implicitly assumed `criome-schema` exists as a separate crate (per the original [reports/065](065-criome-schema-design.md) design). It does not currently exist — and shouldn't, in MVP. **Recommendation: add the schema-of-schema types to `nexus-schema` as a new module.**
+Four research agents implicitly assumed `criome-schema` exists as a separate crate (per the original [reports/065](065-criome-schema-design.md) design). It does not currently exist — and shouldn't, in MVP. **Recommendation: add the schema-of-schema types to `signal`.**
+
+Per Li 2026-04-25: *"signal is where this goes. nexus depends on signal. anything criome is signal. nexus is just a frontend to it."*
 
 ```
-nexus-schema/src/
-├── ... (existing Rust source records + nexus language IR)
+signal/src/
+├── ... (existing envelope: Frame, Body, Request, Reply, handshake, auth)
 └── kind.rs    ← NEW: KindDecl, FieldSpec, TypeRef, VariantDecl, CategoryDecl
 ```
 
-Why this and not a separate crate:
-- nexus-schema already houses "Rust types that shape sema records." Schema-of-schema records ARE sema records.
-- Avoids a fifth repo for a single module's worth of types (matklad rule: don't proliferate crates).
-- criome's daemon imports nexus-schema for everything anyway.
-- Future split is cheap if the kind module grows.
+Why signal, not nexus-schema:
 
-If `criome-schema` is preferred as a separate crate later, the migration is mechanical (move the module, add a Cargo dep).
+- **Anything criome is signal.** Schema-of-schema records describe records; they are criome data; therefore signal.
+- **nexus depends on signal.** Putting kind types in nexus-schema would invert the dependency direction. nexus-schema (and its IR types: `RawPattern`, `RawOp`, etc.) currently live alongside Rust-source records — but per the signal-as-everything-criome rule, those IR types likely also belong in signal. See open question Q-N1 below.
+- **No new crate.** signal already exists, just absorbs the new module.
+
+### Q-N1 — RESOLVED 2026-04-25
+
+Li: *"it's true that nexus-schema might now be redundant. we should probably shelf it."*
+
+Action taken: All of `nexus-schema/src/*` moved into `signal/src/*` as additional modules. `nexus-schema` is now SHELVED (per `mentci/docs/workspace-manifest.md`); a deprecation README points migration users at signal. signal cargo check + criome cargo check + lojix-schema cargo check all green after the move.
+
+Migration completed:
+
+| Was | Now |
+|---|---|
+| `nexus_schema::{domain,module,names,origin,primitive,program,ty}` | `signal::{domain,module,names,origin,primitive,program,ty}` |
+| `nexus_schema::{slot,value,pattern,query,edit,diagnostic}` | `signal::{slot,value,pattern,query,edit,diagnostic}` |
+
+signal now holds three concentric layers: wire envelope (Frame, handshake, request/reply), language IR (RawPattern, RawOp, AssertOp, RawRecord, …), and sema record kinds (KindDecl pending M0; Rust-source records absorbed). Anything criome is signal.
 
 ## 3. Milestones M0 → M5
 
@@ -53,11 +68,11 @@ Each milestone is independently shippable and testable. Parallel opportunities m
 ### M0 — Schema-of-schema + genesis text (~1-2 days)
 
 **Files**:
-- `nexus-schema/src/kind.rs` (~80 LoC): `KindDecl`, `FieldSpec`, `TypeRef`, `VariantDecl`, `CategoryDecl` with rkyv canonical derives.
-- `criome/genesis.nexus` (~30 lines of `(Assert (KindDecl ...))` etc.): the seed records.
+- `signal/src/kind.rs` (~80 LoC): `KindDecl`, `FieldSpec`, `TypeRef`, `VariantDecl`, `CategoryDecl` with rkyv canonical derives. Per Li's signal-as-everything-criome rule.
+- `criome/genesis.nexus` (~30 lines of `(Assert (KindDecl ...))` etc.): the seed records, in actual nexus syntax (positional record form per `nexus/spec/grammar.md`).
 - `criome/src/lib.rs`: `include_str!("../genesis.nexus")` to embed at compile-time.
 
-**Output**: nexus-schema cargo check green; criome compiles with embedded genesis text (not yet dispatched).
+**Output**: signal cargo check green; criome compiles with embedded genesis text (not yet dispatched).
 
 ### M1 — UDS listener + framing (~2 days)
 
@@ -111,7 +126,7 @@ Each milestone is independently shippable and testable. Parallel opportunities m
 **Files**:
 - `nexus-cli/src/main.rs` (~50 LoC): clap argv parse; build `client_msg::Request::Send { nexus_text }`; encode rkyv frame; connect to nexus daemon UDS; write frame; read reply frame; print reply text.
 
-**Output**: `nexus-cli '(Query (KindDecl :name "KindDecl"))'` returns the bound seed `KindDecl` record. **Stage A complete.**
+**Output**: `nexus-cli '(| KindDecl :name "KindDecl" |)'` (or whatever exact pattern syntax the nexus grammar settles on — see `nexus/spec/`) returns the bound seed `KindDecl` record. **Stage A complete.**
 
 ## 4. Dependency graph
 
@@ -147,7 +162,8 @@ M0 is the only true blocker. M1 + M2 land in parallel. M3 gates M4 and M5.
 
 | Crate | New deps |
 |---|---|
-| `nexus-schema` | none (stays minimal) |
+| `signal` | none (`kind.rs` module added; canonical rkyv features already present) |
+| `nexus-schema` | none for M0; pending Q-N1 (possibly move IR types to signal) |
 | `sema` | `redb = "4"`, `nexus-schema` (path) |
 | `criome` | `tokio = "1.35"`, `tokio-util = "0.7"`, `bytes = "1.5"`, `futures = "0.3"`, `nix = "0.27"`, `sema` (path), `tracing = "0.1"` |
 | `nexus` | `tokio-util = "0.7"`, `bytes = "1.5"`, `futures = "0.3"`, `nix = "0.27"`, `signal` (path), `nota-serde-core` (path) |
@@ -181,7 +197,7 @@ Even before all of M1, the absolute smallest committable progress: **criome and 
 
 ## 9. What this report does *not* recommend
 
-- **Don't scaffold criome-schema as a separate crate yet.** Add `kind.rs` to nexus-schema. Migrate later if it grows.
+- **Don't scaffold criome-schema as a separate crate yet.** Add `kind.rs` to signal. (Schema-of-schema is criome data; signal is the home for criome data per the signal-as-everything-criome rule.)
 - **Don't implement cascade in M3.** Stage A has no rules. Cascade body-fill is post-Stage-A (bootstrap stage D per arch.md §10).
 - **Don't optimize rkyv read paths.** 5-15% CPU is below the I/O floor. Profile after Stage A.
 - **Don't write integration tests against a live UDS yet.** Use in-process `Frame::encode` ↔ `Frame::decode` round-trips for M0-M3. UDS integration test lands at M5.

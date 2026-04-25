@@ -13,7 +13,7 @@ let
     "nota-serde"      # nota's public API
     "nexus"           # the nexus language — spec + translator daemon (renamed from nexusd 2026-04-25; absorbed former nexus spec repo into spec/)
     "nexus-serde"     # nexus's public API
-    "nexus-schema"    # record-kind vocabulary + nexus language IR
+    # nexus-schema SHELVED 2026-04-25 — types absorbed into signal
     "signal"          # nexus↔criome messaging schema (rkyv)
     "sema"            # records DB (redb-backed)
     "nexus-cli"       # text client

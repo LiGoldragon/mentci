@@ -44,7 +44,6 @@ change).
 | `nota-serde` | nota's public façade. | `reports/014` |
 | `nexus` | The nexus language — grammar spec under `spec/` + translator daemon (text ↔ signal rkyv). Renamed from `nexusd` 2026-04-25; absorbed the former `nexus` spec repo (now archived as `nexus-spec-archive`). Local dir is still `~/git/nexusd/`. | [`nexus/ARCHITECTURE.md`](https://github.com/LiGoldragon/nexus/blob/main/ARCHITECTURE.md), `criome/ARCHITECTURE.md §3+§4` |
 | `nexus-serde` | nexus's public façade. | `reports/014` |
-| `nexus-schema` | Record-kind vocabulary (Fn, Struct, Opus, Derivation, …) + nexus language IR (RawPattern, RawOp, RawRecord, edit verbs, diagnostics). | `reports/070 §6.6`, `reports/077`, `criome/ARCHITECTURE.md §6` |
 | `signal` | nexus↔criome messaging schema — rkyv envelope (Frame), handshake protocol (ProtocolVersion 0.1.0), edit/query/validate verbs, subscription stream. Imports IR payloads from nexus-schema. | `reports/077`, `reports/070 §6` |
 | `sema` | Records DB (redb-backed). | `criome/ARCHITECTURE.md §3` |
 | `lojix-store` | Content-addressed filesystem + index DB (nix-store analogue). **MVP-required alongside lojix**. nix builds into `/nix/store`; lojix's `BundleIntoLojixStore` copies the closure into `~/.lojix/store/<blake3>/` with RPATH rewrite; sema records reference lojix-store hashes as canonical identity. Skeleton types + traits in `lojix-store/src/`. | `criome/ARCHITECTURE.md §5`, `lojix-store/ARCHITECTURE.md`, `lojix-store/AGENTS.md` |
@@ -109,6 +108,7 @@ There are currently no entries in RETIRED or ARCHIVED.
 | Repo | Reason | Revisit |
 |---|---|---|
 | `arbor` | Prolly-tree versioning over records; post-MVP optimisation. | After self-hosting closes. |
+| `nexus-schema` | Types absorbed into `signal` 2026-04-25 (per "anything criome is signal" rule). Repo preserved as historical reference; types live on in `signal/src/{slot,value,pattern,query,edit,diagnostic,domain,module,names,origin,primitive,program,ty}.rs`. | Never (absorbed; not coming back). |
 
 ## OFF-SCOPE
 
