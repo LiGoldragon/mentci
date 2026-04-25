@@ -45,9 +45,9 @@ change).
 | `nexus` | The nexus language — grammar spec under `spec/` + translator daemon (text ↔ signal rkyv). Renamed from `nexusd` 2026-04-25; absorbed the former `nexus` spec repo (now archived as `nexus-spec-archive`). Local dir is still `~/git/nexusd/`. | [`nexus/ARCHITECTURE.md`](https://github.com/LiGoldragon/nexus/blob/main/ARCHITECTURE.md), `criome/ARCHITECTURE.md §3+§4` |
 | `nexus-serde` | nexus's public façade. | `reports/014` |
 | `nexus-schema` | Record-kind vocabulary (Fn, Struct, Opus, Derivation, …) + nexus language IR (RawPattern, RawOp, RawRecord, edit verbs, diagnostics). | `reports/070 §6.6`, `reports/077`, `criome/ARCHITECTURE.md §6` |
-| `signal` | nexus↔criomed messaging schema — rkyv envelope (Frame), handshake protocol (ProtocolVersion 0.1.0), edit/query/validate verbs, subscription stream. Imports IR payloads from nexus-schema. | `reports/077`, `reports/070 §6` |
+| `signal` | nexus↔criome messaging schema — rkyv envelope (Frame), handshake protocol (ProtocolVersion 0.1.0), edit/query/validate verbs, subscription stream. Imports IR payloads from nexus-schema. | `reports/077`, `reports/070 §6` |
 | `sema` | Records DB (redb-backed). | `criome/ARCHITECTURE.md §3` |
-| `lojix-store` | Content-addressed filesystem + index DB (nix-store analogue). **MVP-required alongside lojixd**. nix builds into `/nix/store`; lojixd's `BundleIntoLojixStore` copies the closure into `~/.lojix/store/<blake3>/` with RPATH rewrite; sema records reference lojix-store hashes as canonical identity. Skeleton types + traits in `lojix-store/src/`. | `criome/ARCHITECTURE.md §5`, `lojix-store/ARCHITECTURE.md`, `lojix-store/AGENTS.md` |
+| `lojix-store` | Content-addressed filesystem + index DB (nix-store analogue). **MVP-required alongside lojix**. nix builds into `/nix/store`; lojix's `BundleIntoLojixStore` copies the closure into `~/.lojix/store/<blake3>/` with RPATH rewrite; sema records reference lojix-store hashes as canonical identity. Skeleton types + traits in `lojix-store/src/`. | `criome/ARCHITECTURE.md §5`, `lojix-store/ARCHITECTURE.md`, `lojix-store/AGENTS.md` |
 | `nexus-cli` | Text client. | `criome/ARCHITECTURE.md §4`, `nexus-cli/ARCHITECTURE.md` |
 | `rsc` | Records → Rust source projector. | `architecture.md §1` |
 
@@ -70,7 +70,7 @@ Canonical today, structure changes per a plan.
 
 | Repo | Current role | Target | Pointer |
 |---|---|---|---|
-| `lojix-cli` | Li's working CriomOS deploy orchestrator (CLI + ractor actors + horizon-lib + nixos-rebuild). Renamed from `lojix` 2026-04-25; `lojix` namespace reserved for the family. Local dir is still `~/git/lojix/`. | Thin transport for `lojix-msg` requests once `lojixd` exists. Agents must NOT rewrite this repo. | `lojix-cli/ARCHITECTURE.md` |
+| `lojix-cli` | Li's working CriomOS deploy orchestrator (CLI + ractor actors + horizon-lib + nixos-rebuild). Renamed from `lojix` 2026-04-25; `lojix` namespace reserved for the family. Local dir is still `~/git/lojix/`. | Thin transport for `lojix-schema` requests once `lojix` exists. Agents must NOT rewrite this repo. | `lojix-cli/ARCHITECTURE.md` |
 
 ## CANON-MISSING
 
@@ -79,9 +79,9 @@ exist yet. Create when we reach the corresponding work.
 
 | Repo | Purpose | When |
 |---|---|---|
-| `criomed` | sema's engine daemon. | Needed for anything beyond nexus scaffolding. |
-| `lojix-msg` | criomed↔lojixd contract (rkyv). | `reports/030` Phase B. |
-| `lojixd` | lojix daemon (forge + store + deploy actors inside). | `reports/030` Phase C. |
+| `criome` | sema's engine daemon. | Needed for anything beyond nexus scaffolding. |
+| `lojix-schema` | criome↔lojix contract (rkyv). | `reports/030` Phase B. |
+| `lojix` | lojix daemon (forge + store + deploy actors inside). | `reports/030` Phase C. |
 
 Once each is created, add its entry to CANON and to
 `devshell.nix`'s `linkedRepos` list.
@@ -100,7 +100,7 @@ All session-initial RETIRED/ARCHIVED entries were actioned on
   [criome/ARCHITECTURE.md §1 + §4 + §8](https://github.com/LiGoldragon/criome/blob/main/ARCHITECTURE.md).
 - `lojix` was **renamed to `lojix-cli`** (GitHub rename;
   redirects). Frees the `lojix` name for the family namespace
-  (lojix-store, lojix-cli, lojix-msg, lojixd). Local dir
+  (lojix-store, lojix-cli, lojix-schema, lojix). Local dir
   `~/git/lojix/` unchanged for now (Li to rename later).
 
 There are currently no entries in RETIRED or ARCHIVED.

@@ -21,7 +21,7 @@ quoting Li 2026-04-25:
 > first we need the logic that will make nexus the greatest
 > database edit-and-query language ever made … and we need the
 > contract that will create this logic in rkyv messages
-> into/from nexus (nexus role), to criomed.
+> into/from nexus (nexus role), to criome.
 
 Everything that follows — the signal contract, the validator
 pipeline, the schema-of-schema, the slot/index machinery — exists
@@ -67,23 +67,23 @@ question about a pre-specified kind taxonomy.
   beyond a cycle bound, do we emit `E9999` and keep the
   originating mutation, or reject the whole batch?
 - **L4 — Cross-instance scope.** Does signal cover only
-  local nexus↔criomed, with a separate `criome-net` for
-  peer-to-peer criomed↔criomed? Or one envelope for both?
+  local nexus↔criome, with a separate `criome-net` for
+  peer-to-peer criome↔criome? Or one envelope for both?
 
-### 3.2 Genesis and bootstrap (criomed, blocking Stage A — 067, 064)
+### 3.2 Genesis and bootstrap (criome, blocking Stage A — 067, 064)
 
 - **G1 — Genesis principal mechanism.** Hardcoded
-  `bootstrap_principal_id` baked into the criomed binary, OR
+  `bootstrap_principal_id` baked into the criome binary, OR
   first-message-bypasses-permission-check. Reports/067 leans
   hardcoded.
 
 ### 3.3 Hacky-stack absorption ordering (post-MVP — 061 §3)
 
-- **A1 — Absorption sequence.** lojix-msg crate first, or
+- **A1 — Absorption sequence.** lojix-schema crate first, or
   cluster-config-records first, or parallel?
 - **A2 — CriomOS shape.** Absorbed into NixOS or replaced as
   records-native?
-- **A3 — Cross-criomed primitives.** Which interaction
+- **A3 — Cross-criome primitives.** Which interaction
   primitives are first-class from day one?
 - **A4 — Machina-check priority.** Value order or difficulty
   order across the seven phases?

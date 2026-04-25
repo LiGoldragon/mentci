@@ -19,15 +19,15 @@ Li 2026-04-25:
 > Nexus and Signal:
 >
 > nexus (text) → nexusd (translates to) → signal (rkyv format
-> language to interact with criomed) → criomed
+> language to interact with criome) → criome
 >
-> criomed (response) → signal message → nexusd (translates) →
+> criome (response) → signal message → nexusd (translates) →
 > nexus (text)
 >
 > *(Quote from before the 2026-04-25 nexusd → nexus repo
 > rename. The daemon is now called `nexus`; the local dir is
 > still `~/git/nexusd/`. The architectural meaning is
-> unchanged — text in, signal out, on the criomed-facing leg.)*
+> unchanged — text in, signal out, on the criome-facing leg.)*
 
 The previously-planned name *criome-msg* is replaced by **signal**.
 This is not a cosmetic rename. It sharpens the conceptual model
@@ -45,7 +45,7 @@ receiver doesn't own the wire format.
 
 *signal* says it correctly: nexus emits signals. A signal is the
 rkyv encoding of *what nexus parsed from nexus text*. Signal is
-nexus's structured form, not criome's. criomed is a consumer of
+nexus's structured form, not criome's. criome is a consumer of
 signal, not its author.
 
 ### 2.2 — Two faces of nexus
@@ -101,8 +101,8 @@ could carry a signal frame directly. See **Q-S2** in §6.
 | Layer | From → To | Form | Crate / module |
 |---|---|---|---|
 | **client-msg** | client (nexus-cli, agent, editor) → nexus | rkyv envelope around nexus text + control verbs | [nexus::client_msg](../../nexus/src/client_msg/) (lib half exposed for clients) |
-| **signal** | nexus → criomed (and reply path) | rkyv envelope around language IR | future `signal` crate (was *criome-msg*) |
-| **criome-net** *(post-MVP)* | criomed ↔ criomed (peer-to-peer) | rkyv envelope around shared facts + signed proposals | future, sketched in [reports/070 §2.5 + §6.1](070-nexus-language-and-contract.md) |
+| **signal** | nexus → criome (and reply path) | rkyv envelope around language IR | future `signal` crate (was *criome-msg*) |
+| **criome-net** *(post-MVP)* | criome ↔ criome (peer-to-peer) | rkyv envelope around shared facts + signed proposals | future, sketched in [reports/070 §2.5 + §6.1](070-nexus-language-and-contract.md) |
 
 All three are rkyv with the canonical pinned feature set per
 [architecture.md §10](../docs/architecture.md). The only non-rkyv
@@ -132,7 +132,7 @@ inside a client-msg `Send` payload.
 - **nexus-schema** — module docstrings refer to *"wire"* and
   *"on-wire form"*. Update to *"signal-wire"* / *"signal form"*
   for clarity. Type names retain the *Raw* prefix; that prefix
-  marks "before kind-resolution by criomed" and remains
+  marks "before kind-resolution by criome" and remains
   load-bearing (see Q-S3 in §6).
 - **future `signal` crate** — when criome-msg was planned, this
   is the crate that holds the envelope (Frame, Body, Request,
@@ -142,7 +142,7 @@ inside a client-msg `Send` payload.
   nexus-schema.
 - **nexus::client_msg** — name unchanged. Its job is the
   client↔nexus leg.
-- **criomed** — when scaffolded, takes signal frames over UDS
+- **criome** — when scaffolded, takes signal frames over UDS
   and dispatches them through the validator pipeline.
 
 ### 4.3 — In bd memory
@@ -157,7 +157,7 @@ reading memories will see the convention and apply it.
 
 > The messaging layer is named in two pieces: **nexus** is the
 > text language for humans and agents; **signal** is the rkyv
-> format that nexus emits to criomed and reads on the reply
+> format that nexus emits to criome and reads on the reply
 > path. nexus and signal are two faces of one language — text and
 > rkyv — and the translation between them is mechanical.
 
@@ -167,7 +167,7 @@ The current Invariant B says *"Nexus is a request language; sema
 is rkyv."* Refine to:
 
 > Nexus is the text request language. Signal is the rkyv form of
-> nexus that travels between nexus and criomed. nexus text is
+> nexus that travels between nexus and criome. nexus text is
 > never persisted as records; signal is never rendered to text
 > outside nexus. There are no "nexus records." There is sema
 > (rkyv records described by KindDecl), and there are signal
@@ -214,7 +214,7 @@ Today: `RawRecord`, `RawValue`, `RawLiteral`, `RawSegment`,
 `RawPattern`, `RawConstraint` (renamed locally to
 `FieldConstraint`), `RawListPattern`, `RawOp`, `RawProjection`,
 `RawProjField`. The *Raw* prefix originally marked "before
-kind-resolution at criomed."
+kind-resolution at criome."
 
 Lean: **keep the prefix**. Sema records of "the same shape" exist
 post-resolution (e.g., a stored `Pattern` record uses a
@@ -316,7 +316,7 @@ signal crate name and location are right.
   the framing.
 - Whether nexus-cli will ever speak signal directly (Q-S2).
 - The exact field-resolution rules for *kind_name → KindDeclId*
-  during validation step 1 (a criomed concern).
+  during validation step 1 (a criome concern).
 
 These remain in [reports/076 §3](076-corpus-trim-and-forward-agenda.md)
 or in 070 §8.

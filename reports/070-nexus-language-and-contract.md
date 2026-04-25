@@ -3,12 +3,12 @@
 *Claude Opus 4.7 · 2026-04-25 · synthesis of four parallel
 research agents (edit semantics, query semantics, correctness/
 static-checks, prior-art-and-differentiators) plus the
-signal contract that bridges nexus ↔ criomed and carries
+signal contract that bridges nexus ↔ criome and carries
 the full language. Per Li 2026-04-25: "first we need the logic
 that will make nexus the greatest database edit-and-query
 language ever made … and we need the contract that will create
 this logic in rkyv messages into/from nexus (nexus role), to
-criomed."*
+criome."*
 
 *This is a language-design exercise. The full eventual surface
 is in scope; rung-1 subsetting is a later report's concern.*
@@ -40,7 +40,7 @@ Plus the architecture-level commitments: slot-refs (not
 content-hashes) for cross-record references; sema-is-local
 (no global database; instances negotiate); intrinsic
 categories; per-kind change logs; capability tokens carried
-in messages; criomed as the validation gate (the
+in messages; criome as the validation gate (the
 hallucination wall).
 
 ---
@@ -116,7 +116,7 @@ lands as a Pascal-named record `(MutateMatching pattern
 **Optimistic with explicit CAS.** Default: last-write-wins.
 Adding `:expected-rev N` to a Mutate/Retract/Patch makes the
 op a compare-and-swap — validator rejects if the slot's
-current revision doesn't match. Single-writer at criomed
+current revision doesn't match. Single-writer at criome
 makes this cheap.
 
 ```nexus
@@ -129,8 +129,8 @@ break causality. Temporal queries are read-only.
 
 ### 2.5 · Cross-instance edits — outside nexus
 
-Sema is local. Nexus targets one criomed at a time. Asserting
-to a remote criomed is a transport-layer concern (the client
+Sema is local. Nexus targets one criome at a time. Asserting
+to a remote criome is a transport-layer concern (the client
 dials a different nexus). Cross-instance *coordination*
 (quorum-signed proposals, federated agreement) is part of
 the architecture (Phase 3+), but it's not a nexus syntax
@@ -201,7 +201,7 @@ operator-record.
 Two paths:
 
 - **Phase 2 — rules** (`[|| head body ||]` form): user
-  asserts a `Rule` record; criomed registers it; cascades
+  asserts a `Rule` record; criome registers it; cascades
   derive transitive facts; subsequent queries pull derived
   records like any others. Stratified (per
   `KindDecl.stratum`) to guarantee termination.
@@ -210,7 +210,7 @@ Two paths:
 
 ### 3.4 · Streams / subscriptions — `<| ... |>`
 
-Subscribe to a pattern; criomed streams diffs:
+Subscribe to a pattern; criome streams diffs:
 
 ```nexus
 <| (| Order @id @amount |) (After @cursor) (Limit 100) |>
@@ -261,8 +261,8 @@ Returns a stream of `{customer: ..., {Sum: ..., Count: ...}}`.
 | Layer | Where | What's caught | Failure mode |
 |---|---|---|---|
 | Parse | nota-serde-core in nexus | syntax (delimiter balance, sigil budget, identifier shape, literal form) | `Reply::Rejected` (transient) |
-| Validation | criomed's six-step pipeline | schema-mismatch, unresolved slot-refs, invariant violations, unauthorised actions, type errors | `Diagnostic` record in sema (durable) + `Reply::Rejected` summary |
-| Execution | criomed's pattern matcher + cascade engine + rsc/rustc | non-linear pattern unification failures, cascade non-termination, rsc/rustc errors | `Diagnostic` record (durable); cascade-failure is diagnostic-only and does not reject the originating mutation |
+| Validation | criome's six-step pipeline | schema-mismatch, unresolved slot-refs, invariant violations, unauthorised actions, type errors | `Diagnostic` record in sema (durable) + `Reply::Rejected` summary |
+| Execution | criome's pattern matcher + cascade engine + rsc/rustc | non-linear pattern unification failures, cascade non-termination, rsc/rustc errors | `Diagnostic` record (durable); cascade-failure is diagnostic-only and does not reject the originating mutation |
 
 Diagnostic codes E0000–E9999 are assigned per failure class
 (E0000 parse, E0001 schema, E0002 ref, E0003 invariant,
@@ -330,7 +330,7 @@ integration: pre-flight check before sending a real edit.
   core; no daemon).
 - **Schema-aware**: `nexus-cli validate` against a cached
   schema snapshot.
-- **Live**: `(Validate ...)` request to criomed.
+- **Live**: `(Validate ...)` request to criome.
 
 ---
 
@@ -367,7 +367,7 @@ Five distinguishing-by-design properties:
 
 5. **Genesis-via-self.** The language can describe its own
    schema in itself (`KindDecl` records describe `KindDecl`).
-   Bootstrap uses the same nexus-via-nexus-via-criomed flow
+   Bootstrap uses the same nexus-via-nexus-via-criome flow
    as any other input. No baked-in-rkyv shortcut, no internal-
    assert path. (Datomic's transaction-fn semantics are
    coded outside the database; SQL's system catalog is a
@@ -379,14 +379,14 @@ Five distinguishing-by-design properties:
 
 > *Naming note (2026-04-25).* This contract was originally
 > drafted as *criome-msg*. Per Li's later naming decision, the
-> rkyv-format messaging layer between nexus and criomed is
+> rkyv-format messaging layer between nexus and criome is
 > called **signal**. References are renamed throughout; the
 > §6 type catalogue is the **signal envelope and payloads**.
 > See [reports/077](077-nexus-and-signal.md) for the deep
 > analysis.
 
-The wire format that crosses nexus ↔ criomed (and within
-criomed → criomed cluster, sketched). The wire carries a stream
+The wire format that crosses nexus ↔ criome (and within
+criome → criome cluster, sketched). The wire carries a stream
 of `Frame` archives; both parties know the `Frame` rkyv schema,
 so framing is intrinsic to the schema — the universal handshake
 is the frame type itself, and there is no "raw bytes outside
@@ -433,7 +433,7 @@ pub enum Request {
 
 pub struct AssertOp {
     pub record: RawRecord,                // wire form (kinds by name)
-    pub assigned_slot: Option<Slot>,      // explicit during genesis; None → criomed mints
+    pub assigned_slot: Option<Slot>,      // explicit during genesis; None → criome mints
     pub expected_rev: Option<Revision>,   // CAS for slot non-existence
 }
 
@@ -653,7 +653,7 @@ pub enum Applicability { MachineApplicable, MaybeIncorrect, HasPlaceholders }
 
 ```rust
 pub struct RawRecord {
-    pub kind_name: String,                // resolved by criomed against KindDecl
+    pub kind_name: String,                // resolved by criome against KindDecl
     pub fields: Vec<(String, RawValue)>,
 }
 
@@ -688,7 +688,7 @@ pub enum FieldPath {
   Criomed looks up `KindDecl` from `kind_name` at step 1. No
   pre-resolved type IDs on the wire — the contract stays
   schema-evolution-friendly.
-- **Slot-refs are bare `Slot(u64)`** on the wire; criomed
+- **Slot-refs are bare `Slot(u64)`** on the wire; criome
   resolves them against `SlotBinding`. Wire never carries
   content hashes for cross-record references — those live
   on the sema side, not in messages.
@@ -700,7 +700,7 @@ pub enum FieldPath {
   `subscription_id`. The correlation_id maps to the
   `SubReady` only.
 - **TxnBatch is one Frame.** All ops travel in a single
-  rkyv-archived frame; criomed processes the whole batch
+  rkyv-archived frame; criome processes the whole batch
   atomically.
 
 ---
@@ -722,14 +722,14 @@ Nexusd:
      with `Selection { pattern, operators, projection }`.
    - `<| pattern ops |>` → `Request::Subscribe(...)`.
    - `(Validate op)` → `Request::Validate(...)`.
-4. Sends the rkyv-archived `Frame` to criomed over UDS.
+4. Sends the rkyv-archived `Frame` to criome over UDS.
 5. Reads reply frames; serialises back to nexus text using
    the inverse mapping.
 6. For `Subscribe` requests, holds the connection open and
    relays each reply frame as it arrives.
 
 Nexusd holds no sema state. It does **syntactic** mapping
-only; all semantic resolution happens at criomed.
+only; all semantic resolution happens at criome.
 
 The mapping is mechanical and explainable per nexus form.
 This is the contract Li asked for.
@@ -768,11 +768,11 @@ reject the originating mutation. Confirm.
 
 The current contract sketches `RemoteInstance` as a query
 operator and adds `QuorumProof` to `AuthProof`. The bigger
-cross-criomed protocol (signed proposals, hash-shared
+cross-criome protocol (signed proposals, hash-shared
 records, federated subscriptions) is intentionally not in
 this contract — it belongs in a peer-to-peer criome-net
-contract. Confirm scope: signal = local nexus↔criomed
-only; criome-net = criomed↔criomed peer.
+contract. Confirm scope: signal = local nexus↔criome
+only; criome-net = criome↔criome peer.
 
 ### Q6 · Validate-verb's ExecutionPlan shape
 

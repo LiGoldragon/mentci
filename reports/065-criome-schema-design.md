@@ -1,14 +1,14 @@
 # 065 — criome-schema design (in depth)
 
 *Claude Opus 4.7 · 2026-04-25 · in-depth design of `criome-
-schema`, the Rust crate defining the record kinds criomed
+schema`, the Rust crate defining the record kinds criome
 needs for its OWN operational state. Two parallel research
 agents covered (A) schema-of-schema + index + audit and (B)
 authorization + correctness + diagnostics + subscriptions.
 Synthesis below corrects both agents' slip-back into "internal
 assert" framing for genesis (Li 2026-04-25 standing rule:
 records enter sema only via nexus → nexus → signal →
-criomed; no baked-in rkyv assert path) and presents the
+criome; no baked-in rkyv assert path) and presents the
 record catalogue plus the genesis-via-nexus bootstrap
 mechanics.*
 
@@ -28,7 +28,7 @@ Sema holds records of multiple intrinsic categories
 (reports/061 §1.11). Each category gets its own schema crate
 so:
 
-- criomed depends on `criome-schema` always; on `machina-
+- criome depends on `criome-schema` always; on `machina-
   schema` (current `nexus-schema`) so it can validate code
   records; not on `world-schema` until that category lands.
 - machina-chk (reports/061 §3.5) depends on `machina-schema`
@@ -43,13 +43,13 @@ The Rust struct/enum definitions in criome-schema serve two
 distinct purposes:
 
 1. **Schema-of-schema source-of-truth at first boot.** Before
-   any KindDecl records exist in sema, criomed must validate
+   any KindDecl records exist in sema, criome must validate
    the genesis-nexus messages. It does so against the built-
    in Rust types in criome-schema. This is the *only* moment
    Rust types act as schema; afterwards, in-sema KindDecl
    records are authoritative for everything except a
    consistency check at second-boot.
-2. **In-process record handling.** criomed's Rust code
+2. **In-process record handling.** criome's Rust code
    reads/writes records via rkyv archiving. The Rust types
    are the in-process representation; rkyv-archived bytes
    are the on-disk + on-wire form.
@@ -74,7 +74,7 @@ architecture.md §10 reject-loud rule; hard-fail on schema skew).
 ## 2 · Bootstrap correctly: genesis-via-nexus
 
 Both research agents described seed assertion as
-`criomed.assert_record(...)` — an internal call bypassing
+`criome.assert_record(...)` — an internal call bypassing
 nexus. **This is the framing Li flagged 2026-04-25:**
 
 > *"I really don't know what you mean by 'baked-in rkyv data'
@@ -87,7 +87,7 @@ nexus. **This is the framing Li flagged 2026-04-25:**
 > could just ask god in heaven to write it all for us'?"*
 
 **Neither agent explained the mechanism.** Both wrote
-`criomed.assert_record(&kind_decl_self)` or
+`criome.assert_record(&kind_decl_self)` or
 `let root_principal = Principal { ... };` as though those
 operations were primitives. Unanswered in both:
 
@@ -109,19 +109,19 @@ framing is wrong.** The architecturally consistent path is
 genesis-via-nexus — and crucially, *every step of that path
 has an existing or specifiable mechanism*.
 
-### 2.1 · `genesis.nexus` ships with the criomed binary
+### 2.1 · `genesis.nexus` ships with the criome binary
 
-`genesis.nexus` is a text file ship­ped with criomed (e.g.,
-`include_str!` or in the criomed nix-store entry as a
+`genesis.nexus` is a text file ship­ped with criome (e.g.,
+`include_str!` or in the criome nix-store entry as a
 sibling file). It contains a sequence of `(Assert ...)`
 expressions in nexus syntax:
 
 ```nexus
-(Assert (CategoryDecl :slot 0 :name "criomed-state"  :stratum-max 1 ...))
+(Assert (CategoryDecl :slot 0 :name "criome-state"  :stratum-max 1 ...))
 (Assert (CategoryDecl :slot 1 :name "machina"        :stratum-max 2 ...))
 (Assert (KindDecl     :slot 2 :name "KindDecl"       :category 0 :fields [...]))
 (Assert (KindDecl     :slot 3 :name "FieldSpec"      :category 0 :fields [...]))
-;; ... ~60–120 seed records: every kind criomed knows at boot ...
+;; ... ~60–120 seed records: every kind criome knows at boot ...
 (Assert (Principal    :slot 100 :pubkey 0x... :display-name "operator"))
 (Assert (Quorum       :slot 101 :members [100] :threshold 1))
 (Assert (Policy       :slot 102 :resource-pattern :all :allowed-ops [...]
@@ -131,16 +131,16 @@ expressions in nexus syntax:
 
 ### 2.2 · First-boot pipeline
 
-1. criomed opens redb at sema location (creating empty if
+1. criome opens redb at sema location (creating empty if
    absent).
-2. criomed reads the well-known `SemaGenesis` slot. Absent →
+2. criome reads the well-known `SemaGenesis` slot. Absent →
    first boot.
-3. criomed dispatches `genesis.nexus` text to **nexus over
+3. criome dispatches `genesis.nexus` text to **nexus over
    the normal UDS channel** — same wire as user requests.
 4. nexus parses each `(Assert ...)` via nota-serde-core at
    `Dialect::Nexus`, builds signal envelopes, sends each
-   to criomed.
-5. criomed runs each through the **normal validator
+   to criome.
+5. criome runs each through the **normal validator
    pipeline**, with these "first-boot specifics" only:
    - **Schema-check**: against built-in Rust types in
      criome-schema (no in-sema KindDecls yet).
@@ -150,7 +150,7 @@ expressions in nexus syntax:
    - **Invariant-check**: trivially passes — no Rule
      records yet.
    - **Permission-check**: against a *bootstrap principal
-     id* baked into criomed's binary, used only for the
+     id* baked into criome's binary, used only for the
      genesis stream. Once the genesis Principal record is
      asserted (early in genesis.nexus), subsequent messages
      in the stream may be re-validated against it; the
@@ -160,30 +160,30 @@ expressions in nexus syntax:
      RevisionRecord. ChangeLogEntry's `principal` field
      points to the bootstrap principal slot during genesis.
 6. The final assertion is `(Assert (SemaGenesis ...))`.
-   After it lands, criomed switches to second-boot mode.
+   After it lands, criome switches to second-boot mode.
 
 ### 2.3 · Second-boot pipeline
 
-1. criomed opens redb. Reads `SemaGenesis`. Present →
+1. criome opens redb. Reads `SemaGenesis`. Present →
    second boot.
-2. criomed iterates `[0, 1024)` (seed slot range). For each
+2. criome iterates `[0, 1024)` (seed slot range). For each
    in-sema record at a seed slot, fetches it and compares
    against the corresponding built-in Rust type. Hard-fail
-   on mismatch ("schema skew between criomed binary and
+   on mismatch ("schema skew between criome binary and
    sema; aborting").
-3. criomed begins accepting normal nexus requests. Validator
+3. criome begins accepting normal nexus requests. Validator
    uses in-sema KindDecls (not built-in Rust types) for any
    user-defined kind.
 
 ### 2.4 · What this is NOT
 
-- **No** `criomed.assert_record(...)` internal call. Every
+- **No** `criome.assert_record(...)` internal call. Every
   record enters sema through the validator pipeline.
 - **No** baked-in rkyv data. The rkyv encoding is created in
   validator step 5 (write), the same as for any other
   record.
 - **No** special private input port. genesis.nexus enters
-  through nexus → signal → criomed.
+  through nexus → signal → criome.
 
 The only "specialness" is what's *not yet in sema* during
 the genesis stream: built-in Rust types substitute for
@@ -191,7 +191,7 @@ KindDecls, a bootstrap principal id substitutes for a
 Principal record. Once those records have been asserted
 (through the normal flow), the system is in normal mode.
 This is consistent with the iterative-bootstrap framing of
-reports/064 §1: criomed's competence grows as sema's content
+reports/064 §1: criome's competence grows as sema's content
 grows; the genesis stream is the first wave of that growth.
 
 ---
@@ -247,7 +247,7 @@ pub enum ConstraintDecl {
 }
 
 pub struct CategoryDecl {
-    pub name: String,                         // "criomed-state" "machina" "world-fact"
+    pub name: String,                         // "criome-state" "machina" "world-fact"
     pub stratum_max: u32,
     pub visibility: CategoryVisibility,       // Public | SeedOnly | Internal
 }
@@ -378,7 +378,7 @@ pub struct CommittedMutation {
 }
 
 pub struct RuntimeIdentity {
-    pub self_principal: Slot,                 // → Principal record describing criomed itself
+    pub self_principal: Slot,                 // → Principal record describing criome itself
     // private_key NOT stored as a sema field — read at startup from a key file
     // outside sema; sema only knows the corresponding Principal's pubkey
 }
@@ -399,7 +399,7 @@ pub struct PrincipalKey {
   permission-check matches request principal id against the
   Principal record; no BLS verification yet.
 - **Stages C-D**: BLS verification activates; every
-  Assert/Mutate/Retract carries a ProposalSignature; criomed
+  Assert/Mutate/Retract carries a ProposalSignature; criome
   validates against Quorum members.
 - **Stages E+** (per reports/060 §2): chained rotation via
   parent_quorum_ref; expiring sub-keys; external custody.
@@ -613,10 +613,10 @@ Lean: (b). But the rename has its own cost; (a) defers it.
 ### Q2 · Genesis principal: hardcoded bootstrap id, or first-record-as-self
 
 During the genesis stream, before any Principal record
-exists, criomed needs a principal id for the permission-
+exists, criome needs a principal id for the permission-
 check on each genesis assertion. Two ways:
 
-- (a) Hardcoded `bootstrap-principal-id` in criomed's binary
+- (a) Hardcoded `bootstrap-principal-id` in criome's binary
   used for all genesis assertions. Retired the moment
   `SemaGenesis` lands.
 - (b) The first message in `genesis.nexus` is `(Assert
@@ -673,9 +673,9 @@ After Q1-Q6 land:
 1. Lock `criome-schema` v0.0.1 with the records sketched
    above — types only, no runtime logic.
 2. Author `genesis.nexus` — the actual nexus text that
-   will ship with the criomed binary; ~60-120 records.
+   will ship with the criome binary; ~60-120 records.
 3. Build the Stage A path (per reports/064 §2): nexus
-   parses genesis.nexus, criomed validates against built-
+   parses genesis.nexus, criome validates against built-
    in Rust types, sema accumulates seed records, second-
    boot verifies parity.
 4. The signal verb set follows naturally: Assert,

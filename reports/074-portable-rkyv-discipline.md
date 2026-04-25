@@ -12,7 +12,7 @@ and the existing usage in `repos/nexus-schema/`.*
 ## 1 · The rule
 
 Nexus text is the only non-rkyv messaging surface. Everything
-else — client-msg, signal, future lojix-msg, sema records,
+else — client-msg, signal, future lojix-schema, sema records,
 lojix-store index entries, every internal wire / storage
 format — is rkyv. Per architecture.md §10.
 
@@ -36,7 +36,7 @@ Each feature is load-bearing for portability:
 
 | Feature | What it does | Why required |
 |---|---|---|
-| `std` | Vec, String, HashMap, etc. archive impls | We're not no_std; criomed runs on real machines |
+| `std` | Vec, String, HashMap, etc. archive impls | We're not no_std; criome runs on real machines |
 | `bytecheck` | Validation on read; rejects malformed/malicious bytes | Wire is untrusted in principle; UDS in practice but capability tokens cross machines later |
 | `little_endian` | Pin archived integer byte order | Without this, archived integers use host endianness; cross-machine archives break |
 | `pointer_width_32` | RelPtr offsets are 4 bytes | Without this, offsets follow host pointer width (4 vs 8); cross-machine archives break. 32-bit fits any single archive < 4 GiB |
@@ -141,7 +141,7 @@ fields changes the archive bytes. Two consequences:
    coordinated upgrades.
 2. **The `VersionSkewGuard` record** ([reports/065 §3.4](065-criome-schema-design.md))
    sits at a known slot and stores the schema-version /
-   wire-format-version. criomed checks at boot; hard-fails on
+   wire-format-version. criome checks at boot; hard-fails on
    mismatch. This is the architectural answer to schema
    evolution; rkyv's own version handling is not enough.
 

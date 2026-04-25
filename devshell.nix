@@ -14,7 +14,7 @@ let
     "nexus"           # the nexus language — spec + translator daemon (renamed from nexusd 2026-04-25; absorbed former nexus spec repo into spec/)
     "nexus-serde"     # nexus's public API
     "nexus-schema"    # record-kind vocabulary + nexus language IR
-    "signal"          # nexus↔criomed messaging schema (rkyv)
+    "signal"          # nexus↔criome messaging schema (rkyv)
     "sema"            # records DB (redb-backed)
     "nexus-cli"       # text client
     "rsc"             # records → Rust source projector
@@ -26,9 +26,9 @@ let
     "CriomOS-emacs"   # emacs config as CriomOS module
     "CriomOS-home"    # home-manager config as CriomOS module
     # --- CANON-MISSING (repos don't exist yet; uncomment when scaffolded) ---
-    # "criomed"       # sema's engine daemon
-    # "lojix-msg"     # criomed↔lojixd contract (report 030 Phase B)
-    # "lojixd"        # lojix daemon (report 030 Phase C)
+    # "criome"       # sema's engine daemon
+    # "lojix-schema"     # criome↔lojix contract (report 030 Phase B)
+    # "lojix"        # lojix daemon (report 030 Phase C)
   ];
 
   linkSiblingRepos = ''
