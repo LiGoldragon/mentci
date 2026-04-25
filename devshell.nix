@@ -27,7 +27,7 @@ let
     "CriomOS-home"    # home-manager config as CriomOS module
     # --- CANON-MISSING (repos don't exist yet; uncomment when scaffolded) ---
     # "criomed"       # sema's engine daemon
-    # "criome-msg"    # nexusd↔criomed contract
+    # "signal"    # nexusd↔criomed contract
     # "lojix-msg"     # criomed↔lojixd contract (report 030 Phase B)
     # "lojixd"        # lojix daemon (report 030 Phase C)
   ];

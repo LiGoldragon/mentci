@@ -1,9 +1,9 @@
-# 070 — nexus language design + criome-msg contract
+# 070 — nexus language design + signal contract
 
 *Claude Opus 4.7 · 2026-04-25 · synthesis of four parallel
 research agents (edit semantics, query semantics, correctness/
 static-checks, prior-art-and-differentiators) plus the
-criome-msg contract that bridges nexusd ↔ criomed and carries
+signal contract that bridges nexusd ↔ criomed and carries
 the full language. Per Li 2026-04-25: "first we need the logic
 that will make nexus the greatest database edit-and-query
 language ever made … and we need the contract that will create
@@ -18,7 +18,7 @@ is in scope; rung-1 subsetting is a later report's concern.*
 ## 1 · The thesis
 
 Nexus is one language with two faces (edit + query) and a
-single contract layer (criome-msg). The language is grounded
+single contract layer (signal). The language is grounded
 in three structural choices that compound:
 
 1. **Position-defines-meaning.** No keywords. Records like
@@ -134,7 +134,7 @@ to a remote criomed is a transport-layer concern (the client
 dials a different nexusd). Cross-instance *coordination*
 (quorum-signed proposals, federated agreement) is part of
 the architecture (Phase 3+), but it's not a nexus syntax
-concern — it lives in criome-msg as separate verbs that the
+concern — it lives in signal as separate verbs that the
 two criomeds exchange.
 
 ---
@@ -375,7 +375,15 @@ Five distinguishing-by-design properties:
 
 ---
 
-## 6 · The criome-msg contract
+## 6 · The signal contract
+
+> *Naming note (2026-04-25).* This contract was originally
+> drafted as *criome-msg*. Per Li's later naming decision, the
+> rkyv-format messaging layer between nexusd and criomed is
+> called **signal**. References are renamed throughout; the
+> §6 type catalogue is the **signal envelope and payloads**.
+> See [reports/077](077-nexus-and-signal.md) for the deep
+> analysis.
 
 The wire format that crosses nexusd ↔ criomed (and within
 criomed → criomed cluster, sketched). The wire carries a stream
@@ -763,7 +771,7 @@ operator and adds `QuorumProof` to `AuthProof`. The bigger
 cross-criomed protocol (signed proposals, hash-shared
 records, federated subscriptions) is intentionally not in
 this contract — it belongs in a peer-to-peer criome-net
-contract. Confirm scope: criome-msg = local nexusd↔criomed
+contract. Confirm scope: signal = local nexusd↔criomed
 only; criome-net = criomed↔criomed peer.
 
 ### Q6 · Validate-verb's ExecutionPlan shape

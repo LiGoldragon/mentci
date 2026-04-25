@@ -23,7 +23,7 @@ quoting Li 2026-04-25:
 > contract that will create this logic in rkyv messages
 > into/from nexus (nexusd role), to criomed.
 
-Everything that follows — the criome-msg contract, the validator
+Everything that follows — the signal contract, the validator
 pipeline, the schema-of-schema, the slot/index machinery — exists
 to **carry the language**. Schema falls out of language
 requirements, not the other way around. Reframings that ask "what
@@ -39,7 +39,7 @@ research reports that produced them.
 |---|---|
 | The 10-repo architecture, invariants A-D, project-wide rules | [architecture.md](../docs/architecture.md) |
 | Workspace inventory, last-reviewed date | [docs/workspace-manifest.md](../docs/workspace-manifest.md) |
-| Nexus language semantics — edit verbs, query operators, criome-msg contract | [reports/070](070-nexus-language-and-contract.md) |
+| Nexus language semantics — edit verbs, query operators, signal contract | [reports/070](070-nexus-language-and-contract.md) |
 | Rkyv discipline — pinned 0.8 portable feature set, derive pattern, encode/decode API | [reports/074](074-portable-rkyv-discipline.md) |
 | Lojix transition phases A-G, day-one skeleton | [reports/030](030-lojix-transition-plan.md) |
 | Restate-to-refute corpus rule | [reports/069](069-restate-to-refute-rule-and-cleanup.md) |
@@ -68,7 +68,7 @@ question about a pre-specified kind taxonomy.
 - **L3 — Cascade non-termination.** When a cascading rule fires
   beyond a cycle bound, do we emit `E9999` and keep the
   originating mutation, or reject the whole batch?
-- **L4 — Cross-instance scope.** Does criome-msg cover only
+- **L4 — Cross-instance scope.** Does signal cover only
   local nexusd↔criomed, with a separate `criome-net` for
   peer-to-peer criomed↔criomed? Or one envelope for both?
 
@@ -120,21 +120,21 @@ not sequential:
    [lojix-store/Cargo.toml](../../lojix-store/Cargo.toml) and
    rkyv derives to lojix-store index types named in [074 §1](074-portable-rkyv-discipline.md). Bodies stay `todo!()`.
 
-### 4.2 Tier 2 — language-first scaffolding (criome-msg)
+### 4.2 Tier 2 — language-first scaffolding (signal)
 
-The contract spec is in [070 §6](070-nexus-language-and-contract.md). Scaffolding criome-msg
+The contract spec is in [070 §6](070-nexus-language-and-contract.md). Scaffolding signal
 *following 070's design* is buildable now: types, rkyv derives,
 encode/decode bodies, round-trip tests. The kind set referenced
-by criome-msg (envelope and verb-payload types) is small and
+by signal (envelope and verb-payload types) is small and
 already named in 070 §6.6 (RawRecord, RawValue, Op, …). The
 broader schema (KindDecl, FieldSpec, etc.) does not need to be
-specified before criome-msg can land.
+specified before signal can land.
 
 ### 4.3 What does *not* belong before this
 
 - A pre-listed v0.0.1 kind taxonomy. Schema follows language.
-- Speculative repo creation for criome-types ahead of criome-msg.
-  The newtype layer's contents are revealed by what criome-msg
+- Speculative repo creation for criome-types ahead of signal.
+  The newtype layer's contents are revealed by what signal
   imports.
 - Further multi-angle synthesis reports. Two were written in two
   days; both are deleted in this pass.

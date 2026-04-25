@@ -168,7 +168,7 @@ the lojix-schema split settles.
 |---|---|---|
 | 0 — text grammars | nota, nota-serde-core, nota-serde, nexus, nexus-serde | no |
 | 1 — schema vocabulary | **nexus-schema** (sema records + patterns), **lojix-schema** (Opus/Derivation + nix newtypes) | lojix-schema is family |
-| 2 — contract crates | criome-msg, **lojix-forge-msg**, lojix-store-msg | forge + store msg are family |
+| 2 — contract crates | signal, **lojix-forge-msg**, lojix-store-msg | forge + store msg are family |
 | 3 — storage | sema, lojix-store | lojix-store is family |
 | 4 — daemons | nexusd, criomed, **lojix-forged**, lojix-stored | forged + stored are family |
 | 5 — clients / build libs | nexus-cli, rsc, **lojix-forge** (lib), **lojix-deploy** (lib + CLI) | forge + deploy are family |
@@ -185,7 +185,7 @@ Net delta:
 ### Daemon graph
 
 ```
- nexus text → nexusd ──[criome-msg]── criomed ──┬──[lojix-forge-msg]── lojix-forged
+ nexus text → nexusd ──[signal]── criomed ──┬──[lojix-forge-msg]── lojix-forged
                                                 │                           │
                                                 │                           │ capability token
                                                 │                           ▼
@@ -211,7 +211,7 @@ Full table in research pass. Headline rules:
 - **criome owns** the runtime (daemons, supervision, token
   signing, pattern resolver engine, subscription hub, nexus
   text grammar, capability-token concept). Lives in nexusd +
-  criomed + criome-msg + the nota/nexus grammar repos.
+  criomed + signal + the nota/nexus grammar repos.
 - **nexus is a skin** — not a pillar. The text grammar + rkyv
   wire-format conventions span all of criome.
 - **Bridge types** (dual citizens) are noted explicitly and kept

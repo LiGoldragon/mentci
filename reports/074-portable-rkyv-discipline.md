@@ -12,7 +12,7 @@ and the existing usage in `repos/nexus-schema/`.*
 ## 1 · The rule
 
 Nexus text is the only non-rkyv messaging surface. Everything
-else — client-msg, criome-msg, future lojix-msg, sema records,
+else — client-msg, signal, future lojix-msg, sema records,
 lojix-store index entries, every internal wire / storage
 format — is rkyv. Per architecture.md §10.
 

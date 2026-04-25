@@ -385,7 +385,7 @@ need a compile.
 
 **Rules-as-records bootstrap.** Seed rules are asserted on cold
 start, and per report 031 P1.5 they are **immutable from the
-criome-msg surface** — you cannot retract or mutate them over
+signal surface** — you cannot retract or mutate them over
 the wire. A mistake in a seed rule requires a code change +
 rebuild + restart. This is the right trade for a self-hosting
 system: it removes a whole class of "I poisoned my sema with a

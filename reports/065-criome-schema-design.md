@@ -7,7 +7,7 @@ agents covered (A) schema-of-schema + index + audit and (B)
 authorization + correctness + diagnostics + subscriptions.
 Synthesis below corrects both agents' slip-back into "internal
 assert" framing for genesis (Li 2026-04-25 standing rule:
-records enter sema only via nexus → nexusd → criome-msg →
+records enter sema only via nexus → nexusd → signal →
 criomed; no baked-in rkyv assert path) and presents the
 record catalogue plus the genesis-via-nexus bootstrap
 mechanics.*
@@ -138,7 +138,7 @@ expressions in nexus syntax:
 3. criomed dispatches `genesis.nexus` text to **nexusd over
    the normal UDS channel** — same wire as user requests.
 4. nexusd parses each `(Assert ...)` via nota-serde-core at
-   `Dialect::Nexus`, builds criome-msg envelopes, sends each
+   `Dialect::Nexus`, builds signal envelopes, sends each
    to criomed.
 5. criomed runs each through the **normal validator
    pipeline**, with these "first-boot specifics" only:
@@ -183,7 +183,7 @@ expressions in nexus syntax:
   validator step 5 (write), the same as for any other
   record.
 - **No** special private input port. genesis.nexus enters
-  through nexusd → criome-msg → criomed.
+  through nexusd → signal → criomed.
 
 The only "specialness" is what's *not yet in sema* during
 the genesis stream: built-in Rust types substitute for
@@ -514,9 +514,9 @@ instances until Stage F (compile path lands). Their schema
 is locked from day one so other records can reference them
 by slot.
 
-### 3.7 · Patterns and queries (boundary with criome-msg)
+### 3.7 · Patterns and queries (boundary with signal)
 
-Patterns straddle: in-flight forms live in `criome-msg`
+Patterns straddle: in-flight forms live in `signal`
 (the wire crate), persisted forms live in criome-schema:
 
 ```rust
@@ -678,7 +678,7 @@ After Q1-Q6 land:
    parses genesis.nexus, criomed validates against built-
    in Rust types, sema accumulates seed records, second-
    boot verifies parity.
-4. The criome-msg verb set follows naturally: Assert,
+4. The signal verb set follows naturally: Assert,
    Query, Retract for Stage A; Mutate added in Stage B
    for in-place edits; Subscribe added when subscriptions
    become useful; Compile added at Stage F.

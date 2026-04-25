@@ -78,7 +78,7 @@ exist yet. Create when we reach the corresponding work.
 | Repo | Purpose | When |
 |---|---|---|
 | `criomed` | sema's engine daemon. | Needed for anything beyond nexusd scaffolding. |
-| `criome-msg` | nexusd↔criomed contract (rkyv). | Alongside criomed scaffold. |
+| `signal` | nexusd↔criomed contract (rkyv). | Alongside criomed scaffold. |
 | `lojix-msg` | criomed↔lojixd contract (rkyv). | `reports/030` Phase B. |
 | `lojixd` | lojix daemon (forge + store + deploy actors inside). | `reports/030` Phase C. |
 

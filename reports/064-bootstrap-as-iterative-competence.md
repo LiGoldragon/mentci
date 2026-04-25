@@ -77,7 +77,7 @@ actual progression composes by what's most needed next:
 
 | Stage | Criomed can decide | Components that exist |
 |---|---|---|
-| **A** | seed-shaped messages conform to seed kinds | nexusd, criomed, criome-msg, nexus-cli, sema (redb), seed |
+| **A** | seed-shaped messages conform to seed kinds | nexusd, criomed, signal, nexus-cli, sema (redb), seed |
 | **B** | user-authored KindDecls; new kinds extend the catalogue | (no new components — sema content extends) |
 | **C** | slot-references resolve correctly; the index is real | (no new components — the validator now exercises ref-check) |
 | **D** | cascade rules fire; derived facts settle | rule engine slot in criomed begins exercise |
@@ -104,16 +104,16 @@ gestures direction only.
   schema records, `KindDecl`, `SlotBinding`, `FieldSpec`,
   `TypeRef`, `ChangeLogEntry`, `AuditEntry` — exact set is
   the §3 detail-research item).
-- **criome-msg** crate with the verb set criomed accepts at
+- **signal** crate with the verb set criomed accepts at
   this stage: `Assert`, `Query`, `Retract`, plus reply and
   diagnostic shapes.
 - **criomed** binary that boots, loads the seed, opens sema
-  (redb), serves criome-msg over UDS. Validator pipeline is
+  (redb), serves signal over UDS. Validator pipeline is
   real (schema-check → ref-check → invariant-check →
   permission-check → write); single-principal at this stage.
 - **nexusd** binary that boots, listens on UDS or stdin,
   parses text via `nota-serde-core` at `Dialect::Nexus`,
-  builds criome-msg envelopes, dials criomed over UDS,
+  builds signal envelopes, dials criomed over UDS,
   serialises replies back to text.
 - **nexus-cli** thin client that pipes text → nexusd over UDS
   → text.
@@ -177,16 +177,16 @@ Ordered roughly; explicit dependencies named:
 2. **Lock the Stage A kind set in `nexus-schema`.** Minimum:
    schema-of-schema + `KindDecl` + `SlotBinding` + supporting
    types. Subject to §3 detail-research.
-3. **Lock criome-msg verbs for Stage A.** `Request::{Assert,
+3. **Lock signal verbs for Stage A.** `Request::{Assert,
    Query, Retract}`; `Reply::{Ok, Rejected, QueryResult}`;
    `Diagnostic` per reports/060 §4. *← 2.*
 4. **Build criomed binary skeleton.** Tokio runtime, UDS
-   listener, criome-msg dispatch loop, sema redb open, seed
+   listener, signal dispatch loop, sema redb open, seed
    loader (per Q1), validator pipeline (schema/ref/invariant/
    permission/write). *← 2, 3.*
 5. **Build nexusd binary skeleton.** Tokio runtime, UDS
    listener for client connections, nota-serde-core parser at
-   Dialect::Nexus, criome-msg envelope construction, UDS
+   Dialect::Nexus, signal envelope construction, UDS
    client to criomed, reply serialisation. *← 3.*
 6. **Build nexus-cli thin client.** Argv/stdin → nexusd UDS
    → reply text. *← 5.*
@@ -299,7 +299,7 @@ the right framing. This report does:
   the seed's purpose is criomed's decision-making, not rsc
   testing; rsc doesn't enter the picture for many stages.
 
-Stage A's exact kind set emerges from what the criome-msg
+Stage A's exact kind set emerges from what the signal
 verbs need to express (per [reports/070 §6](070-nexus-language-and-contract.md)),
 not from a pre-listed taxonomy. See [reports/076 §3.4](076-corpus-trim-and-forward-agenda.md).
 

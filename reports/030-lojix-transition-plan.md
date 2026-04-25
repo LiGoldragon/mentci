@@ -298,7 +298,7 @@ crate and handwritten tests.
 **Q2 — lojixd transport.** UDS with rkyv length-prefixed frames
 is the simplest. Alternatives: TCP localhost, named pipe, gRPC
 over UDS. Lean: UDS + length-prefixed rkyv. Matches
-architecture.md's pattern for criome-msg.
+architecture.md's pattern for signal.
 
 **Q3 — compatibility boundary.** During Phases D–E, lojix-msg
 may evolve. Does the monolith lojix (Phase A) need to track

@@ -31,7 +31,7 @@ added to stop recurrence.*
 ### 1.1 · Sema is gravitational, not compositional
 
 Sema is not a component among peers; it is the centre that
-everything else orbits. criome-msg, nexus grammar, rsc
+everything else orbits. signal, nexus grammar, rsc
 emission, lojix-store handles, capability tokens, rules,
 cascades — each exists because sema exists. The move from
 "sema is a data store" to "sema is the evaluation itself"
