@@ -164,15 +164,17 @@ Zero new syntax. The `@` sigil that already means "named hole" picks up a second
 
 ## Problem 2 — mid-sequence query errors
 
-A query reply is `[<r1> <r2> …]`. Two failure modes:
+A query reply renders as `[<r1> <r2> …]` in nexus text. Possible failure modes:
 
-**Failure during sequence construction.** Criome computes the matches; one of them triggers a permission denial or schema mismatch.
+**Validation fails during query execution.** Criome runs the query and one record can't be returned (permission denial, schema mismatch). Criome's signal Reply is a `Diagnostic`, not a partial result set.
 
-**Failure mid-emission.** Criome streams `[<r1> <r2>` and then crashes or loses connection.
+**Daemon crashes or loses client connection mid-render.** Criome has already sent a complete signal Reply to the daemon; the daemon has the typed records in hand and is rendering them to text. If the daemon dies mid-render or the client socket drops, the client sees truncated text. The kernel notifies the client with EOF; client reconnects and re-issues the query.
 
-### Solution: replies are computed before emission
+(Criome itself never streams text — it speaks signal only, and signal frames are atomic at the frame level. There's no "half a sequence in flight" at the criome boundary.)
 
-Daemon doesn't stream half-results. The reply is *atomic at the position* — either you get a complete `[<r1> <r2> <r3>]`, or you get a single `(Diagnostic …)` *instead of* the sequence. Never half-and-half.
+### Solution: text replies are atomic at the position
+
+The daemon doesn't emit half-results. The reply is *atomic at the position* — either you get a complete `[<r1> <r2> <r3>]`, or you get a single `(Diagnostic …)` *instead of* the sequence. Never half-and-half. Implementation: daemon receives the complete signal Reply from criome, renders it to text, writes it as one logical message to the client socket.
 
 ```
 position N:
