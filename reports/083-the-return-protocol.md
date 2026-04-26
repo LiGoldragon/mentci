@@ -102,7 +102,7 @@ Same shape both directions. Position pairs them. No new tags, no new keywords.
 
 ---
 
-## Problem 1 — slot dependencies inside batches
+## Problem 1 — slot dependencies between requests
 
 A common request shape: assert two records, then assert a third that references the first two by their assigned slots.
 
@@ -113,52 +113,35 @@ client wants:
   (Edge ?-of-user ?-of-admin "delegates")
 ```
 
-Without a solution, the client has to round-trip — wait for slot 100, wait for slot 101, *then* compose the Edge. No pipelining for any chain of dependent edits.
+The client doesn't know slots until the replies come back. The Edge can't be composed until then.
 
-### Solution: bind sigils as tempids inside `[\| \|]`
+### Solution: client orchestrates; nexus stays a request language
 
-The `@` sigil already names holes in patterns. In an outgoing **atomic batch**, extend its meaning: `@name` is a placeholder for the slot that will be assigned. Subsequent uses of the same `@name` *within the same batch* refer to that slot.
+This is **client-side scripting**, not a nexus feature. Nexus is a request language — it carries one request per expression. It is not a programming language; it has no variables, no scoping, no evaluation, no cross-request state. The client writes a small script that:
 
-```
-[|
-  (Node @u user User)
-  (Node @a admin Admin)
-  (Edge @u @a "delegates")
-|]
-```
+1. Sends `(Node user User)`, reads the reply, captures the assigned slot (say 100).
+2. Sends `(Node admin Admin)`, reads the reply, captures the assigned slot (say 101).
+3. Composes `(Edge 100 101 "delegates")` using the captured numbers, sends it, reads the reply.
 
-Criome lays out the batch, assigns slots, substitutes the names:
+Three round-trips. The orchestration logic — capturing slots, substituting them into subsequent requests — lives in the *client's* host language (shell, Rust, Python, whatever it's written in). Nexus never sees a bind name in an assertion position; binds are pattern-matching only.
 
 ```
-[|
-  (Node 100 user User)
-  (Node 101 admin Admin)
-  (Edge 100 101 "delegates")
-|]
+client (script)                  daemon
+  │                                 │
+  ├── (Node user User) ──────────► │
+  │ ◄── (Node 100 user User) ──── │   client captures: u = 100
+  │                                 │
+  ├── (Node admin Admin) ────────► │
+  │ ◄── (Node 101 admin Admin) ── │   client captures: a = 101
+  │                                 │
+  ├── (Edge 100 101 "delegates")─► │   client substitutes captured
+  │                                 │   values into the request text
+  │ ◄── (Edge 100 101 …) ──────── │
 ```
 
-The reply is the same shape with binds resolved.
+Atomicity across the three edits is **not** preserved by this scheme — each lands as its own commit. If atomicity matters and the records are independent of each other's slots (no internal references), the atomic-batch form `[\| (R1) (R2) … \|]` works. If atomicity is required *and* internal references are needed, that's a genuinely harder request shape and is deferred — likely solved post-MVP by something like Datomic-style transaction functions, but those add evaluation logic to the engine which we don't want in M0.
 
-**Scope:** within one `[\| \|]` only. No cross-request bind state. Want references across requests? Round-trip + use real slots from the first reply.
-
-```
-batch:                          reply:
-                                 ┌────────────────────────┐
-[|                               │ [|                     │
-  (Node @u user User)            │   (Node 100 user User) │
-  (Node @a admin Admin)          │   (Node 101 admin     │
-  (Edge @u @a "delegates")       │         Admin)         │
-|]                               │   (Edge 100 101        │
-                                 │         "delegates")   │
-                                 │ |]                     │
-                                 └────────────────────────┘
-        │                                  ▲
-        │  daemon resolves @u ─► 100,      │
-        │  @a ─► 101, substitutes ─────────┘
-        ▼
-```
-
-Zero new syntax. The `@` sigil that already means "named hole" picks up a second context.
+**Why not solve this in nexus syntactically:** any binding mechanism in the request text (tempid placeholders, captured-value references, etc.) makes nexus a tiny programming language with variables and scoping. That moves complexity into the grammar, the lexer, and the daemon's text-translation layer for a problem that the client can already solve with three lines of host code. Nexus stays a request language; the client orchestrates.
 
 ---
 
