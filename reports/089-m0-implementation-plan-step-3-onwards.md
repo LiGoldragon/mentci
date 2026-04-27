@@ -27,30 +27,16 @@ Both pushed to main on their respective repos.
 The daemon: UDS accept loop, length-prefixed Frame I/O, dispatch
 per Request variant, sema integration.
 
-### 2.1 Sema needs one revision first
+### 2.1 Sema kind-tag revision — RETIRED
 
-For Query support, criome must enumerate records *of a given
-kind* without decoding every blob. Sema currently stores opaque
-bytes by slot; nothing tells criome which slot is a Node vs Edge.
-
-**Revision to sema (~30 LoC):**
-
-```rust
-// sema/src/lib.rs — extended API
-
-pub fn store(&self, kind_tag: u8, payload: &[u8]) -> Result<Slot>;
-pub fn get(&self, slot: Slot) -> Result<Option<(u8, Vec<u8>)>>;
-pub fn iter_kind(&self, kind_tag: u8)
-    -> Result<impl Iterator<Item = Result<(Slot, Vec<u8>)>>>;
-```
-
-Storage form: prepend a u8 tag byte to the payload bytes in the
-records table. `iter_kind` does a full table scan in M0 (filter
-by first byte); a secondary index by kind_tag is M1+ optimization.
-
-`u8` is sema's view of kind. Sema doesn't interpret tags —
-criome assigns them. (Sema stays free of kind-name strings;
-the tag is just a discriminator.)
+Earlier draft proposed prepending a u8 kind-tag to sema payload
+bytes so criome could enumerate records by kind. **Retired** —
+the per-verb typed-payload design (per [088](088-closed-vs-open-schema-research.md))
+makes this unnecessary: criome dispatches each `AssertOp` variant
+to its kind-specific store path (per-kind tables, when they
+arrive in M1+). Sema's current `store(&[u8]) → Slot` and
+`get(Slot) → Option<Vec<u8>>` API stays as-is for M0; per-kind
+storage discipline lands when more than 4 kinds exist.
 
 ### 2.2 Criome layout
 
@@ -241,92 +227,20 @@ round-trip path.
 
 ---
 
-## 3 · Step 4 — parser extensions (~50 LoC, deferred to nexus daemon)
+## 3 · Step 4 — RETIRED (parser landed)
 
-The grammar's `(| Kind ... |)` query syntax needs deserializer
-paths in [nota-serde-core](../repos/nota-serde-core/src/de.rs):
-LParenPipe handler, plus PatternField<T> dispatch on `_`,
-`@name`, or literal-T.
+The original §3 / §3.1 dramatised PatternField dispatch as a
+"hard part." It wasn't. See
+[091](091-pattern-rethink.md) for the corrected design and
+[`nexus/src/parse.rs`](../repos/nexus/src/parse.rs) for the
+actual implementation (`QueryParser` type, ~240 LoC including
+helpers, 24 tests). PatternField::Bind carries no payload (the
+bind name is the schema field name at that position); the
+parser validates `@<name>` against the expected schema field
+name and rejects mismatches.
 
-### 3.1 The hard part — PatternField<T> dispatch
-
-`PatternField<T>` has three variants distinguished by token at
-deserialization time:
-
-```
-text          → variant
-─────────────────────────────────
-_             → Wildcard
-@name         → Bind("name")
-"hello" / 5   → Match(value of type T)
-```
-
-The deserializer has to peek the next token and dispatch. But
-serde's `Deserializer::deserialize_enum` doesn't naturally
-expose this — variant dispatch is normally driven by an ident
-matching the variant name.
-
-**Two paths:**
-
-**(A) Native parser support** — extend `de.rs` with custom
-dispatch for `PatternField`. Requires either: a sentinel
-(like `BIND_SENTINEL` for nexus binds), making PatternField a
-sentinel type in nexus-serde; or a hand-written `Deserialize`
-impl on `PatternField` that uses an internal API of nota-serde-
-core to peek tokens. ~80 LoC + design judgment.
-
-**(B) Hand-written daemon-side parser** — the nexus daemon owns
-a small custom function `parse_query(&str) -> QueryOp` that
-recognizes the `(| Kind ... |)` shape directly and constructs
-the typed payload. Inside the kind block, it reads each
-position with kind-aware logic:
-
-```rust
-fn parse_query(input: &str) -> Result<QueryOp> {
-    let mut lexer = Lexer::nexus(input);
-    expect(lexer, Token::LParenPipe)?;
-    let kind_name = expect_pascal_identifier(&mut lexer)?;
-    let query = match kind_name.as_str() {
-        "Node"     => QueryOp::Node(NodeQuery {
-            name: parse_pattern_field_string(&mut lexer)?,
-        }),
-        "Edge"     => QueryOp::Edge(EdgeQuery {
-            from: parse_pattern_field_slot(&mut lexer)?,
-            to:   parse_pattern_field_slot(&mut lexer)?,
-            kind: parse_pattern_field_relation_kind(&mut lexer)?,
-        }),
-        "Graph"    => QueryOp::Graph(GraphQuery {
-            title: parse_pattern_field_string(&mut lexer)?,
-        }),
-        "KindDecl" => QueryOp::KindDecl(KindDeclQuery {
-            name: parse_pattern_field_string(&mut lexer)?,
-        }),
-        other => return Err(format!("unknown query kind: {other}")),
-    };
-    expect(&mut lexer, Token::RParenPipe)?;
-    Ok(query)
-}
-
-fn parse_pattern_field_string(lexer: &mut Lexer) -> Result<PatternField<String>> {
-    match lexer.next_token()? {
-        Some(Token::Ident(text)) if text == "_" => Ok(PatternField::Wildcard),
-        Some(Token::At) => {
-            let bind_name = expect_lowercase_identifier(lexer)?;
-            Ok(PatternField::Bind(bind_name))
-        }
-        Some(Token::Ident(text)) => Ok(PatternField::Match(text)),  // bare-identifier
-        Some(Token::Str(text))   => Ok(PatternField::Match(text)),  // quoted
-        other => Err(format!("expected pattern field, got {other:?}")),
-    }
-}
-// parse_pattern_field_slot: bare integer → Match(Slot(n)), @name → Bind, _ → Wildcard
-// parse_pattern_field_relation_kind: bare PascalCase → Match(variant), @name → Bind, _ → Wildcard
-```
-
-**Recommendation:** path B for M0 (~50 LoC in nexus daemon).
-Defers the parser-kernel design until kinds grow enough to
-justify it. Path A becomes attractive when rsc lands and can
-generate per-kind pattern parsers from KindDecl records.
+Step 4 is folded into step 5 (the daemon body) — there is no
+separate parser-kernel work needed.
 
 ---
 
@@ -427,7 +341,9 @@ pub fn reply(reply: Reply) -> Result<String> {
 }
 
 fn render_typed_seq<T: serde::Serialize>(items: &[T]) -> Result<String> {
-    // Per Q6 in 087: NO HARDCODING. Use nota-serde-core to render.
+    // NO HARDCODING (per criome ARCH Invariant D + AGENTS.md):
+    // all rendering of typed Rust values goes through
+    // nota-serde-core, never hardcoded text strings.
     nota_serde_core::to_string_nexus(items).map_err(|e| ...)
 }
 ```
@@ -481,7 +397,7 @@ calls this out: *"Text is text. nexus-cli does not parse nexus;
 it just shuttles bytes."*
 
 Also note: that arch doc still has the stale `client_msg`
-references caught in [087 §1.1](087-m0-plan-decisions-and-grammar.md);
+stale references — now fixed in the doc-cleanup pass;
 fixing those concurrently with this step would be opportunistic.
 
 ---
@@ -551,63 +467,28 @@ values.
 
 ---
 
-## 7 · Open decisions before I proceed
+## 7 · Open decisions — answered or RETIRED
 
-These came up during planning. Pre-confirming saves churn.
+The decisions surveyed here have all been settled or rendered
+obsolete:
 
-### 7.1 Sema kind-tag storage form
-
-My plan: prepend a u8 tag byte to the payload bytes in the
-records table value. Pros: zero schema change, 1-byte cost
-per record. Cons: full table scan for `iter_kind` (M0
-acceptable; M1+ optimize with secondary index).
-
-**Alternative:** parallel `kind_tags: Slot → u8` table.
-Cleaner separation, +1 read per get. I lean prepend.
-
-Confirm prepend, or want parallel table?
-
-### 7.2 Verb scope for M0
-
-My plan: M0 dispatches `Handshake` + `Assert` + `Query`. Other
-verbs (`Mutate`, `Retract`, `AtomicBatch`, `Subscribe`,
-`Validate`) return `Diagnostic E0099 "verb not implemented in
-M0; planned for {milestone}"`. Both criome and nexus daemon
-respect this.
-
-This contradicts 088 §6 which sketched Mutate/Retract/Atomic-
-Batch as part of the Op enums. Those types EXIST (signal
-defines them) — they just aren't *processed* by criome at M0.
-
-Acceptable? Or want Mutate + Retract + AtomicBatch processed
-too (probably another ~80 LoC across criome + daemon parser)?
-
-### 7.3 Parser approach for `(| ... |)`
-
-My plan: hand-written in nexus daemon (path B from §3.1), ~50
-LoC for 4 kinds. Defer the parser-kernel design to M1+.
-
-Acceptable, or want native nota-serde-core support now?
-
-### 7.4 Handshake at the CLI ↔ daemon leg
-
-There IS no signal handshake on this leg — it's pure text. The
-nexus daemon DOES handshake on the daemon ↔ criome leg (signal
-required). For M0 the CLI just opens, writes, reads, closes.
-Future protocol-version negotiation can layer on as a "(Hello
-1.0)" verb if needed.
-
-Confirm: no handshake on CLI ↔ daemon leg in M0?
-
-### 7.5 nexus-cli stale arch doc
-
-Concurrent or separate? My plan: fix the [stale references in
-nexus-cli/ARCHITECTURE.md](../repos/nexus-cli/ARCHITECTURE.md)
-(client_msg, TxnBatch, etc — see [087 §1.1](087-m0-plan-decisions-and-grammar.md))
-during step 6.
-
-Concurrent or as a follow-up? I lean concurrent (cheap, the
-file is heavily wrong as-is).
+- **§7.1 Sema kind-tag storage form** — RETIRED. The per-verb
+  typed-payload design (per [088](088-closed-vs-open-schema-research.md))
+  doesn't need sema-side kind tagging; criome dispatches each
+  `AssertOp` variant to its kind-specific store path. Sema's
+  `store(&[u8]) → Slot` API stays as-is for M0.
+- **§7.2 Verb scope for M0** — settled: M0 implements
+  Handshake + Assert + Query in criome; Mutate / Retract /
+  AtomicBatch / Subscribe / Validate return `Diagnostic
+  E0099` until M1+.
+- **§7.3 Parser approach** — settled by [091](091-pattern-rethink.md):
+  hand-written `QueryParser` in the nexus daemon. Already
+  implemented in [`nexus/src/parse.rs`](../repos/nexus/src/parse.rs).
+- **§7.4 Handshake at CLI ↔ daemon leg** — settled: no
+  handshake on that leg; the daemon handles the signal
+  handshake on its criome leg.
+- **§7.5 nexus-cli stale arch doc** — done in the doc-cleanup
+  pass.
 
 ---
 
@@ -615,10 +496,9 @@ file is heavily wrong as-is).
 
 ```
    ┌─ step 3 (criome body) ─────────────────────┐
-   │  3.0  sema kind-tag revision (~30 LoC)     │   independent of all else;
-   │  3.1  uds.rs accept loop (~40 LoC)         │   can land first
-   │  3.2  dispatch + assert + query (~80 LoC)  │
-   │  3.3  4 integration tests                  │
+   │  3.1  uds.rs accept loop (~40 LoC)         │   sema (step 2) already
+   │  3.2  dispatch + assert + query (~80 LoC)  │   landed; kind-tag
+   │  3.3  4 integration tests                  │   revision RETIRED
    └────────────────────────────────────────────┘
               │
               ▼
@@ -628,30 +508,28 @@ file is heavily wrong as-is).
    └────────────────────────────────────────────┘
               │
               ▼
-   ┌─ step 5 (nexus daemon) ────────────────────┐
-   │  5.1  bind + accept (~30 LoC)              │   needs §3 (criome up)
-   │  5.2  text parsing dispatch (~80 LoC)      │   §3.1 hand-written
-   │       — uses nota-serde-core for asserts    │   query parser inline
-   │       — hand-written §3.1 query parser     │
+   ┌─ step 5 (nexus daemon body) ───────────────┐
+   │  5.1  bind + accept (~30 LoC)              │   needs §3 (criome up);
+   │  5.2  text parsing dispatch (~80 LoC)      │   QueryParser already
+   │       — uses nota-serde-core for asserts    │   landed in nexus/src/
+   │       — uses QueryParser for queries       │   parse.rs (24 tests)
    │  5.3  reply rendering (~50 LoC)            │
    │  5.4  unit tests (~6) + 1 integration      │
    └────────────────────────────────────────────┘
               │
               ▼
    ┌─ step 6 (nexus-cli) ───────────────────────┐
-   │  6.1  text shuttle (~30 LoC)               │   needs §5 (daemon up)
-   │  6.2  fix nexus-cli/ARCHITECTURE.md stale  │
-   │       references opportunistically         │
+   │  6.1  text shuttle (~30 LoC)               │   needs §5 (daemon up);
+   │                                             │   nexus-cli/ARCH.md
+   │                                             │   stale-fix DONE
    └────────────────────────────────────────────┘
 
-Step 4 (parser kernel extension) is FOLDED into step 5 as the
-hand-written §3.1 query parser. No standalone step needed.
+Step 4 (parser-kernel extension) FOLDED into step 5; QueryParser
+already landed at [`nexus/src/parse.rs`](../repos/nexus/src/parse.rs).
 
-Total LoC estimate: ~390 (sema rev 30 + criome 150 + nexus
-daemon 180 + nexus-cli 30 + genesis text 30, give or take).
-Down slightly from 088's 495 because the parser kernel work
-becomes the daemon's hand-written ~50 LoC rather than a full
-deserializer extension.
+Total LoC estimate remaining: ~310 (criome 150 + nexus daemon
+130 + nexus-cli 30, give or take). The parser/sema parts of M0
+are done.
 ```
 
 End-to-end demo on completion: `nexus-cli example.nexus` where
