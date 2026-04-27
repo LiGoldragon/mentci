@@ -85,7 +85,7 @@ Small reports are fine — the report doesn't have to be large. Acknowledgements
 
 ## Beauty is the criterion
 
-Read [`repos/tools-documentation/programming/beauty.md`](repos/tools-documentation/programming/beauty.md) before pushing back on any rule below as "verbose" or "ceremonial." Beauty is not a luxury — it is the test of correctness. Ugly code is evidence that the underlying problem is unsolved. The full case (philosophical foundation across two millennia + the explicit defense from Hardy / Hoare / Dijkstra / Brooks / Hickey / Torvalds + the catastrophic record of what happens when ugly engineering ships — Therac-25, Ariane 5, Mars Climate Orbiter, Heartbleed, Boeing MCAS) lives in [`reports/097-beauty-and-elegance-research-2026-04-27.md`](reports/097-beauty-and-elegance-research-2026-04-27.md).
+Read [`repos/tools-documentation/programming/beauty.md`](repos/tools-documentation/programming/beauty.md) before pushing back on any rule below as "verbose" or "ceremonial." Beauty is not a luxury — it is the test of correctness. Ugly code is evidence that the underlying problem is unsolved. The full case (philosophical foundation across two millennia + the explicit defense from Hardy / Hoare / Dijkstra / Brooks / Hickey / Torvalds + the catastrophic record of what happens when ugly engineering ships — Therac-25, Ariane 5, Mars Climate Orbiter, Heartbleed, Boeing MCAS) lives in [`repos/tools-documentation/programming/beauty-research.md`](repos/tools-documentation/programming/beauty-research.md).
 
 The aesthetic discomfort *is* the diagnostic reading. When something feels ugly, slow down and find the structure that makes it beautiful — that structure is the one you were missing. Per Li (2026-04-27): *"Fuck ugliness and non-conciseness. Who knows how many people were put to death and tortured because someone wasn't concise and explicit enough."*
 
@@ -93,11 +93,11 @@ The aesthetic discomfort *is* the diagnostic reading. When something feels ugly,
 
 Read [`repos/tools-documentation/programming/abstractions.md`](repos/tools-documentation/programming/abstractions.md) before writing free functions. The discipline applies to any language with method dispatch: behavior lives on types, not as floating verbs. The rule's purpose is to force the question "what type owns this verb?" — when the answer isn't obvious, the model of the problem isn't fully formed yet, and slowing down to find the noun is the load-bearing cognitive event.
 
-Especially load-bearing for LLM-generated code, which lacks the tactile friction that makes humans economize on type creation: declaring a `struct` and declaring a `fn` cost the same number of tokens, so without the rule, agents default to the shorter shape and the noun never gets named. Full research backing in [`reports/096-methods-on-types-research-2026-04-27.md`](reports/096-methods-on-types-research-2026-04-27.md).
+Especially load-bearing for LLM-generated code, which lacks the tactile friction that makes humans economize on type creation: declaring a `struct` and declaring a `fn` cost the same number of tokens, so without the rule, agents default to the shorter shape and the noun never gets named. Full research backing in [`repos/tools-documentation/programming/abstractions-research.md`](repos/tools-documentation/programming/abstractions-research.md).
 
 ## Naming — full words by default
 
-Identifiers are read far more than they are written. Cryptic abbreviations optimize for the writer (a few keystrokes saved) at the reader's expense (one mental lookup per occurrence). The empirical literature is unanimous on this; the cultural inertia toward `ctx` / `tok` / `de` / `pf` is fossil from 6-char FORTRAN, 80-column cards, and 10-cps teletypes — none of which still apply. See [`reports/092`](reports/092-naming-research-and-rule.md) for the full research.
+Identifiers are read far more than they are written. Cryptic abbreviations optimize for the writer (a few keystrokes saved) at the reader's expense (one mental lookup per occurrence). The empirical literature is unanimous on this; the cultural inertia toward `ctx` / `tok` / `de` / `pf` is fossil from 6-char FORTRAN, 80-column cards, and 10-cps teletypes — none of which still apply. See [`repos/tools-documentation/programming/naming-research.md`](repos/tools-documentation/programming/naming-research.md) for the full research.
 
 **Default: spell every identifier as full English words.**
 
@@ -170,7 +170,7 @@ When you catch yourself thinking "this name feels too long" or "this is unnecess
 
 There is no exception class for "feels verbose." That feeling is the bug, not the criterion.
 
-Backing research: [`reports/092-naming-research-and-rule.md`](reports/092-naming-research-and-rule.md) (the empirical case for full words) + [`reports/097-beauty-and-elegance-research-2026-04-27.md`](reports/097-beauty-and-elegance-research-2026-04-27.md) (why beauty in identifiers is the criterion, not keystroke-economy).
+Backing research: [`repos/tools-documentation/programming/naming-research.md`](repos/tools-documentation/programming/naming-research.md) (the empirical case for full words) + [`repos/tools-documentation/programming/beauty-research.md`](repos/tools-documentation/programming/beauty-research.md) (why beauty in identifiers is the criterion, not keystroke-economy).
 
 ## Design-doc hygiene — state criteria positively
 

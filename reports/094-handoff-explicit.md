@@ -123,10 +123,13 @@ purpose:
     bind-name-from-schema rule + corrected `PatternField`
     shape (no String payload). Implemented in
     [`../repos/nexus/src/parse.rs`](../repos/nexus/src/parse.rs).
-23. [`092-naming-research-and-rule.md`](092-naming-research-and-rule.md)
+23. [`../repos/tools-documentation/programming/naming-research.md`](../repos/tools-documentation/programming/naming-research.md)
     — full research backing the "spell every identifier as
     full English words" rule. The rule itself is in
-    AGENTS.md; this is the *why*.
+    AGENTS.md; this is the *why*. (Also see sibling
+    [`abstractions-research.md`](../repos/tools-documentation/programming/abstractions-research.md)
+    and [`beauty-research.md`](../repos/tools-documentation/programming/beauty-research.md)
+    for the methods-on-types and beauty rules.)
 24. [`093-project-wide-style-review-plan.md`](093-project-wide-style-review-plan.md)
     — plan for verifying every Rust crate against both new
     style rules. Stage 1.1 (nexus) is done; stage 1.2/1.3
@@ -185,7 +188,7 @@ builds and downstream flake consumers.
 
 ### 2c · Full English words
 
-Per [`092`](092-naming-research-and-rule.md) and the rule in
+Per [`naming-research.md`](../repos/tools-documentation/programming/naming-research.md) and the rule in
 [`../AGENTS.md`](../AGENTS.md): spell every identifier as a
 full English word. `lex` → `lexer`, `tok` → `token`,
 `ident` → `identifier`, `op` → `operation`, `de` →
@@ -425,7 +428,12 @@ Concrete things that have caused churn in prior sessions:
    chat is one-line pointers. See §2a.
 5. **Writing new memory files** — don't. See §2e.
 6. **Referencing deleted reports** — only 074, 088, 089,
-   091, 092, 093 exist. Anything else is dead.
+   091, 093, 094, 095 exist as reports. Research syntheses
+   for naming / methods-on-types / beauty have been re-homed
+   to [`../repos/tools-documentation/programming/`](../repos/tools-documentation/programming/)
+   as `naming-research.md` / `abstractions-research.md` /
+   `beauty-research.md` (long-lived public docs, no longer
+   subject to report rollover).
 7. **Referencing deleted/renamed concepts**:
    - `nexus-schema` (absorbed into signal)
    - `client_msg` (deleted)
@@ -451,7 +459,7 @@ Concrete things that have caused churn in prior sessions:
 
 ---
 
-## 8 · Reports inventory (six survive)
+## 8 · Reports inventory
 
 | # | File | Purpose | Lifetime |
 |---|---|---|---|
@@ -459,8 +467,16 @@ Concrete things that have caused churn in prior sessions:
 | 088 | [closed-vs-open schema research](088-closed-vs-open-schema-research.md) | Research backing perfect specificity (Invariant D) | DURABLE — keep |
 | 089 | [M0 implementation plan steps 3+](089-m0-implementation-plan-step-3-onwards.md) | Active M0 plan (criome / daemon / cli / genesis to come) | ACTIVE — work-in-progress |
 | 091 | [pattern parser rethink](091-pattern-rethink.md) | Implemented; the auto-name-from-schema rule + corrected `PatternField` shape | DURABLE — keep as backing |
-| 092 | [naming research + rule](092-naming-research-and-rule.md) | Research backing the full-words naming rule | DURABLE — keep |
 | 093 | [project-wide style review plan](093-project-wide-style-review-plan.md) | Active plan; nexus stage 1.1 done, signal/sema/etc to verify | ACTIVE — pending |
+| 094 | this report | Post-context-reset entry point | DURABLE — keep, refresh as state evolves |
+| 095 | [project-wide rust style audit](095-style-audit-2026-04-27.md) | Active style-fix plan with Q1–Q4 decisions | ACTIVE — fix-up pending |
+
+**Re-homed research syntheses** (now in `tools-documentation/programming/`,
+no longer subject to report rollover):
+
+- [`naming-research.md`](../repos/tools-documentation/programming/naming-research.md) (was reports/092)
+- [`abstractions-research.md`](../repos/tools-documentation/programming/abstractions-research.md) (was reports/096)
+- [`beauty-research.md`](../repos/tools-documentation/programming/beauty-research.md) (was reports/097)
 
 Reports policy: per
 [`../AGENTS.md`](../AGENTS.md) report-hygiene rules. Soft cap
