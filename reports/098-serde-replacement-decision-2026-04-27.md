@@ -175,26 +175,72 @@ JSON.
 
 ## 4 · Cost of replacing it
 
-### 4.1 The no-macros constraint disqualifies every "ergonomic alternative"
+### 4.1 The choice space — broader than first framed
 
-Every Rust ecosystem alternative to serde-derive that promises
-ergonomics — miniserde, nanoserde, serde_lite, borsh-derive —
-**ships a derive macro**. The no-macros rule
-([criome/ARCHITECTURE.md §10](https://github.com/LiGoldragon/criome/blob/main/ARCHITECTURE.md))
-disqualifies them at the same line as serde-derive's. We have
-two options: call serde's derive, or hand-write per-type code.
-There is no third option.
+*Per Li 2026-04-27 correction: there is no "no-macros"
+constraint in the current bootstrap era. The
+[criome/ARCHITECTURE.md macro section](https://github.com/LiGoldragon/criome/blob/main/ARCHITECTURE.md)
+describes the eventual self-hosting state (sema-rules +
+rsc-projection replacing authored macros); during the
+bootstrap era, we may author macros where useful, accepting
+that they're transitional code that will be replaced by
+sema-projection later.*
 
-### 4.2 Hand-written cost
+So the actual implementation choices for Stage 2 are:
 
-Hand-writing the replacement costs roughly:
+1. **Hand-written per-kind methods.** ~30 LoC per kind ×
+   ~7 kinds = ~270 LoC. Direct projection target for rsc
+   later. No new macro to maintain.
+2. **Author our own derive macro.** `#[derive(NexusKind)]`
+   that emits per-kind methods on `Decoder` / `Encoder`,
+   dispatching on a closed `Token` enum. Roughly equivalent
+   ergonomics to `#[derive(Serialize, Deserialize)]`, but
+   speaks our data model natively. Transitional by design —
+   gets replaced by rsc-projection in the eventual state.
+3. **Keep serde, hide the carve-outs.** Status quo +
+   cosmetic shims. Doesn't address the structural problems
+   in §3.
+
+(1) and (2) both align with the staged plan. Decide between
+them at Stage 2 based on volume — if M0→M1 keeps adding
+kinds, the derive becomes more attractive; if the kind set
+stabilises, hand-written stays direct.
+
+Lighter ecosystem alternatives (miniserde / nanoserde /
+serde_lite / borsh-derive) all ship derives that fit
+*their* data models, not ours. They share serde's structural
+mismatches (variant-name-as-string dispatch, no native
+sigils, no schema-typed pattern positions). Adopting any of
+them would solve volume cost without solving the
+architectural fit problem — false economy.
+
+### 4.2 The cost numbers
+
+For Option 1 (hand-written):
 
 - **Per record kind**: a `Decoder::node(&mut self) -> Result<Node>` and `Encoder::node(&mut self, n: &Node)` pair = ~15 LoC each = ~30 LoC per kind.
-- **For M0's seven kinds** (Node, Edge, Graph, KindDecl, NodeQuery, EdgeQuery, GraphQuery, KindDeclQuery, RelationKind): ~270 LoC of hand-written code.
-- **Plus the per-verb dispatcher**: one method that reads the first sigil/delimiter and dispatches to the right `decode_*` — ~80–120 LoC, replacing the ~250 LoC of serde trait machinery currently in `de.rs:161-436`.
-- **Lexer stays.** [nota-serde-core/src/lexer.rs](../repos/nota-serde-core/src/lexer.rs) (525 LoC) is genuinely format logic and does not depend on serde — it's the only piece nexus actually imports today.
+- **For M0's seven kinds** (Node, Edge, Graph, KindDecl, NodeQuery, EdgeQuery, GraphQuery, KindDeclQuery, RelationKind): ~270 LoC.
+- **Plus the per-verb dispatcher**: one method that reads the first sigil/delimiter and dispatches to the right `decode_*` — ~80–120 LoC, replacing the ~250 LoC of serde trait machinery in `de.rs:161-436`.
+- **Lexer stays.** [nota-serde-core/src/lexer.rs](../repos/nota-serde-core/src/lexer.rs) (525 LoC) is pure format logic.
 
-**Net: ~915 LoC vs. today's ~1750 LoC** (de + ser + lexer + nexus-serde façade), and the new code is uniformly *our verb vocabulary* rather than half-format / half-trait-fitting. Serde, `nota-serde-core` (in current shape), and `nexus-serde` all leave the dependency graph; the resulting crate is one library with the lexer + `Decoder` + `Encoder` types and one method per kind.
+**Net: ~915 LoC vs. today's ~1750 LoC** (de + ser + lexer + nexus-serde façade), and the new code is uniformly *our verb vocabulary* rather than half-format / half-trait-fitting.
+
+For Option 2 (custom derive):
+
+- The derive crate itself: a few hundred LoC of proc-macro
+  code, written once.
+- Per-kind cost: zero — `#[derive(NexusKind)]` on the struct.
+- Total: ~700 LoC including the derive and the lexer.
+
+The derive option *adds* a maintenance burden (the proc-macro
+crate) but *removes* the per-kind cost. Worth it if we expect
+the kind count to grow significantly post-M0; not worth it if
+M0+M1 is the steady-state.
+
+Either option deletes serde, `nota-serde-core` (in current
+shape), and `nexus-serde` from the dependency graph. The
+resulting crate is one library with the lexer + `Decoder` +
+`Encoder` types.
 
 ### 4.3 What we cannot determine without running code
 
@@ -287,10 +333,15 @@ as "Stage 2 work," not added to the sentinel pile.
 
 ### Stage 2 — M0 → M1 boundary
 
-Write the hand-rolled `Decoder` and `Encoder` in a new crate
-(working name `nexus-codec`, owned by the nexus daemon).
-Reuses [`nota-serde-core::Lexer`](../repos/nota-serde-core/src/lexer.rs)
+Write the `Decoder` and `Encoder` in a new crate (working
+name `nexus-codec`, owned by the nexus daemon). Reuses
+[`nota-serde-core::Lexer`](../repos/nota-serde-core/src/lexer.rs)
 only.
+
+**Implementation choice (decide at Stage 2):** hand-written
+per-kind methods (Option 1) or our own
+`#[derive(NexusKind)]` proc-macro (Option 2) — see §4.1. Both
+align with the rest of the plan.
 
 Steps:
 
@@ -305,9 +356,10 @@ Steps:
 6. `nota-serde-core` becomes `nota-lexer` — a 525-LoC
    tokenizer crate.
 
-Work estimate: ~2 days of focused work; ~hundreds of LoC
-written, ~thousands deleted. No behavior changes; tests stay
-green throughout.
+Work estimate: ~2 days of focused work for Option 1; ~3 days
+for Option 2 (the proc-macro crate is the extra cost).
+~hundreds of LoC written, ~thousands deleted. No behaviour
+changes; tests stay green throughout.
 
 ### Stage 3 — rsc lands (M2+)
 
