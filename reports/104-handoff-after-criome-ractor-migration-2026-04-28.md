@@ -750,15 +750,7 @@ ractor = { version = "0.15", features = ["async-trait"] }
 
 ## 9 · Other open work (lower priority)
 
-### 9a · ARCHITECTURE.md drift in criome
-
-`criome/ARCHITECTURE.md` still describes the pre-migration
-shape (single `Daemon` noun + per-verb `impl` blocks). The
-post-migration code is the 5-actor supervision tree. **Update
-the §"Code map" and §"Status" sections** to match the new
-shape after nexus migration is also done.
-
-### 9b · M0 step 7 — genesis.nexus
+### 9a · M0 step 7 — genesis.nexus
 
 bd `mentci-next-???` (ID created earlier this session).
 Concrete: write `criome/genesis.nexus` with the bootstrap
@@ -766,20 +758,20 @@ KindDecls + glue in `criome/src/main.rs` that dispatches them
 on first boot (empty sema). **Not blocking the demo** —
 Node/Edge/Graph kinds are built into criome's M0 body.
 
-### 9c · M1 — per-kind sema tables
+### 9b · M1 — per-kind sema tables
 
 bd `mentci-next-7tv`. Replaces the 1-byte kind discriminator
 in `criome/src/kinds.rs` with per-kind redb tables. Unblocks
 schema-based query optimisation, cleaner cross-version
 compat, and the bootstrap loop.
 
-### 9d · Encoder bare-ident emission for strings
+### 9c · Encoder bare-ident emission for strings
 
 The nota README §"Strings" says canonical form emits bare
 when eligible. Encoder currently always quotes. Cosmetic;
 defer.
 
-### 9e · Open bd issues
+### 9d · Open bd issues
 
 Run `bd list --status=open` to see current state. Includes:
 - `mentci-next-ef3` — self-hosting "done" moment

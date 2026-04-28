@@ -268,5 +268,11 @@ the deep review surfaced via running the actual integration test —
 not from static reading. **Static review caught structure; running
 caught dynamics.**
 
-Follow-ups still open: update `nexus/ARCHITECTURE.md` and
-`criome/ARCHITECTURE.md` code maps; close `bd mentci-next-rgs`.
+Follow-ups: `nexus/ARCHITECTURE.md` updated; `bd mentci-next-rgs`
+closed. The reports/104 §9a "criome/ARCHITECTURE.md drift" item
+turned out to be based on a misread — criome's ARCHITECTURE.md
+is the *project-wide* canonical doc with no Code map or Status
+section and no internal-shape claims; the actor-tree code map
+lives in [criome/src/lib.rs](https://github.com/LiGoldragon/criome/blob/main/src/lib.rs)'s
+doc comment, already current. Phantom follow-up dropped from
+reports/104.
