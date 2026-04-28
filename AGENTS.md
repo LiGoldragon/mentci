@@ -110,7 +110,6 @@ Examples (bad → good):
 | `ident` | `identifier` |
 | `op` | `operation` (or specific: `assert_op`) |
 | `de` | `deserializer` |
-| `kd` | `kind_decl` (or `KindDecl`) |
 | `pf` | `pattern_field` |
 | `ctx` | `context` (or specific: `parse_context`) |
 | `cfg` | `config` (or `configuration`) |
@@ -156,7 +155,7 @@ When generating new code: **spell identifiers as full English words by default.*
 
 ### The "feels too verbose" anti-pattern
 
-When a spelled-out name (`AssertOperation`, `Deserializer`, `KindDecl`, `PatternField`) "feels needlessly verbose" — that feeling is **not** a signal to shorten the name. It is a signal that the writer (human or agent) has been **taught wrong** by training data drawn from a 60-year-old culture of card-deck and 80-column-line constraints that no longer apply.
+When a spelled-out name (`AssertOperation`, `Deserializer`, `PatternField`, `RelationKind`) "feels needlessly verbose" — that feeling is **not** a signal to shorten the name. It is a signal that the writer (human or agent) has been **taught wrong** by training data drawn from a 60-year-old culture of card-deck and 80-column-line constraints that no longer apply.
 
 The full word reads as English. The abbreviation reads as ceremony to be decoded. The cost of mis-naming is paid every time the name is read; the benefit of saving three keystrokes is paid once. There is no contest.
 

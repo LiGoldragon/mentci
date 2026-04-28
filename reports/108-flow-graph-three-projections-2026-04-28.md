@@ -42,43 +42,29 @@ flow graphs that compile to user-authored runtimes.
 The record kinds already exist in [signal](https://github.com/LiGoldragon/signal):
 
 - `Graph(title: String)` — the container.
-- `Node(name: String)` — a vertex; per-kind typed extensions
-  attach via additional `KindDecl`-described records.
+- `Node(name: String)` — a vertex.
 - `Edge(from: Slot, to: Slot, kind: RelationKind)` — labeled directed
   edge.
-- `KindDecl(name, fields[…])` — schema-as-data; the way new node and
-  edge kinds get registered without a Rust recompile.
 
 A *flow graph* is one `Graph` plus the closed set of `Node`s and
-`Edge`s that point at it. Edges are typed by `RelationKind`; nodes are
-typed by their associated `KindDecl`. The graph is a directed labeled
-multigraph, with extension at both vertex-kind and edge-kind levels.
+`Edge`s that point at it. Edges are typed by `RelationKind`; nodes
+are flat for now (one `Node` shape; subkinds will arrive as new
+typed structs in signal as the design demands). The graph is a
+directed labeled multigraph.
 
 The records live in sema; everything downstream reads from there.
 
-### Honest scope — what `KindDecl` is for, today
+### What's authoritative today
 
-The closed-loop story for `KindDecl` is "records describe types,
-criome respects them, `rsc` emits Rust per record kind." **That loop
-can't close until M5+** — until then, new types come from new Rust
-code in `signal/src/*` (write the struct, add it to the closed enum,
-propagate through criome's hand-coded dispatch). The Rust enum is the
-real authority; `KindDecl` records, if asserted into sema, are *inert
-metadata* — criome stores them and returns them on Query but doesn't
-enforce against them.
-
-`KindDecl` earns its keep when:
-
-1. **mentci's UI** reads `KindDecl` from sema to know what fields a
-   `Node` has, without hard-coding that knowledge in mentci itself
-   (M3/M4 time).
-2. **`rsc`** consumes `KindDecl` as input to per-kind emission
-   templates (M5).
-
-Before either reader exists, `KindDecl` is forward-looking
-scaffolding. The naming-rule violation (`Decl` → `Declaration`) plus
-the question of whether the type should exist at all in M0 is open
-question 12 in §8.
+Schema-as-data scaffolding — `KindDecl`, `FieldDecl`, `Cardinality`,
+`KindDeclQuery` — was dropped from signal in [commit 8b101c8d](https://github.com/LiGoldragon/signal/commit/8b101c8d5a3c)
+under Path A of the §8 Q12 decision (the original Q12 has been
+resolved). The closed Rust enum in signal is the **authoritative
+type system**. New record kinds land by adding the typed struct +
+the closed-enum variant + propagating through criome's hand-coded
+dispatch. Schema-as-data records will be re-added when `rsc` or
+mentci has a real reader for them — until then, the scaffolding
+would have been inert.
 
 ## 3 · Projection 1 — nexus text (already shipping)
 
@@ -102,8 +88,11 @@ this design.**
 Crucially, this is **macro programming**, not naive code generation:
 
 - The input is **structured records**, not source-text tokens.
-- The emission is **template/pattern substitution per record kind** —
-  every `KindDecl` carries (or implies) the per-kind emission template.
+- The emission is **template/pattern substitution per node-kind and
+  edge-kind** — the templates are hand-coded inside `rsc` itself
+  (one template per kind, written in Rust). When `rsc` ships, adding
+  a new node-kind means adding the typed struct in signal *and* the
+  emission template in rsc.
 - The output is Rust source that **becomes a running actor system**
   when compiled.
 
@@ -117,7 +106,8 @@ expansion shape; rsc walks the graph and emits the union.
 For a flow graph, the emitted Rust includes:
 
 - **One ractor `Actor` per `Node`**, with the per-node-kind State /
-  Arguments / Message shape determined by the node's `KindDecl`.
+  Arguments / Message shape determined by the node's typed kind in
+  signal.
 - **Typed message routes for each `Edge`**, wired between the actors
   the edge connects. `RelationKind` determines the wire protocol —
   fire-and-forget cast vs request/response call vs streaming
@@ -279,10 +269,11 @@ Tentative — depends on Li's answers below.
 
 - **M0** — nexus text shuttle, criome+nexus daemons ractor-hosted, demo
   graph operations end-to-end. **Done.**
-- **M1** — `rsc` minimum: emits a known-shape Rust file from a known-
-  shape record (start small, e.g. one `KindDecl` → one `pub struct`).
-  Per-kind sema tables (`bd mentci-next-7tv`) land here as the schema
-  rsc reads from.
+- **M1** — `rsc` minimum: emits a known-shape Rust file from a
+  known-shape record (start small, e.g. one `Node` record →
+  one ractor `Actor` skeleton). Per-kind sema tables
+  (`bd mentci-next-7tv`) land here as the storage shape `rsc` reads
+  from.
 - **M2** — `Subscribe` request shipped on criome side; mentci can
   subscribe to record changes for live updates.
 - **M3** — mentci UI v0: read-only visual render of flow graphs from
@@ -301,11 +292,13 @@ Tentative — depends on Li's answers below.
 The deep dive surfaces decisions that gate concrete design work:
 
 1. **Which node kinds anchor the first emission?** The macro-emission
-   path needs a small closed set of `KindDecl`s for M5. `Node` /
-   `Edge` / `Graph` carry no per-kind semantics by themselves. What
-   are the first concrete kinds — Source / Transformer / Sink? Or
-   domain-specific (e.g. validator-stage kinds for criome's own
-   request flow)? The choice frames the rest of the design.
+   path needs a small closed set of typed node-kind structs in signal
+   for M5. `Node` / `Edge` / `Graph` carry no per-kind semantics by
+   themselves. What are the first concrete kinds — Source /
+   Transformer / Sink? Or domain-specific (e.g. validator-stage
+   kinds for criome's own request flow)? The choice frames the
+   rest of the design — both signal's new types and rsc's first
+   emission templates.
 
 2. **Smallest first demo graph.** The minimum viable end-to-end
    demonstration of the macro path. Candidate: encode criome's M0
@@ -384,29 +377,21 @@ The deep dive surfaces decisions that gate concrete design work:
     place — the UI offers "atomic mode" via a modifier key or a
     deliberate "begin / end transaction" affordance.
 
-12. **`KindDecl` — naming + role in M0.** Two conjoined decisions:
-    - **Naming**: `Decl` violates the full-English rule
-      (`tools-documentation/programming/naming-research.md`). Spelled
-      out is `KindDeclaration`. Or rethink the noun entirely —
-      `KindDefinition` if "definition" reads better than "declaration";
-      something else if neither captures the role.
-    - **Role in M0–M4**: as §2 notes, `KindDecl` is currently inert
-      metadata — criome stores it but doesn't enforce against it.
-      Path A: drop `KindDecl` from signal until `rsc` or mentci
-      earns it (M5+); cleaner M0, less dead weight, re-add when a
-      real reader exists. Path B: keep it, mark explicitly inert in
-      docs ("descriptive only until M5; the closed Rust enum is the
-      authoritative type system today"); future agents don't get
-      confused about authority. Path A is the simpler default per
-      the discipline of not introducing scaffolding before its
-      reader exists.
+12. **~~`KindDecl` — naming + role in M0.~~** **RESOLVED** — Li chose
+    Path A 2026-04-28. `KindDecl` + `FieldDecl` + `Cardinality` +
+    `KindDeclQuery` were dropped from signal in commit 8b101c8d.
+    Schema-as-data records will be re-added when `rsc` or mentci has
+    a real reader for them. The closed Rust enum in signal is the
+    authoritative type system today; new kinds land by adding the
+    typed struct and propagating through hand-coded dispatch.
 
 ## 9 · Where this report leaves to implementation
 
 After Li answers the open questions, concrete work per layer:
 
-- **`rsc`** — emission templates per `KindDecl`; macro/templating DSL;
-  build-system integration choice (per Q3).
+- **`rsc`** — emission templates per node-kind / edge-kind (templates
+  hand-coded in rsc); macro/templating DSL; build-system integration
+  choice (per Q3).
 - **`mentci`** — UI tech choice + skeleton; gesture→signal mapping;
   diagnostic surface; criome connection (per Q4–Q8).
 - **`signal`** — `Subscribe` request shape (M2; design likely needs
