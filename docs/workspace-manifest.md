@@ -28,7 +28,7 @@ For project-wide architecture, read [`criome/ARCHITECTURE.md`](https://github.co
 | `criome` | The engine — validator pipeline + sema host. Project-wide architecture lives here. |
 | `nota` | Spec — data grammar (nota ⊂ nexus). |
 | `nota-codec` | Typed Decoder + Encoder for nota and nexus dialects. Runtime half of the codec stack. |
-| `nota-derive` | Proc-macro derives for nota-codec — NotaRecord, NotaEnum, NotaTransparent, NexusPattern, NexusVerb. |
+| `nota-derive` | Proc-macro derives for nota-codec — NotaRecord, NotaEnum, NotaTransparent, NotaTryTransparent, NexusPattern, NexusVerb. |
 | `nexus` | The nexus language — grammar spec under `spec/` + translator daemon (text ↔ signal). |
 | `signal` | Binary language — wire envelope + IR + record kinds. |
 | `sema` | The records DB (redb-backed). |
