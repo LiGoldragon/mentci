@@ -31,8 +31,8 @@ Design history and decision records are in [`reports/`](reports/).
 | [`criome/ARCHITECTURE.md`](https://github.com/LiGoldragon/criome/blob/main/ARCHITECTURE.md) | **Project-wide canonical.** Prose + diagrams only. No code. High-level shape, invariants, relationships, rules of the engine being built. | "criome owns sema; forge owns arca; text crosses only at nexus" |
 | [`mentci/ARCHITECTURE.md`](ARCHITECTURE.md) | **This dev environment.** Workspace conventions, role, layout. Points at criome for the project itself. | "mentci is the dev workshop; long-term it becomes the universal UI" |
 | `<repo>/ARCHITECTURE.md` | **Per-repo bird's-eye view.** This repo's role, boundaries (owns / does not own), code map, status. Points at criome for cross-cutting context — does *not* duplicate it. Per the matklad ARCHITECTURE.md convention. | `arca/ARCHITECTURE.md` "owns the `~/.arca/` layout + index DB" |
-| [`reports/NNN-*.md`](reports/) | **Concrete shapes + decision records.** Type sketches, record definitions, message enums, research syntheses, historical context. | `Graph { … }` full rkyv sketch |
-| the repos themselves | **Implementation.** Rust code, tests, flakes, Cargo.toml. | `signal/src/flow.rs` |
+| [`reports/NNN-*.md`](reports/) | **Decision records + design syntheses.** Prose + visuals (diagrams, tables, swimlanes, flowcharts). No implementation code — type sketches and code go in skeleton code in the relevant repo. | "the build-flow swimlane in [reports/110](reports/110-engine-architecture-snapshot-end-to-end-build-2026-04-29.md)" |
+| the repos themselves | **Implementation.** Rust code, tests, flakes, Cargo.toml. Type sketches as compiler-checked skeletons live here. | `signal/src/flow.rs` |
 
 If a layer rule is violated, rewrite: move type sketches out of `criome/ARCHITECTURE.md` into a report or skeleton code; move runnable code out of reports into the appropriate repo. The architecture stays slim so it remains readable in one pass.
 
@@ -83,6 +83,20 @@ The rejected-framings list in [criome's `ARCHITECTURE.md`](https://github.com/Li
 The choice is made by reading each report against the author's intent — no mechanical rule. When unclear, ask Li.
 
 The cap is **soft** in that it triggers a rollover pass, not an instant rejection; it is **firm** in that the pass must run before the next new report lands. The 2026-04-28 cleanup left `reports/` empty — every active report had been absorbed into `tools-documentation/` topic files, per-repo `ARCHITECTURE.md`s, or code, and the rest were deleted. Default to deletion; extract only when the rationale has no other home.
+
+## Design reports — visuals, not code
+
+Reports in [`reports/`](reports/) explain, propose, analyse, or summarise. Their medium is **prose + visuals** — ASCII diagrams, swimlanes, flowcharts, tables, dependency graphs. Implementation code (Rust `impl` blocks, function bodies, struct definitions with methods, full Nix derivations) belongs in skeleton code in the relevant repo, not in a report.
+
+**Why:** code in a design doc goes stale the moment it lands and the real type drifts; readers can't tell whether the report's snippet or the repo's actual type is authoritative; visual shapes carry the same information without that freshness trap. A two-column "field name | type | meaning" table reads better than a struct definition and won't go silently wrong when the code evolves. A flow diagram reads better than a code walkthrough.
+
+**Test:** if the report has more than a couple of lines that look like Rust / Python / Nix implementation, refactor those into a visual.
+
+**The narrow allowance:** a few-line *sample* of the surface the design talks about — a snippet of a config file showing its shape, a one-line CLI invocation, a single field declaration to anchor a name — is fine. The rule is about implementation blocks, not about showing the shape of the thing the design is about. If the sample needs more than a few lines, it has stopped being a sample and become an implementation; move it.
+
+This rule pairs with the [Skeleton-as-design over prose-as-design rule in criome/ARCHITECTURE §13.6](repos/criome/ARCHITECTURE.md#13--update-policy) — both push compiler-checkable shapes into the repos where the type system enforces them, leaving reports free to do what reports are good at: tracing decisions, mapping interactions, recording journeys.
+
+When this rule is violated in an existing report: don't backfill all reports at once; fix it the next time a report is touched, or note it as a follow-up.
 
 ## Session-response style — substance goes in reports
 
