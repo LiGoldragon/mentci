@@ -134,102 +134,43 @@ expedient that motivates it.
 
 ---
 
-## Foundational invariants
+## Where the rules live
 
-These are the rules every component, every report, and every
-decision must respect. Each has been earned by Li's correction of
-an earlier wrong frame.
+This document is intent. The architectural and process rules that
+*flow from* this intent live downstream — and that is on purpose.
+Putting specific rules here would re-shape INTENTION around
+particulars that change as the engine evolves; the intent is more
+durable than any specific rule.
 
-### On the engine
+- **Engine-level rules** — what criome / sema / forge / arca-daemon
+  do and do not do, what the wire protocols carry, what records
+  exist — live in
+  [criome/ARCHITECTURE.md](https://github.com/LiGoldragon/criome/blob/main/ARCHITECTURE.md).
+- **Process and agent rules** — how agents interact with the
+  workspace, document conventions, jj/bd/nix workflow — live in
+  [mentci/AGENTS.md](AGENTS.md).
+- **Cross-project programming discipline** — Rust style, beauty as
+  criterion, push-not-pull, micro-components, abstractions — lives
+  in
+  [tools-documentation/](https://github.com/LiGoldragon/tools-documentation).
+- **Per-repo specifics** — each canonical repo's `ARCHITECTURE.md`.
 
-- **Sema is all we are concerned with.** Everything else exists to
-  serve sema.
-- **criome runs nothing.** criome receives, validates, persists to
-  sema, communicates. It does not spawn subprocesses, write files
-  outside sema, invoke external tools, or link code-emission
-  libraries. Effect-bearing work lives in dedicated components.
-- **The flow-graph IS the program.** A `Graph` record holding
-  `Node` records linked by `Edge` records is the canonical
-  representation of any computation. There is no separate
-  "compilation unit" or "module" concept above the graph; the graph
-  *is* the unit.
-- **Signal is the messaging system.** Every wire in the
-  sema-ecosystem is signal-shaped. Layered protocols
-  (signal-forge, signal-arca) re-use signal's envelope/handshake/
-  auth and add audience-scoped verbs.
-- **Push, never pull.** Producers expose subscriptions; consumers
-  subscribe. No polling fallback ever. Real-time consumers defer
-  their real-time feature until subscribe ships rather than poll
-  while waiting.
-- **Sema is local; reality is subjective.** No global sema, no
-  federated database, no single logical truth. Each criome holds a
-  subjective view; instances communicate, agree, disagree, and
-  negotiate to reach agreement.
-- **Categories are intrinsic.** Code records and world-fact records
-  cannot share a category — the separation is a fact of reality,
-  not a schema choice.
-
-### On the codebase
-
-- **Beauty is the criterion.** If it isn't beautiful, it isn't
-  done. Ugly code is evidence the underlying problem is unsolved.
-- **Every reusable verb belongs to a noun.** Free functions are
-  verbs without owners. Find the owner; if no owner exists, the
-  model is incomplete.
-- **Perfect specificity at every typed boundary.** No wrapper enums
-  that mix concerns; no string-tagged dynamic dispatch; no generic-
-  record fallback.
-- **One capability, one crate, one repo.** Adding a feature
-  defaults to a *new* crate, not editing an existing one. The
-  burden of proof is on the contributor who wants to grow a crate.
-- **Skeleton-as-design.** New design starts as compiled types +
-  trait signatures + `todo!()`. rustc checks consistency; prose
-  cannot drift.
-- **All-rkyv except nexus text.** Pinned feature set
-  workspace-wide (rkyv 0.8, std + bytecheck + little_endian +
-  pointer_width_32 + unaligned).
-- **Content-addressing is non-negotiable.** Record identity is the
-  blake3 of canonical rkyv encoding.
-
-### On process
-
-- **Update canonical docs first, code second, reports third.** The
-  golden documents (criome/ARCHITECTURE.md, this file) are the
-  source of truth. Code follows. Reports record the journey only
-  when the journey is worth carrying forward.
-- **Don't negate the past architecture; remove it from existence.**
-  Stating "we used to do X but now we do Y" leaves agents to
-  rediscover X. State only Y.
-- **Don't restate-to-refute.** Wrong framings live once, in
-  criome/ARCHITECTURE.md §10 "Rejected framings." Reports do not
-  re-introduce rejected frames in order to refute them.
-- **Delete wrong reports; don't banner.** Banners invite agents to
-  relitigate. The rollover discipline lives in `mentci/AGENTS.md`.
-- **No ETAs.** Describe the work; do not schedule it.
-
-### On agent participation
-
-- **Render criome into mentci-UI.** Introspectability is part of
-  the design, not a downstream concern. Decisions that compromise
-  introspectability are rejected even when they would otherwise
-  improve performance or simplicity.
-- **Agents do not estimate.** No "weeks," no "months," no
-  "implementation cost," no "this would be too expensive."
-- **Agents do not pre-decide on cost.** Agents enumerate the design
-  surface honestly. Li decides.
-- **Agents recommend by principle, not by expedient.** When an
-  agent recommends an option, the recommendation cites the
-  invariant or value that motivates it.
+If a downstream rule conflicts with this document, the downstream
+rule is wrong; rewrite it. If this document seems to need a new
+specific rule, the rule belongs downstream — write it there, and
+update INTENTION only if a deeper *intent* needs to be made
+explicit.
 
 ---
 
 ## What rejection looks like
 
-A list of framings that are wrong and will be rejected. When an
-agent generates one of these, the agent should recognise it and
-back out. New rejections live in
-[criome/ARCHITECTURE.md §10.1](https://github.com/LiGoldragon/criome/blob/main/ARCHITECTURE.md);
-this section names the *categories* of mistake the rejections share.
+Categories of mistake that are wrong at the *intent* level, not
+just at the rule level. Specific technical rejections (federation,
+aski-as-input, particular framings of self-hosting) live in
+[criome/ARCHITECTURE.md §10.1](https://github.com/LiGoldragon/criome/blob/main/ARCHITECTURE.md#101-rejected-framings-reject-loud).
+The categories below are upstream of those — they generate
+rejections; they are not themselves the rejections.
 
 - **Time-to-market thinking.** "MVP," "ship fast," "minimum
   viable," "we can iterate later." Rejected.
@@ -238,16 +179,10 @@ this section names the *categories* of mistake the rejections share.
   short-term saving. Rejected.
 - **Personal-scale framings.** "Self-hosted-self," "craftsperson
   workshop," "single-user tool." Rejected. The scope is global.
-- **Federation / global-database framings.** Sema is local;
-  reality is subjective. Rejected.
 - **Backwards-compatibility-by-default.** Rejected until Li
   declares a compat boundary.
 - **Bannered-deprecated framings.** "We used to think X but now we
   think Y." Rejected. State Y.
-- **Aski-as-input.** Aski is retired and not a design source.
-  Rejected.
-- **Bit-for-bit identity at self-hosting close.** Rejected; new
-  rustc versions aren't byte-identical to predecessors either.
 
 ---
 
