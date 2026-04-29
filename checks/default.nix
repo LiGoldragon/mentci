@@ -21,4 +21,6 @@ pkgs.linkFarm "mentci-workspace-crate-checks" [
   { name = "criome";      path = inputs.criome.checks.${system}.default; }
   { name = "nexus";       path = inputs.nexus.checks.${system}.default; }
   { name = "nexus-cli";   path = inputs.nexus-cli.checks.${system}.default; }
+  { name = "mentci-lib";  path = inputs.mentci-lib.checks.${system}.default; }
+  { name = "mentci-egui"; path = inputs.mentci-egui.checks.${system}.default; }
 ]

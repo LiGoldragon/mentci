@@ -63,6 +63,18 @@
       inputs.fenix.follows = "fenix";
       inputs.crane.follows = "crane";
     };
+    mentci-lib = {
+      url = "github:LiGoldragon/mentci-lib";
+      inputs.nixpkgs.follows = "nixpkgs";
+      inputs.fenix.follows = "fenix";
+      inputs.crane.follows = "crane";
+    };
+    mentci-egui = {
+      url = "github:LiGoldragon/mentci-egui";
+      inputs.nixpkgs.follows = "nixpkgs";
+      inputs.fenix.follows = "fenix";
+      inputs.crane.follows = "crane";
+    };
   };
 
   outputs = inputs: inputs.blueprint { inherit inputs; };
