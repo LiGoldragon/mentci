@@ -6,10 +6,14 @@ Start there for: cross-project rules (jj workflow, always-push, Rust style — s
 
 ## Architecture
 
-This repo (mentci) is the **dev environment**. The project being built is **criome**.
+This repo (mentci) is the **dev environment + meta-deploy aggregator**. The project being built is **criome**.
 
-1. Read [`ARCHITECTURE.md`](ARCHITECTURE.md) at this repo's root for the dev-environment shape.
-2. Then read [criome's `ARCHITECTURE.md`](https://github.com/LiGoldragon/criome/blob/main/ARCHITECTURE.md) — the canonical reference for the engine being built (sema, nexus, forge, criome, prism, arca, signal, …).
+> **🚨 [criome's `ARCHITECTURE.md`](https://github.com/LiGoldragon/criome/blob/main/ARCHITECTURE.md) is REQUIRED READING for every agent and human working in any sema-ecosystem repo. 🚨**
+>
+> Read it in full before touching any component (criome, signal, signal-forge, signal-arca, sema, nexus, nexus-cli, forge, arca, prism, mentci-lib, lojix-cli, the GUI repo, or any future canonical crate). Per-repo `ARCHITECTURE.md` files describe each repo's niche; criome's describes how the niches fit. Both are needed; criome's is the apex.
+
+1. Read [criome's `ARCHITECTURE.md`](https://github.com/LiGoldragon/criome/blob/main/ARCHITECTURE.md) — the canonical reference for the engine being built (sema, nexus, forge, criome, prism, arca, signal, signal-forge, signal-arca, …).
+2. Read [`ARCHITECTURE.md`](ARCHITECTURE.md) at this repo's root for the dev-environment + deployment shape.
 
 Design history and decision records are in [`reports/`](reports/).
 
