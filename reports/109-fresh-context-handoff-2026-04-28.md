@@ -18,13 +18,13 @@ design report (currently 108).*
   2026-04-28 (Q1/Q3/Q4/Q5/Q9/Q12)** — see §6. The remaining 6
   (Q2/Q6/Q7/Q8/Q10/Q11) are tactical, deferrable to M1 work.
 - **prism (renamed from rsc, 2026-04-28)** is the code-emission
-  piece of `lojix-daemon`'s runtime-creation flow; lojix-daemon
+  piece of `forge-daemon`'s runtime-creation flow; forge-daemon
   links prism and runs the surrounding work internally —
   workdir assembly, nix-via-crane-and-fenix compile, bundle
-  into lojix-store. Full flow:
+  into arca. Full flow:
   [`criome/ARCHITECTURE.md` §7 — Compile + self-host loop](../../criome/ARCHITECTURE.md).
   Stub today; body lands once criome's record supply is wide
-  enough + lojix-daemon arrives.
+  enough + forge-daemon arrives.
 - **Path A on KindDecl** (2026-04-28): `KindDecl` + `FieldDecl` +
   `Cardinality` + `KindDeclQuery` dropped from signal entirely.
   The closed Rust enum in signal is the **authoritative type
@@ -43,7 +43,7 @@ A fresh agent reads, in this order:
    repo inventory + status (CANON / TRANSITIONAL / SHELVED).
 3. `criome/ARCHITECTURE.md` — the project-wide canonical doc
    (Invariants A–D, the request flow, the three-daemon shape, the
-   two-stores split, the lojix-daemon-as-runtime-creator framing).
+   two-stores split, the forge-daemon-as-runtime-creator framing).
 4. [`tools-documentation/programming/{beauty,abstractions}.md`](https://github.com/LiGoldragon/tools-documentation) —
    discipline (beauty as the criterion, methods on types,
    "free functions are incorrectly specified verbs").
@@ -81,10 +81,10 @@ A fresh agent reads, in this order:
   All cross-repo Cargo deps use `branch = "main"`. Lockfiles pin
   by sha. Workspace `nix flake check` from mentci passes all 14
   derivations including `mentci-integration` end-to-end.
-- **CANON, skeleton (M2+)** — `lojix-store`. Stub with valid
+- **CANON, skeleton (M2+)** — `arca`. Stub with valid
   ARCH+AGENTS docs.
-- **TRANSITIONAL** — `lojix`, `lojix-cli`, `prism` (renamed from
-  rsc 2026-04-28; the code-emission subcomponent of lojix-daemon's
+- **TRANSITIONAL** — `forge`, `lojix-cli`, `prism` (renamed from
+  rsc 2026-04-28; the code-emission subcomponent of forge-daemon's
   pipeline; stub).
 - **CANON cluster (CriomOS)** — `CriomOS`, `horizon-rs`,
   `CriomOS-emacs`, `CriomOS-home`. Ancillary; not part of the
@@ -117,12 +117,12 @@ A fresh agent reads, in this order:
 - **Reports are ephemeral.** Default to deletion. Extract to
   architecture docs or tools-documentation only when the rationale
   has no other durable home.
-- **lojix-daemon orchestrates runtime creation.** prism emits
-  `.rs` only; lojix-daemon links prism and runs the surrounding
+- **forge-daemon orchestrates runtime creation.** prism emits
+  `.rs` only; forge-daemon links prism and runs the surrounding
   work internally — workdir assembly, nix-via-crane-and-fenix
-  compile, bundle into lojix-store. Full flow lives in
+  compile, bundle into arca. Full flow lives in
   criome/ARCHITECTURE.md §7; the exact internal orchestration
-  shape inside lojix-daemon is open until lojix-daemon is built
+  shape inside forge-daemon is open until forge-daemon is built
   (today: skeleton-as-design).
 - **criome speaks only signal.** Signal is the messaging system
   of the whole sema-ecosystem. nexus is one front-end (text↔signal
@@ -244,8 +244,8 @@ bd for `mentci-lib`. None gated on further design questions.
 
 - **Lojix family carries the ZST-method-holder pattern** that
   criome + nexus had before the 2026-04-28 audit; deferred per
-  Li's "leave lojix alone for now." When lojix is next worked on,
-  audit `lojix/src/{uds,actors/*.rs}` and
+  Li's "leave forge alone for now." When forge is next worked on,
+  audit `forge/src/{uds,actors/*.rs}` and
   `lojix-cli/src/{build,deploy,proposal,project,artifact}.rs` for
   inherent impls on `pub struct Foo;` and apply the same fix
   shape (move work into `main` or onto a real noun with fields).
@@ -256,7 +256,7 @@ bd for `mentci-lib`. None gated on further design questions.
   Pre-existing structural issue, unrelated to recent cleanups.
 - **prism is a stub.** `src/main.rs` is `fn main() {}`. Body lands
   when criome's record supply is wide enough to project AND
-  lojix-daemon arrives to host the runtime-creation pipeline.
+  forge-daemon arrives to host the runtime-creation pipeline.
   Don't refactor prism speculatively.
 - **per-kind sema tables** (`bd mentci-next-7tv`) need to land for
   prism to read structured per-kind storage. The 1-byte kind

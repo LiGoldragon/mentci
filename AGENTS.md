@@ -9,7 +9,7 @@ Start there for: cross-project rules (jj workflow, always-push, Rust style — s
 This repo (mentci) is the **dev environment**. The project being built is **criome**.
 
 1. Read [`ARCHITECTURE.md`](ARCHITECTURE.md) at this repo's root for the dev-environment shape.
-2. Then read [criome's `ARCHITECTURE.md`](https://github.com/LiGoldragon/criome/blob/main/ARCHITECTURE.md) — the canonical reference for the engine being built (sema, nexus, lojix, criome, prism, lojix-store, signal, …).
+2. Then read [criome's `ARCHITECTURE.md`](https://github.com/LiGoldragon/criome/blob/main/ARCHITECTURE.md) — the canonical reference for the engine being built (sema, nexus, forge, criome, prism, arca, signal, …).
 
 Design history and decision records are in [`reports/`](reports/).
 
@@ -19,9 +19,9 @@ Design history and decision records are in [`reports/`](reports/).
 
 | Where | What | Example |
 |---|---|---|
-| [`criome/ARCHITECTURE.md`](https://github.com/LiGoldragon/criome/blob/main/ARCHITECTURE.md) | **Project-wide canonical.** Prose + diagrams only. No code. High-level shape, invariants, relationships, rules of the engine being built. | "criome owns sema; lojix owns lojix-store; text crosses only at nexus" |
+| [`criome/ARCHITECTURE.md`](https://github.com/LiGoldragon/criome/blob/main/ARCHITECTURE.md) | **Project-wide canonical.** Prose + diagrams only. No code. High-level shape, invariants, relationships, rules of the engine being built. | "criome owns sema; forge owns arca; text crosses only at nexus" |
 | [`mentci/ARCHITECTURE.md`](ARCHITECTURE.md) | **This dev environment.** Workspace conventions, role, layout. Points at criome for the project itself. | "mentci is the dev workshop; long-term it becomes the universal UI" |
-| `<repo>/ARCHITECTURE.md` | **Per-repo bird's-eye view.** This repo's role, boundaries (owns / does not own), code map, status. Points at criome for cross-cutting context — does *not* duplicate it. Per the matklad ARCHITECTURE.md convention. | `lojix-store/ARCHITECTURE.md` "owns the `~/.lojix/store/` layout + index DB" |
+| `<repo>/ARCHITECTURE.md` | **Per-repo bird's-eye view.** This repo's role, boundaries (owns / does not own), code map, status. Points at criome for cross-cutting context — does *not* duplicate it. Per the matklad ARCHITECTURE.md convention. | `arca/ARCHITECTURE.md` "owns the `~/.arca/` layout + index DB" |
 | [`reports/NNN-*.md`](reports/) | **Concrete shapes + decision records.** Type sketches, record definitions, message enums, research syntheses, historical context. | `Opus { … }` full rkyv sketch |
 | the repos themselves | **Implementation.** Rust code, tests, flakes, Cargo.toml. | `nexus-schema/src/opus.rs` |
 
@@ -47,7 +47,7 @@ Per-repo `ARCHITECTURE.md` does **not** duplicate criome's `ARCHITECTURE.md`. It
 
 When creating a new canonical repo: write `ARCHITECTURE.md` at root before the first commit.
 
-MVP goal: **self-hosting** — write the system's own source as records in the sema database; prism projects those records to `.rs` files (one phase of lojix-daemon's runtime-creation pipeline); rustc compiles them; the new binary reads and extends its own database.
+MVP goal: **self-hosting** — write the system's own source as records in the sema database; prism projects those records to `.rs` files (one phase of forge-daemon's runtime-creation pipeline); rustc compiles them; the new binary reads and extends its own database.
 
 An **opus** is the database's compilation-unit term — one opus compiles to one artifact (library or binary). Corresponds to one Rust crate on the filesystem side.
 
@@ -85,7 +85,7 @@ Small reports are fine — the report doesn't have to be large. Acknowledgements
 
 ## Components, not monoliths
 
-The workspace is composed of **micro-components** — one capability per crate, per repo, per protocol. **sema** is the database. **criome** is the state-engine around it. **lojix** is the executor (nix, filesystem, deploy). **prism** is the code emitter. **signal** is the wire protocol. **nexus** is the text front-end. Each lives in its own repo with its own `Cargo.toml`, `flake.nix`, and tests; each fits in a single LLM context window; each speaks to its neighbors only through typed protocols.
+The workspace is composed of **micro-components** — one capability per crate, per repo, per protocol. **sema** is the database. **criome** is the state-engine around it. **forge** is the executor (nix, filesystem, deploy). **prism** is the code emitter. **signal** is the wire protocol. **nexus** is the text front-end. Each lives in its own repo with its own `Cargo.toml`, `flake.nix`, and tests; each fits in a single LLM context window; each speaks to its neighbors only through typed protocols.
 
 **Adding a feature defaults to a new crate, not editing an existing one.** The burden of proof is on the contributor (human or agent) who wants to grow a crate. They must justify why the new behavior is part of the *same capability* — not a new one. The default answer is "new crate."
 
@@ -184,9 +184,9 @@ Backing research: [`repos/tools-documentation/programming/naming-research.md`](r
 ## Binary naming — `-daemon` suffix, full English
 
 Long-running daemon binaries carry the `-daemon` suffix:
-`nexus-daemon`, `criome-daemon`, `lojix-daemon`. The library
+`nexus-daemon`, `criome-daemon`, `forge-daemon`. The library
 half of the same crate keeps the bare name (`nexus`,
-`criome`, `lojix`) — `[lib] name = "nexus"` and `[[bin]] name = "nexus-daemon"`
+`criome`, `forge`) — `[lib] name = "nexus"` and `[[bin]] name = "nexus-daemon"`
 in the same `Cargo.toml`. CLI binaries that the user
 invokes interactively keep bare names (`nexus`, `criome`).
 

@@ -30,11 +30,12 @@ For project-wide architecture, read [`criome/ARCHITECTURE.md`](https://github.co
 | `nota-codec` | Typed Decoder + Encoder for nota and nexus dialects. Runtime half of the codec stack. |
 | `nota-derive` | Proc-macro derives for nota-codec — NotaRecord, NotaEnum, NotaTransparent, NotaTryTransparent, NexusPattern, NexusVerb. |
 | `nexus` | The nexus language — grammar spec under `spec/` + translator daemon (text ↔ signal). |
-| `signal` | Binary language — wire envelope + IR + record kinds. |
+| `signal` | Binary language — wire envelope + IR + record kinds. The workspace's typed wire protocol; spoken on every leg. |
+| `signal-forge` | Layered protocol crate atop signal. Carries the criome ↔ forge wire (Build, Deploy, store-entry operations). Skeleton-as-design. |
 | `sema` | The records DB (redb-backed). |
 | `nexus-cli` | Text client. |
-| `lojix` | The lojix daemon — forge + store + deploy actors. The bare name doubles as the family namespace. |
-| `lojix-store` | Content-addressed filesystem + index DB. |
+| `forge` | The forge daemon — executor (build, store-write, deploy actors). The bare name doubles as the family namespace. |
+| `arca` | Content-addressed filesystem + index DB. General-purpose; forge is one writer of many. |
 
 ### CriomOS cluster
 
@@ -49,8 +50,8 @@ For project-wide architecture, read [`criome/ARCHITECTURE.md`](https://github.co
 
 | Repo | Note |
 |---|---|
-| `lojix-cli` | Working deploy CLI for CriomOS. Migrates to a thin signal-speaking client of the `lojix` daemon when that lands. Don't rewrite. |
-| `prism` | Stub today. Records-to-Rust source projector — code-emission subcomponent of `lojix-daemon`'s runtime-creation pipeline. Renamed from `rsc` 2026-04-28. |
+| `lojix-cli` | Working deploy CLI for CriomOS. Migrates to a thin signal-speaking client of the `forge` daemon when that lands. Don't rewrite. |
+| `prism` | Stub today. Records-to-Rust source projector — code-emission subcomponent of `forge-daemon`'s runtime-creation pipeline. Renamed from `rsc` 2026-04-28. |
 
 ## SHELVED
 

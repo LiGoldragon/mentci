@@ -16,11 +16,11 @@ end: records → working actor runtime. Concretely:
 
 - `signal::BuildRequest` verb shipped (the new request criome
   accepts/denies and forwards).
-- `criome` validates + forwards records to `lojix` as a signal
+- `criome` validates + forwards records to `forge` as a signal
   verb. **criome itself runs nothing.**
-- `lojix` links `prism` and runs the full pipeline internally:
+- `forge` links `prism` and runs the full pipeline internally:
   prism emits `.rs` → workdir assembly → `nix build` → bundle
-  into lojix-store.
+  into arca.
 - `CompiledBinary` record asserted to sema; reply chain to the
   client.
 
@@ -65,7 +65,7 @@ through-line independently.
         ║                ║   ║   CLUSTER     ║   │ signal      │
         ║                ║   ║               ║   │ speakers    │
         ║  nexus daemon  ║   ║  ┌─────────┐  ║   │             │
-        ║   (text↔sig)   ║   ║  │ lojix   │  ║   │ agents,     │
+        ║   (text↔sig)   ║   ║  │ forge   │  ║   │ agents,     │
         ║       ▲        ║   ║  │ daemon  │  ║   │ scripts,    │
         ║       │ text   ║   ║  │         │  ║   │ workspace   │
         ║       ▼        ║   ║  │ links   │  ║   │ tools       │
@@ -79,7 +79,7 @@ through-line independently.
         ║       ▼        ║   ║       │ writes║
         ║  mentci-lib    ║   ║       ▼       ║
         ║  (gesture→sig) ║   ║  ┌─────────┐  ║
-        ║                ║   ║  │ lojix-  │  ║
+        ║                ║   ║  │ forge-  │  ║
         ║                ║   ║  │  store  │  ║
         ║  + future      ║   ║  │  (FS,   │  ║
         ║    mobile/alt  ║   ║  │   redb  │  ║
@@ -90,9 +90,9 @@ through-line independently.
       ┌── wire-type crate ───┐    ┌── library crates ──┐
       │      signal          │    │       prism        │
       │   (every wire —      │    │  (records → Rust)  │
-      │    front-ends ↔      │    │  linked by lojix   │
+      │    front-ends ↔      │    │  linked by forge   │
       │    criome and        │    │                    │
-      │    criome ↔ lojix)   │    │     mentci-lib     │
+      │    criome ↔ forge)   │    │     mentci-lib     │
       │                      │    │  (gesture→signal)  │
       │   nota / nota-codec  │    │  linked by GUI     │
       │   nota-derive        │    │  + alt UIs         │
@@ -120,16 +120,17 @@ multiple participants.
 |---|---|---|
 | **sema** | the database — records' home (redb) | nothing |
 | **criome** | the state-engine — validates, persists, forwards. Runs nothing. | sema, signal |
-| **signal** | the workspace's typed wire protocol (rkyv types only) | nota-codec, rkyv |
+| **signal** | the workspace's typed wire protocol — Frame envelope + handshake + auth + records + front-end verbs (rkyv types only) | nota-codec, rkyv |
+| **signal-forge** | layered atop signal — carries the criome ↔ forge wire (Build, Deploy, store-entry operations); compile-time isolation from front-ends | signal |
 | **nexus daemon** | text ↔ signal gateway | signal, nota-codec |
 | **nexus-cli** | thin text client | (UDS to nexus daemon) |
-| **lojix daemon** | executor — links prism, runs nix, bundles | signal, prism, lojix-store |
-| **lojix-store** | content-addressed artifact filesystem + redb index | redb |
+| **forge daemon** | executor — links prism, runs nix, bundles | signal, prism, arca |
+| **arca** | content-addressed artifact filesystem + redb index | redb |
 | **prism** | library: records → Rust source | signal (record types) |
 | **mentci-lib** | library: gesture → signal envelope, criome connection | signal |
 | **GUI repo** | egui flow-graph editor | mentci-lib, egui |
 | **nota / nota-codec / nota-derive** | text codec stack for nexus dialect | rkyv |
-| **lojix-cli** | deploy CLI (transitioning to thin signal-speaking client of lojix) | signal |
+| **lojix-cli** | deploy CLI (transitioning to thin signal-speaking client of forge) | signal |
 | **mentci** | workspace umbrella — design corpus, agent rules, dev shell | (workspace-only) |
 | **tools-documentation** | cross-project rules + tool docs | (no runtime) |
 
@@ -193,19 +194,19 @@ enum naming the kinds it operates on (`AssertOperation::Node` /
 
 ---
 
-## 4 · The criome → lojix leg (also signal)
+## 4 · The criome → forge leg (also signal)
 
 **signal is the workspace's only wire protocol.** The
-criome→lojix leg uses signal too — same envelope, same
-handshake, same rkyv framing as front-end → criome. lojix
+criome→forge leg uses signal too — same envelope, same
+handshake, same rkyv framing as front-end → criome. forge
 accepts the effect-bearing subset of signal verbs; rejects
 the others.
 
 ```
-effect-bearing signal verbs (criome → lojix)
+effect-bearing signal verbs (criome → forge)
 │
 ├─ Build { graph, nodes, edges, ... }   ── records → CompiledBinary
-│                                          (lojix runs prism +
+│                                          (forge runs prism +
 │                                           workdir + nix + bundle
 │                                           internally)
 │
@@ -214,11 +215,11 @@ effect-bearing signal verbs (criome → lojix)
 └─ store-entry operations               ── get / put / materialize
                                            / delete (some shipped at
                                            build time; full set lands
-                                           with lojix-store reader/
+                                           with arca reader/
                                            writer bodies)
 
 
-reply payloads (lojix → criome)
+reply payloads (forge → criome)
 │
 ├─ BuildOk { store_entry_hash, narhash, wall_ms }
 ├─ DeployOk { generation, wall_ms }
@@ -226,12 +227,12 @@ reply payloads (lojix → criome)
 ```
 
 **criome does NOT run prism, NOT write files, NOT spawn nix.**
-lojix owns all of that. criome's role on this leg: forward the
+forge owns all of that. criome's role on this leg: forward the
 records-bundled signal verb, await the typed reply, assert a
 `CompiledBinary` (or `Deployed`, etc.) record back to sema.
 
 The exact field shapes for `Build`'s payload settle when
-lojix-daemon is wired; what's locked is **the protocol is
+forge-daemon is wired; what's locked is **the protocol is
 signal**.
 
 ---
@@ -239,7 +240,7 @@ signal**.
 ## 5 · Library API surfaces
 
 ```
-prism (linked by lojix daemon)
+prism (linked by forge daemon)
 ─────────────────────────────────────────────────────
 INPUT:   FlowGraphSnapshot {
            graph: &Graph,
@@ -294,7 +295,7 @@ GESTURE → SIGNAL MAPPING:
 signal (no runtime — types only)
 ─────────────────────────────────────────────────────
 Re-exported by: nexus daemon, criome, mentci-lib, agents,
-                lojix (decodes records and effect-bearing
+                forge (decodes records and effect-bearing
                 verbs), lojix-cli
 
 Carries: Frame envelope + Request/Reply types + record kinds
@@ -385,7 +386,7 @@ USER     NEXUS DAEMON    CRIOME              LOJIX (links prism)              SE
  │            │             │ signal::          │                               │
  │            │             │   Build(records)  │                               │
  │            │             │ ── UDS rkyv ─────▶│                               │
- │            │             │                   │ ┌─ inside lojix ─────────────┐│
+ │            │             │                   │ ┌─ inside forge ─────────────┐│
  │            │             │                   │ │ call prism (lib):          ││
  │            │             │                   │ │  emit .rs from records     ││
  │            │             │                   │ │ FileMaterialiser:          ││
@@ -419,7 +420,7 @@ USER     NEXUS DAEMON    CRIOME              LOJIX (links prism)              SE
 assert, reply.** No subprocess. No file write. No external
 tool. No prism link.
 
-**lojix's role: receive records, emit, materialize, build,
+**forge's role: receive records, emit, materialize, build,
 bundle, reply.** Everything that's "doing" lives here.
 
 ---
@@ -501,9 +502,9 @@ projection. On commit, the gesture becomes one signal envelope
 
 | Item | Open question |
 |---|---|
-| `signal::Build` payload fields | precise field set for the records-carrying verb criome forwards to lojix |
+| `signal::Build` payload fields | precise field set for the records-carrying verb criome forwards to forge |
 | `BuildRequestOp` payload fields | beyond `target: Slot` — nix-attr override, target-platform, env knobs? |
-| Capability tokens | criome-signed BLS G1 tokens shape; verification path in lojix daemon |
+| Capability tokens | criome-signed BLS G1 tokens shape; verification path in forge daemon |
 | `mentci-lib`'s exact API | precise type names + connection lifecycle (auto-reconnect? handshake retry?) |
 | GUI repo name | "mentci" remains the working name in design docs until that repo is created |
 | Subscribe payload format | what arrives on the stream — a snapshot delta? a full record? |
@@ -537,8 +538,8 @@ component is wired.
 - **No CriomOS / horizon-rs / lojix-cli deploy flows.** Those
   are an existing parallel track that retains its current
   shape; they migrate to thin signal-speaking clients of
-  lojix when
-  lojix-daemon is wired.
+  forge when
+  forge-daemon is wired.
 
 ---
 
@@ -546,7 +547,7 @@ component is wired.
 
 For verification — the rule as it appears across this picture:
 
-| Concern | criome | lojix |
+| Concern | criome | forge |
 |---|---|---|
 | Validates request | ✓ | — |
 | Reads from sema | ✓ | — |
@@ -555,15 +556,15 @@ For verification — the rule as it appears across this picture:
 | Awaits replies | ✓ | — |
 | Persists outcome records | ✓ | — |
 | Spawns subprocesses | — | ✓ (nix) |
-| Writes files outside sema | — | ✓ (workdir + lojix-store) |
+| Writes files outside sema | — | ✓ (workdir + arca) |
 | Links prism (library call) | — | ✓ |
 | Runs nix-via-crane-and-fenix | — | ✓ |
 | Bundles + RPATH-rewrite | — | ✓ |
-| Updates redb index in lojix-store | — | ✓ |
+| Updates redb index in arca | — | ✓ |
 
 If a future agent finds itself adding a "spawn", "write file",
 "link prism", "run X" capability to criome, that's the failure
-mode the doctrine closes. Add to lojix instead — or, if it's a
+mode the doctrine closes. Add to forge instead — or, if it's a
 new capability with its own bounded context, a new component.
 
 ---
@@ -579,9 +580,9 @@ expect to converge on*. It lives in `reports/` until:
 - `signal/` carries the `BuildRequest` verb as a typed struct
   + matching `BuildRequestOp`.
 - `signal/` carries the records-carrying `Build` verb that
-  criome forwards to lojix (alongside the existing front-end
+  criome forwards to forge (alongside the existing front-end
   verbs).
-- `prism/` and `lojix/` carry the skeleton-as-design code
+- `prism/` and `forge/` carry the skeleton-as-design code
   matching this picture.
 - `mentci-lib/` and the GUI repo exist (or are explicitly
   scoped to a later milestone).

@@ -12,11 +12,11 @@ A flow graph is a set of records in criome's sema. The same records
 project into **three surfaces**:
 
 1. **nexus text** — already shipping; the text edit/inspect surface.
-2. **runtime creation orchestrated by `lojix-daemon`** — `prism`
+2. **runtime creation orchestrated by `forge-daemon`** — `prism`
    emits `.rs` from the records (records → `.rs` source files);
-   lojix-daemon links prism and runs the surrounding work
+   forge-daemon links prism and runs the surrounding work
    internally — workdir assembly, nix-via-crane-and-fenix
-   compile, bundle into lojix-store. The emitted code is a
+   compile, bundle into arca. The emitted code is a
    working ractor-based actor runtime; what runs is the system
    the records describe. Full flow lives in
    [`criome/ARCHITECTURE.md` §7](../repos/criome/ARCHITECTURE.md).
@@ -37,10 +37,10 @@ pixels and accept gestures. None of the three holds independent state;
 all three round-trip through criome.
 
 The flow graph is also **the first concrete use case for criome's
-self-hosting loop**: `lojix-daemon` orchestrates the
+self-hosting loop**: `forge-daemon` orchestrates the
 records-to-runtime pipeline, with `prism` emitting the Rust source
 (the daemon assembles the workdir, calls nix-via-crane, lands the
-artifact in lojix-store). Its first customer is criome itself (per
+artifact in arca). Its first customer is criome itself (per
 `bd mentci-next-0tj`), but the same mechanism handles user-authored
 flow graphs that compile to user-authored runtimes.
 
@@ -89,32 +89,32 @@ applies, replies thread back as text. Verified end-to-end via
 `mentci-integration` in `nix flake check`. **No work pending here for
 this design.**
 
-## 4 · Projection 2 — runtime creation via `lojix-daemon` (prism emits the source)
+## 4 · Projection 2 — runtime creation via `forge-daemon` (prism emits the source)
 
-The records-to-runtime path is owned by **`lojix-daemon`**. The flow
+The records-to-runtime path is owned by **`forge-daemon`**. The flow
 is documented in
 [`criome/ARCHITECTURE.md` §7 — Compile + self-host loop](../repos/criome/ARCHITECTURE.md):
 on a `Compile` request, criome reads the Opus + transitive OpusDeps
-from sema and **forwards them to lojix** as a signal verb.
+from sema and **forwards them to forge** as a signal verb.
 **criome itself runs nothing** — per the workspace doctrine
 (criome ARCH §10), criome communicates and persists; effect-bearing
-work is done elsewhere. lojix-daemon links `prism` and runs the
+work is done elsewhere. forge-daemon links `prism` and runs the
 full pipeline internally: prism emits `.rs` from the records →
-lojix assembles the scratch workdir (`.rs` + `Cargo.toml` +
+forge assembles the scratch workdir (`.rs` + `Cargo.toml` +
 `flake.nix` + crane glue) → NixRunner spawns `nix build` →
-StoreWriter copies the closure into lojix-store (RPATH rewrite
+StoreWriter copies the closure into arca (RPATH rewrite
 via patchelf, deterministic bundle, blake3 hash, write tree
-under `~/.lojix/store/<blake3>/`). lojix replies with
+under `~/.arca/<blake3>/`). forge replies with
 `{ store_entry_hash, narhash, wall_ms }`; criome asserts a
 `CompiledBinary` record back to sema.
 
-**`prism` is the code-emission piece** of lojix's pipeline. The
+**`prism` is the code-emission piece** of forge's pipeline. The
 rest of this section focuses on prism's piece — the code-emission
 shape — since that's where the macro-programming happens. The
-signal verb that carries records from criome to lojix lands
-when `lojix-daemon` is wired. Today both prism and lojix-daemon
+signal verb that carries records from criome to forge lands
+when `forge-daemon` is wired. Today both prism and forge-daemon
 are skeleton-as-design (see
-[`lojix/ARCHITECTURE.md`](../repos/lojix/ARCHITECTURE.md)).
+[`forge/ARCHITECTURE.md`](../repos/forge/ARCHITECTURE.md)).
 
 `prism` reads flow-graph records from sema and emits Rust source code.
 Crucially, this is **macro programming**, not naive code generation:
@@ -158,9 +158,9 @@ Message), per-verb typed `RpcReplyPort<T>` messages, supervision via
 ### The bootstrap loop
 
 1. Records describing criome's own request flow live in sema.
-2. lojix-daemon's pipeline runs: `prism` emits Rust from the
+2. forge-daemon's pipeline runs: `prism` emits Rust from the
    records; the daemon assembles the workdir + calls nix-via-crane;
-   the artifact lands in lojix-store.
+   the artifact lands in arca.
 3. The new criome binary reads from sema (which contains the
    records that compiled it).
 4. Editing the records → re-emit → recompile → re-land → criome
@@ -287,12 +287,12 @@ orbits.
                   │                    │                    │
                   │                    │                    │
         ┌───────────────┐    ┌──────────────────┐    ┌─────────────┐
-        │ nexus-daemon  │    │  lojix-daemon    │    │  mentci     │
+        │ nexus-daemon  │    │  forge-daemon    │    │  mentci     │
         │ — text edit / │    │  pipeline:       │    │  — visual   │
         │   inspect     │    │  prism emits .rs │    │    render + │
         │   surface     │    │  daemon compiles │    │    edit     │
         │   (existing)  │    │  artifact lands  │    │  (M? …)     │
-        └───────────────┘    │  in lojix-store  │    └─────────────┘
+        └───────────────┘    │  in arca  │    └─────────────┘
                              │   (M1 …)         │
                              └──────────────────┘
                                        │
@@ -387,7 +387,7 @@ The deep dive surfaces decisions that gate concrete design work:
    standalone binary?~~** **RESOLVED** — Li 2026-04-28: prism is a
    **library**. Not a CLI ("no reason to make it a CLI"). A
    proc-macro entry could land later as a secondary surface, but
-   proc-macro alone wouldn't be enough — `lojix-daemon` (Rust) needs
+   proc-macro alone wouldn't be enough — `forge-daemon` (Rust) needs
    to call into prism as part of its runtime-creation orchestration,
    and that is a library call. The library reads flow-graph records
    (in-memory or via a sema reader) and emits Rust source (in-memory
@@ -493,24 +493,24 @@ work per layer:
 
 - **`signal`** — new `BuildRequest` verb with `target: Slot`
   payload (per Li 2026-04-29: the verb criome accepts/denies
-  and forwards to lojix); a records-carrying signal verb that
-  criome forwards to lojix lands alongside; 5 first node-kind
+  and forwards to forge); a records-carrying signal verb that
+  criome forwards to forge lands alongside; 5 first node-kind
   structs as the taxonomy lands (Source / Transformer / Sink /
   Junction / Supervisor — Q1 resolved); `RelationKind` grows
   control-plane variants when Supervisor lands (`Supervises`,
   `EscalatesTo`); `Subscribe` request stays as M2 work.
 - **`criome`** — `BuildRequest` engine handler (validates +
-  forwards to lojix); per-kind sema tables (bd
+  forwards to forge); per-kind sema tables (bd
   mentci-next-7tv); `LojixLink` client module mirroring
   nexus's `CriomeLink`; diagnostic-emission richness; Subscribe
   verb at M2. **criome runs nothing** (§10) — handler validates
-  and forwards; lojix executes.
-- **`lojix`** — UDS listener body; receives the new build verb;
+  and forwards; forge executes.
+- **`forge`** — UDS listener body; receives the new build verb;
   links `prism` as a library; orchestrates prism →
   FileMaterialiser → NixRunner → StoreWriter internally.
 - **`prism`** — library skeleton + first emission template
   (one node-kind → one ractor `Actor` skeleton; per Q3
-  resolved: prism is a library, not a CLI). Linked by lojix.
+  resolved: prism is a library, not a CLI). Linked by forge.
 - **`mentci-lib`** — separate crate (Q7 resolved): gesture →
   signal envelope translation + criome-link logic; consumed
   by the future GUI repo and any alternative UIs (mobile, etc).
