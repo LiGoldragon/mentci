@@ -14,11 +14,11 @@ project into **three surfaces**:
 1. **nexus text** — already shipping; the text edit/inspect surface.
 2. **runtime creation orchestrated by `lojix-daemon`** — `prism`
    emits `.rs` from the records (records → `.rs` source files);
-   lojix-daemon orchestrates the surrounding work via existing
-   `lojix-schema` verbs (`RunNix` for the nix-via-crane-and-fenix
-   compile, `BundleIntoLojixStore` for the artifact landing). The
-   emitted code is a working ractor-based actor runtime; what runs
-   is the system the records describe. Full flow lives in
+   lojix-daemon links prism and runs the surrounding work
+   internally — workdir assembly, nix-via-crane-and-fenix
+   compile, bundle into lojix-store. The emitted code is a
+   working ractor-based actor runtime; what runs is the system
+   the records describe. Full flow lives in
    [`criome/ARCHITECTURE.md` §7](../repos/criome/ARCHITECTURE.md).
 3. **mentci UI** — renders the graph visually in real time; user
    gestures (click, drag, typing — the keyboard counts) translate into
@@ -95,27 +95,25 @@ The records-to-runtime path is owned by **`lojix-daemon`**. The flow
 is documented in
 [`criome/ARCHITECTURE.md` §7 — Compile + self-host loop](../repos/criome/ARCHITECTURE.md):
 on a `Compile` request, criome reads the Opus + transitive OpusDeps
-from sema and **forwards them to lojix** as a typed `lojix-schema`
-verb. **criome itself runs nothing** — per the workspace doctrine
+from sema and **forwards them to lojix** as a signal verb.
+**criome itself runs nothing** — per the workspace doctrine
 (criome ARCH §10), criome communicates and persists; effect-bearing
 work is done elsewhere. lojix-daemon links `prism` and runs the
 full pipeline internally: prism emits `.rs` from the records →
 lojix assembles the scratch workdir (`.rs` + `Cargo.toml` +
 `flake.nix` + crane glue) → NixRunner spawns `nix build` →
-StoreWriter runs `BundleIntoLojixStore` (copy-closure, RPATH
-rewrite via patchelf, deterministic bundle, blake3 hash, write
-tree under `~/.lojix/store/<blake3>/`). lojix replies with
+StoreWriter copies the closure into lojix-store (RPATH rewrite
+via patchelf, deterministic bundle, blake3 hash, write tree
+under `~/.lojix/store/<blake3>/`). lojix replies with
 `{ store_entry_hash, narhash, wall_ms }`; criome asserts a
 `CompiledBinary` record back to sema.
 
 **`prism` is the code-emission piece** of lojix's pipeline. The
 rest of this section focuses on prism's piece — the code-emission
 shape — since that's where the macro-programming happens. The
-exact `lojix-schema` verb that carries records from criome to
-lojix lands when `lojix-daemon` is wired (candidates: a new
-`Build(records)` verb or a sequence of `MaterializeFiles` +
-`RunNix` + `BundleIntoLojixStore`). Today both prism and
-lojix-daemon are skeleton-as-design (see
+signal verb that carries records from criome to lojix lands
+when `lojix-daemon` is wired. Today both prism and lojix-daemon
+are skeleton-as-design (see
 [`lojix/ARCHITECTURE.md`](../repos/lojix/ARCHITECTURE.md)).
 
 `prism` reads flow-graph records from sema and emits Rust source code.
@@ -495,14 +493,12 @@ work per layer:
 
 - **`signal`** — new `BuildRequest` verb with `target: Slot`
   payload (per Li 2026-04-29: the verb criome accepts/denies
-  and forwards to lojix); 5 first node-kind structs as the
-  taxonomy lands (Source / Transformer / Sink / Junction /
-  Supervisor — Q1 resolved); `RelationKind` grows
+  and forwards to lojix); a records-carrying signal verb that
+  criome forwards to lojix lands alongside; 5 first node-kind
+  structs as the taxonomy lands (Source / Transformer / Sink /
+  Junction / Supervisor — Q1 resolved); `RelationKind` grows
   control-plane variants when Supervisor lands (`Supervises`,
   `EscalatesTo`); `Subscribe` request stays as M2 work.
-- **`lojix-schema`** — new verb (or verb sequence) carrying
-  records from criome to lojix; exact shape lands with
-  lojix-daemon's wiring.
 - **`criome`** — `BuildRequest` engine handler (validates +
   forwards to lojix); per-kind sema tables (bd
   mentci-next-7tv); `LojixLink` client module mirroring

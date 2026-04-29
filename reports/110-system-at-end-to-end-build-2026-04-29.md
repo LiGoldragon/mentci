@@ -16,11 +16,11 @@ end: records → working actor runtime. Concretely:
 
 - `signal::BuildRequest` verb shipped (the new request criome
   accepts/denies and forwards).
-- `criome` validates + forwards records to `lojix` via a typed
-  `lojix-schema` verb. **criome itself runs nothing.**
+- `criome` validates + forwards records to `lojix` as a signal
+  verb. **criome itself runs nothing.**
 - `lojix` links `prism` and runs the full pipeline internally:
-  prism emits `.rs` → workdir assembly → `nix build` →
-  `BundleIntoLojixStore`.
+  prism emits `.rs` → workdir assembly → `nix build` → bundle
+  into lojix-store.
 - `CompiledBinary` record asserted to sema; reply chain to the
   client.
 
@@ -87,12 +87,12 @@ through-line independently.
         ╚════════════════╝   ║  └─────────┘  ║
                              ╚═══════════════╝
 
-      ┌── wire-type crates ──┐    ┌── library crates ──┐
+      ┌── wire-type crate ───┐    ┌── library crates ──┐
       │      signal          │    │       prism        │
-      │   (criome wire)      │    │  (records → Rust)  │
-      │                      │    │  linked by lojix   │
-      │   lojix-schema       │    │                    │
-      │   (criome↔lojix)     │    │     mentci-lib     │
+      │   (every wire —      │    │  (records → Rust)  │
+      │    front-ends ↔      │    │  linked by lojix   │
+      │    criome and        │    │                    │
+      │    criome ↔ lojix)   │    │     mentci-lib     │
       │                      │    │  (gesture→signal)  │
       │   nota / nota-codec  │    │  linked by GUI     │
       │   nota-derive        │    │  + alt UIs         │
@@ -119,18 +119,17 @@ multiple participants.
 | Component | Role | What it depends on |
 |---|---|---|
 | **sema** | the database — records' home (redb) | nothing |
-| **criome** | the state-engine — validates, persists, forwards. Runs nothing. | sema, signal, lojix-schema (sender) |
-| **signal** | criome wire protocol (rkyv types only) | nota-codec, rkyv |
+| **criome** | the state-engine — validates, persists, forwards. Runs nothing. | sema, signal |
+| **signal** | the workspace's typed wire protocol (rkyv types only) | nota-codec, rkyv |
 | **nexus daemon** | text ↔ signal gateway | signal, nota-codec |
 | **nexus-cli** | thin text client | (UDS to nexus daemon) |
-| **lojix daemon** | executor — links prism, runs nix, bundles | lojix-schema (receiver), prism, lojix-store, signal (decode records) |
-| **lojix-schema** | criome ↔ lojix wire protocol (rkyv types only) | signal (for record types in payloads) |
+| **lojix daemon** | executor — links prism, runs nix, bundles | signal, prism, lojix-store |
 | **lojix-store** | content-addressed artifact filesystem + redb index | redb |
 | **prism** | library: records → Rust source | signal (record types) |
 | **mentci-lib** | library: gesture → signal envelope, criome connection | signal |
 | **GUI repo** | egui flow-graph editor | mentci-lib, egui |
 | **nota / nota-codec / nota-derive** | text codec stack for nexus dialect | rkyv |
-| **lojix-cli** | deploy CLI (transitioning to thin lojix-schema sender) | lojix-schema |
+| **lojix-cli** | deploy CLI (transitioning to thin signal-speaking client of lojix) | signal |
 | **mentci** | workspace umbrella — design corpus, agent rules, dev shell | (workspace-only) |
 | **tools-documentation** | cross-project rules + tool docs | (no runtime) |
 
@@ -194,57 +193,46 @@ enum naming the kinds it operates on (`AssertOperation::Node` /
 
 ---
 
-## 4 · Wire protocol — `lojix-schema` (criome ↔ lojix)
+## 4 · The criome → lojix leg (also signal)
+
+**signal is the workspace's only wire protocol.** The
+criome→lojix leg uses signal too — same envelope, same
+handshake, same rkyv framing as front-end → criome. lojix
+accepts the effect-bearing subset of signal verbs; rejects
+the others.
 
 ```
-lojix-schema::LojixRequest
+effect-bearing signal verbs (criome → lojix)
 │
-├─ Build(BuildSpec)                   ── records → CompiledBinary [NEW]
-│   └─ BuildSpec {
-│        target: Slot,                ── Graph slot the user requested
-│        graph:  Graph,               ── the actual record (signal types)
-│        nodes:  Vec<Node>,
-│        edges:  Vec<Edge>,
-│        nix_target: Option<String>,
-│        ... (TBD)
-│     }
+├─ Build { graph, nodes, edges, ... }   ── records → CompiledBinary
+│                                          (lojix runs prism +
+│                                           workdir + nix + bundle
+│                                           internally)
 │
-├─ MaterializeFiles(MaterializeSpec)  ── alternative shape if Build splits
-│   └─ MaterializeSpec { files: Vec<EmittedFile> }
+├─ Deploy { host, mode, ... }           ── nixos-rebuild
 │
-├─ RunNix(NixSpec)                    ── compile a flake
-│   └─ NixSpec { flake_ref, attr, overrides, target }
-│
-├─ BundleIntoLojixStore(BundleSpec)   ── copy nix output to lojix-store
-│   └─ BundleSpec { nix_output: Vec<u8> }
-│
-├─ RunNixosRebuild(NixosRebuildSpec)  ── deploy
-│
-├─ PutStoreEntry / GetStorePath       ── store ops (M2+)
-└─ DeleteStoreEntry                   ── GC
+└─ store-entry operations               ── get / put / materialize
+                                           / delete (some shipped at
+                                           build time; full set lands
+                                           with lojix-store reader/
+                                           writer bodies)
 
 
-lojix-schema::LojixReply
+reply payloads (lojix → criome)
 │
-├─ BuildOk(BundleOutcome)             ── { store_entry_hash, narhash }
-├─ NixOk(NixOutcome)                  ── { output_path, narhash, wall_ms }
-├─ BundleOk(BundleOutcome)
-├─ NixosRebuildOk(NixosRebuildOutcome)
-└─ Failed { code: String, message: String }
+├─ BuildOk { store_entry_hash, narhash, wall_ms }
+├─ DeployOk { generation, wall_ms }
+└─ Failed { code, message }
 ```
 
-**Open: `Build` shape vs sequence.** Two candidates:
+**criome does NOT run prism, NOT write files, NOT spawn nix.**
+lojix owns all of that. criome's role on this leg: forward the
+records-bundled signal verb, await the typed reply, assert a
+`CompiledBinary` (or `Deployed`, etc.) record back to sema.
 
-1. **Single `Build(records)` verb** — criome makes one round trip.
-   lojix runs prism → workdir → RunNix → BundleIntoLojixStore
-   internally. Cleanest from criome's perspective.
-
-2. **Sequence `MaterializeFiles + RunNix + BundleIntoLojixStore`**
-   — criome orchestrates three calls. More chatter; finer-grain
-   observability.
-
-Either way: criome does NOT run prism, NOT write files, NOT
-spawn nix. lojix owns all of that.
+The exact field shapes for `Build`'s payload settle when
+lojix-daemon is wired; what's locked is **the protocol is
+signal**.
 
 ---
 
@@ -305,24 +293,18 @@ GESTURE → SIGNAL MAPPING:
 
 signal (no runtime — types only)
 ─────────────────────────────────────────────────────
-Re-exported by: nexus daemon, criome, mentci-lib, agents, lojix
-                (lojix re-exports for decoding records inside lojix-schema)
+Re-exported by: nexus daemon, criome, mentci-lib, agents,
+                lojix (decodes records and effect-bearing
+                verbs), lojix-cli
 
 Carries: Frame envelope + Request/Reply types + record kinds
          (Node, Edge, Graph, RelationKind, Slot, ...) +
-         Diagnostic + handshake + auth (BLS G1 capability tokens)
+         Diagnostic + handshake + auth (BLS G1 capability
+         tokens) + effect-bearing verbs (Build, Deploy, store
+         operations)
 
 Wire: rkyv 0.8 portable feature set
       (std + bytecheck + little_endian + pointer_width_32 + unaligned)
-
-
-lojix-schema (no runtime — types only)
-─────────────────────────────────────────────────────
-Re-exported by: criome (sender), lojix (receiver),
-                lojix-cli (transitional)
-
-Carries: LojixRequest/LojixReply + capability-token shape
-Wire: rkyv 0.8 portable feature set
 ```
 
 ---
@@ -400,7 +382,7 @@ USER     NEXUS DAEMON    CRIOME              LOJIX (links prism)              SE
  │            │             │   + Edges         │                               │
  │            │             │                   │                               │
  │            │             │ forward via       │                               │
- │            │             │ lojix-schema::    │                               │
+ │            │             │ signal::          │                               │
  │            │             │   Build(records)  │                               │
  │            │             │ ── UDS rkyv ─────▶│                               │
  │            │             │                   │ ┌─ inside lojix ─────────────┐│
@@ -519,7 +501,7 @@ projection. On commit, the gesture becomes one signal envelope
 
 | Item | Open question |
 |---|---|
-| `lojix-schema::Build` | Single records-carrying verb vs sequence (`MaterializeFiles + RunNix + BundleIntoLojixStore`)? |
+| `signal::Build` payload fields | precise field set for the records-carrying verb criome forwards to lojix |
 | `BuildRequestOp` payload fields | beyond `target: Slot` — nix-attr override, target-platform, env knobs? |
 | Capability tokens | criome-signed BLS G1 tokens shape; verification path in lojix daemon |
 | `mentci-lib`'s exact API | precise type names + connection lifecycle (auto-reconnect? handshake retry?) |
@@ -554,7 +536,8 @@ component is wired.
   components, not the pixels.
 - **No CriomOS / horizon-rs / lojix-cli deploy flows.** Those
   are an existing parallel track that retains its current
-  shape; they migrate to thin lojix-schema senders when
+  shape; they migrate to thin signal-speaking clients of
+  lojix when
   lojix-daemon is wired.
 
 ---
@@ -595,8 +578,9 @@ expect to converge on*. It lives in `reports/` until:
   but `BuildRequest` itself is unsignalled there).
 - `signal/` carries the `BuildRequest` verb as a typed struct
   + matching `BuildRequestOp`.
-- `lojix-schema/` carries whichever verb shape lands (`Build`
-  or the sequence).
+- `signal/` carries the records-carrying `Build` verb that
+  criome forwards to lojix (alongside the existing front-end
+  verbs).
 - `prism/` and `lojix/` carry the skeleton-as-design code
   matching this picture.
 - `mentci-lib/` and the GUI repo exist (or are explicitly

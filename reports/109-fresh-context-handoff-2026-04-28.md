@@ -19,9 +19,9 @@ design report (currently 108).*
   (Q2/Q6/Q7/Q8/Q10/Q11) are tactical, deferrable to M1 work.
 - **prism (renamed from rsc, 2026-04-28)** is the code-emission
   piece of `lojix-daemon`'s runtime-creation flow; lojix-daemon
-  dispatches the existing `lojix-schema` verbs (`RunNix` for
-  compile, `BundleIntoLojixStore` for artifact landing) and
-  assembles the workdir between them. Full flow:
+  links prism and runs the surrounding work internally —
+  workdir assembly, nix-via-crane-and-fenix compile, bundle
+  into lojix-store. Full flow:
   [`criome/ARCHITECTURE.md` §7 — Compile + self-host loop](../../criome/ARCHITECTURE.md).
   Stub today; body lands once criome's record supply is wide
   enough + lojix-daemon arrives.
@@ -81,8 +81,8 @@ A fresh agent reads, in this order:
   All cross-repo Cargo deps use `branch = "main"`. Lockfiles pin
   by sha. Workspace `nix flake check` from mentci passes all 14
   derivations including `mentci-integration` end-to-end.
-- **CANON, skeleton (M2+)** — `lojix-store`, `lojix-schema`. Stubs
-  with valid ARCH+AGENTS docs.
+- **CANON, skeleton (M2+)** — `lojix-store`. Stub with valid
+  ARCH+AGENTS docs.
 - **TRANSITIONAL** — `lojix`, `lojix-cli`, `prism` (renamed from
   rsc 2026-04-28; the code-emission subcomponent of lojix-daemon's
   pipeline; stub).
@@ -117,10 +117,10 @@ A fresh agent reads, in this order:
 - **Reports are ephemeral.** Default to deletion. Extract to
   architecture docs or tools-documentation only when the rationale
   has no other durable home.
-- **lojix-daemon orchestrates runtime creation.** prism emits `.rs`
-  only; lojix-daemon dispatches `lojix-schema` verbs (`RunNix` to
-  compile, `BundleIntoLojixStore` to land the artifact) and
-  assembles the workdir between them. Full flow lives in
+- **lojix-daemon orchestrates runtime creation.** prism emits
+  `.rs` only; lojix-daemon links prism and runs the surrounding
+  work internally — workdir assembly, nix-via-crane-and-fenix
+  compile, bundle into lojix-store. Full flow lives in
   criome/ARCHITECTURE.md §7; the exact internal orchestration
   shape inside lojix-daemon is open until lojix-daemon is built
   (today: skeleton-as-design).

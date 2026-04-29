@@ -34,7 +34,6 @@ For project-wide architecture, read [`criome/ARCHITECTURE.md`](https://github.co
 | `sema` | The records DB (redb-backed). |
 | `nexus-cli` | Text client. |
 | `lojix` | The lojix daemon — forge + store + deploy actors. The bare name doubles as the family namespace. |
-| `lojix-schema` | criome ↔ lojix contract types. |
 | `lojix-store` | Content-addressed filesystem + index DB. |
 
 ### CriomOS cluster
@@ -50,7 +49,7 @@ For project-wide architecture, read [`criome/ARCHITECTURE.md`](https://github.co
 
 | Repo | Note |
 |---|---|
-| `lojix-cli` | Working deploy CLI. To become a thin transport for `lojix-schema` requests once `lojix` lands. Don't rewrite. |
+| `lojix-cli` | Working deploy CLI for CriomOS. Migrates to a thin signal-speaking client of the `lojix` daemon when that lands. Don't rewrite. |
 | `prism` | Stub today. Records-to-Rust source projector — code-emission subcomponent of `lojix-daemon`'s runtime-creation pipeline. Renamed from `rsc` 2026-04-28. |
 
 ## SHELVED

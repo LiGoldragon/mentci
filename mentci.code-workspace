@@ -7,7 +7,6 @@
     { "name": "signal", "path": "/home/li/git/signal" },
     { "name": "lojix", "path": "/home/li/git/lojix" },
     { "name": "lojix-cli", "path": "/home/li/git/lojix-cli" },
-    { "name": "lojix-schema", "path": "/home/li/git/lojix-schema" },
     { "name": "lojix-store", "path": "/home/li/git/lojix-store" },
     { "name": "nota", "path": "/home/li/git/nota" },
     { "name": "nota-codec", "path": "/home/li/git/nota-codec" },

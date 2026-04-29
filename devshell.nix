@@ -18,7 +18,6 @@ let
     "lojix-store"
     "lojix-cli"
     "lojix"
-    "lojix-schema"
     # CriomOS cluster
     "CriomOS"
     "horizon-rs"
