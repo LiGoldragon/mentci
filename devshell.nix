@@ -19,6 +19,9 @@ let
     "arca"
     "lojix-cli"
     "forge"
+    # mentci interaction surface
+    "mentci-lib"
+    "mentci-egui"
     # CriomOS cluster
     "CriomOS"
     "horizon-rs"

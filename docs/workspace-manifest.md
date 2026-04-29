@@ -36,6 +36,8 @@ For project-wide architecture, read [`criome/ARCHITECTURE.md`](https://github.co
 | `nexus-cli` | Text client. |
 | `forge` | The forge daemon — executor (build, store-write, deploy actors). The bare name doubles as the family namespace. |
 | `arca` | Content-addressed filesystem + index DB. **One library + one daemon.** arca-daemon is the privileged writer (write-only staging, multi-store, capability-token-gated). General-purpose; forge is the most active writer of many. |
+| `mentci-lib` | Heavy application logic for the mentci interaction surface. Holds workbench state, view snapshots, schema-aware constructor flows, dual-daemon connection management, per-kind canvas renderers, theme/layout interpretation. Consumed by every mentci-* GUI shell. Skeleton-as-design. |
+| `mentci-egui` | First incarnation of the mentci interaction surface — thin egui shell atop mentci-lib. Linux + Mac first-class. Skeleton-as-design. |
 
 ### CriomOS cluster
 
