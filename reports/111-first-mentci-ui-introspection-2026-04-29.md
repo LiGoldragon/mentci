@@ -167,7 +167,36 @@ constructor-flow pattern as any record edit).
 
 ---
 
-## 5 · The flow-graph canvas
+## 5 · The kind-driven canvas
+
+The canvas is *the* visualization pane. What it renders depends
+on what's selected. mentci-lib carries a renderer per record-
+kind (or per family of kinds); the shell paints what mentci-lib
+tells it to paint.
+
+```
+                  ┌───────────────────────────┐
+                  │       canvas pane         │
+                  │                           │
+                  │  current selection ──▶    │
+                  │  mentci-lib picks the     │
+                  │  renderer for that kind   │
+                  │                           │
+                  └────────────┬──────────────┘
+                               │
+                ┌──────────────┼──────────────┐
+                ▼              ▼              ▼
+        flow-graph view   astro-chart     <future kind>
+        (Graph + Node     view (planet    (rendered per
+         + Edge)          positions on    its kind's
+                          a draggable     canvas spec)
+                          wheel)
+```
+
+The flow-graph view is the first kind that ships; it's not the
+*only* kind the canvas can show. The pattern generalises.
+
+### 5.1 Flow-graph view (first canvas kind)
 
 ```
                     ╭───────────────╮
@@ -198,12 +227,74 @@ constructor-flow pattern as any record edit).
 - **Labels.** Display name on the node; slot id on hover;
   hash never on canvas.
 
-The canvas is **always live** to subscription pushes from
-criome.
+### 5.2 Astrological chart view (illustrative future kind)
 
-**Node positions are records.** Layout is sema state — readable,
-editable, shareable across mentci sessions on the same criome.
-Moving a node generates a Mutate to its position record.
+A circular chart with planet glyphs at their ecliptic
+longitudes, house cusps as radii, aspect lines between
+planets, and a draggable rim that scrubs time backward and
+forward. As the rim drags, mentci-lib emits a
+`UserEvent::ScrubTime { delta }`; criome (or a derivation
+component) recomputes planet positions for the new time;
+Subscribe pushes the updated records; the canvas re-renders.
+
+```
+                ↑ 0° ARIES
+             ┌───────────┐
+         11 /     12      \  1
+           /        ☉       \           ← planets at
+       10 │          ☿       │ 2          ecliptic
+          │   ⊕              │            longitudes
+        9 │         ♀        │ 3
+          │       ☽          │
+        8 │                  │ 4
+           \    7    6      /  5
+            \      ♂       /
+             └───────────┘
+       ⟲   drag wheel to scrub time   ⟳
+       2026-04-29  17:30:00  UT
+```
+
+The rendering shape is different from the flow-graph but the
+mechanism is the same: a kind-specific renderer in mentci-lib,
+fed by records from sema, painted by the GUI shell. Same MVU
+loop; different paint code; different gestures (rotation
+instead of drag-wire).
+
+### 5.3 The renderer-per-kind pattern
+
+Each record-kind that wants its own visual treatment registers
+a renderer in mentci-lib. The renderer:
+
+- Takes the record(s) under selection plus their related
+  records (edges, child nodes, time anchors, …).
+- Produces a kind-specific view-state that the shell paints.
+- Defines the kind-specific gestures the user can perform on
+  this view (drag-wire on a flow-graph, drag-rim on a chart).
+
+The shell knows nothing about kind semantics. It paints what
+the kind's renderer says to paint and forwards what gestures
+the renderer is listening for.
+
+This generalises. Future kinds — timelines, geographic maps,
+typed-text documents, calendar grids, statistical plots —
+each get a renderer in mentci-lib. The canvas pane is one
+slot; what fills it is selection-driven.
+
+### 5.4 Properties shared across all canvas views
+
+- **Always live** to subscription pushes from criome.
+- **Layout is records.** For the flow-graph view this means
+  `NodePlacement` records; for the astro-chart it means
+  whatever positions/zoom/anchor records that view's renderer
+  defines. The principle is the same: where things are, and
+  the time they're shown for, is sema state.
+- **Mouse interaction → UserEvent → mentci-lib → criome.**
+  The MVU loop runs the same way regardless of canvas kind.
+- **Custom rendering when needed.** egui's Painter handles the
+  flow-graph and astro-chart cases natively. If a future
+  canvas kind ever exceeds egui's primitives, that one pane
+  drops into raw WGPU via egui's custom-render-callback
+  surface; the rest of the workbench stays in egui.
 
 ---
 
