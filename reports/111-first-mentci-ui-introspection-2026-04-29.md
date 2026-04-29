@@ -380,16 +380,186 @@ both states. Failure modes per §1.
 
 ---
 
-## 11 · GUI library — egui
+## 11 · GUI library — full survey against this design
 
-Settled per the prior round. Linux + Mac first-class, Rust-
-native, strong fit for the workbench's specific needs (custom
-canvas, dynamic panes, immediate-mode = re-render-from-current-
-state matching subscription-push semantics, `egui_node_graph` /
-Rerun precedent for the canvas).
+The first mentci-ui's GUI library must serve five things at
+once: a **custom canvas** (graph editor with kind-glyph nodes,
+typed-stroke edges, state-coloured rendering), **many dynamic
+panes** that appear/disappear on relevance, **live updates via
+Subscribe** (push from criome → re-render), the **MVU contract
+shape** of §12 (consume snapshot, emit events), and **semantic-
+intent theming** from records (§15). Linux + Mac are first-
+class. Beauty matters per INTENTION.
 
-The first repo is **`mentci-egui`**. Other family members
-(`mentci-iced`, `mentci-flutter`, …) follow.
+Twelve realistic candidates, evaluated against those needs.
+
+### 11.1 The full table
+
+| Library | Lang | Lin | Mac | Custom canvas | MVU fit | Subscribe-push fit | Theme override | Foreign tax | Workbench precedent |
+|---|---|:-:|:-:|---|---|---|---|---|---|
+| **egui** | Rust | ● | ● | ● Painter API; flexible | ◐ implicit (immediate-mode = render-from-state) | ● natural | ● Visuals struct | none | ● **strong** (Rerun, egui_node_graph, profilers) |
+| **iced** | Rust | ● | ● | ◐ Canvas widget; less explored | ● **literal Elm-arch** | ● natural | ● Theme | none | ◐ small for canvas-heavy |
+| **gpui** | Rust | ◐ | ● | ● GPU-shaders | ◐ entity/view shape | ● | ● themeable | none | ◐ tied to Zed |
+| **xilem** | Rust | ● | ● | ◐ evolving | ● literal Elm-arch | ● | ● | none | ✗ pre-1.0; API churns |
+| **floem** | Rust | ● | ● | ◐ Painter | ◐ fine-grained reactive | ● | ● | none | ✗ small ecosystem |
+| **slint** | Rust | ● | ● | ◐ less flexible | ◐ via .slint bindings | ● | ● .slint files | none | ✗ not its niche |
+| **dioxus desktop** | Rust | ● | ● | ◐ webview-mediated | ◐ React-like | ● | ● CSS | webview tier | ✗ |
+| **freya** | Rust | ● | ● | ● Skia | ◐ declarative | ● | ● | none | ✗ small |
+| **Tauri** | Web/Rust | ● | ● | ● HTML canvas | varies (JS framework) | ● | ● CSS | JS frontend tier | ◐ |
+| **Flutter** | Dart | ● | ● | ● CustomPainter, Skia | ◐ via Bloc/Riverpod | ● | ● ThemeData | Rust↔Dart bridge | ◐ |
+| **Qt + cxx-qt** | C++/Rust | ● | ● | ● QGraphicsScene/QPainter | ✗ signals/slots | ● | ● QStyleSheet | Rust↔C++ bridge | ● mature; but heavy |
+| **GTK + gtk4-rs** | Rust | ● | ◐ not native | ● DrawingArea | ✗ signals | ● | ● GTK CSS | none | ◐ Linux-first; foreign on Mac |
+
+### 11.2 Eliminating the long tail
+
+- **slint, freya, floem** — small ecosystems; nothing
+  precedent-shaped for canvas-heavy introspection workbenches.
+- **dioxus desktop** — webview-mediated rendering for what
+  must be a native, custom-painted workbench is the wrong
+  layering.
+- **Tauri** — drags an entire HTML/CSS/JS frontend tier into a
+  workspace whose discipline is all-rkyv-typed-binary;
+  contract violation.
+- **xilem** — promising future-MVU but pre-1.0; API churn
+  conflicts with foundations-not-features.
+- **gpui** — beautiful rendering; ecosystem is essentially
+  Zed; idiom doesn't match MVU and adoption beyond Zed is
+  nascent.
+- **GTK + gtk4-rs** — Linux-first; not native on Mac, which is
+  a first-class developer OS per Li.
+- **Qt + cxx-qt** — mature, capable, but the C++ ecosystem
+  weight + signals/slots idiom mismatch + Qt licensing
+  complications conflict with workspace simplicity.
+- **Flutter** — exceptional rendering; the Dart layer + the
+  flutter_rust_bridge surface is non-trivial; better as a
+  later family member (`mentci-flutter`) once the contract
+  has been exercised in Rust-native shells.
+
+### 11.3 The two strong contenders
+
+**egui** and **iced** remain. Each is a serious answer; the
+choice between them is the substantive question.
+
+```
+   egui                                iced
+   ────                                ────
+   immediate-mode                      Elm-architecture
+   (render-from-state every frame)     (Model-View-Update)
+
+   ┌──────────────────┐                ┌──────────────────┐
+   │ for each frame:  │                │ Message → Model  │
+   │   read state     │                │ Model  → View    │
+   │   paint widgets  │                │ Element<Message> │
+   │   capture events │                │ tree             │
+   └──────────────────┘                └──────────────────┘
+        ↓                                    ↓
+   shell calls into                     shell defines
+   mentci-lib each                      Application impl
+   frame                                with update + view
+                                        functions
+
+   immediate-mode is MVU                literal MVU
+   *implicitly*                         enforced by the
+                                        type system
+```
+
+**Where iced wins:**
+
+- **Literal MVU enforcement.** iced *is* the Elm-architecture
+  in Rust. The Application trait is exactly Model + Update +
+  View. mentci-lib's contract maps to it 1:1 (UserEvent →
+  Message variant; WorkbenchView → Element<Message>;
+  on_user_event → update). The compiler enforces the entire
+  MVU loop; the shell *cannot* drift away from the contract
+  because iced doesn't allow it.
+- **Time-travel debugging.** Falls out naturally — Message log
+  + replay reproduces any session.
+- **Cleanest *abstract* match** to mentci-lib's chosen contract
+  shape (§12).
+
+**Where egui wins:**
+
+- **Custom canvas.** egui's Painter API is the most flexible
+  and most-used pattern in Rust for free-form drawing — graph
+  editors, profilers, plotters. The canvas (§5) is the
+  centrepiece of the workbench, and egui has the best
+  precedent for it.
+- **Workbench-precedent.** Rerun's visualization workbench is
+  the closest existing system to what mentci-egui is, and is
+  built on egui. Bevy's egui-inspector, profilers like
+  puffin_egui, GUI-debugging tools across the Rust
+  ecosystem — they all use egui because it is the immediate-
+  mode introspection toolkit.
+- **`egui_node_graph`** — a maintained crate specifically for
+  building node-graph editors in egui. iced has no
+  equivalent; it would be hand-rolled on Canvas.
+- **Self-introspectable.** egui's debug overlay (`Ctrl+Shift`
+  by default) lets the running app inspect its own widget
+  tree. The toolkit itself models introspection as a feature.
+- **Re-render-from-state matches the discipline.** Every frame
+  the shell asks mentci-lib "what is the view now?" and
+  paints. There is no widget tree to keep in sync; no diffing
+  cost; no stale-widget bug class. The structural property
+  iced gets through enforcement, egui gets through *not
+  having state to drift*.
+
+### 11.4 The deciding question
+
+iced enforces MVU; egui *fits* MVU and adds canvas + ecosystem
+precedent for our exact shape. Which weighs more?
+
+- **For correctness**: equivalent. Both have re-render-from-
+  state semantics (iced via View derivation; egui via
+  immediate-mode). Neither permits widget-state drift.
+- **For clarity**: iced is slightly stronger because the
+  contract is enforced; egui requires shell discipline.
+- **For introspection**: egui is stronger. Self-debug overlay,
+  Rerun precedent, the broad pattern of "Rust introspection
+  workbench = egui" is the existing answer to our exact
+  problem.
+- **For beauty (right structure)**: tie. iced's Elm-arch is
+  beautiful in its abstract purity; egui's immediate-mode is
+  beautiful in its directness. Both are right structures for
+  a workbench; they are right in different ways.
+- **For canvas centrality**: egui clearly wins. The graph
+  canvas is the visual centre of the workbench; egui is the
+  established library for that exact thing in Rust.
+
+### 11.5 Recommendation — **egui**, with iced as the second member
+
+The first mentci-ui is **`mentci-egui`**. The deciding factor
+is canvas-centrality + workbench-ecosystem-precedent: the one
+piece of the surface that's most distinctive (the graph
+canvas) is the one piece egui handles best in the Rust
+ecosystem.
+
+iced's MVU enforcement is a real strength, and not having it
+in egui means mentci-lib's contract has to be held by
+discipline rather than by the type system on the shell side.
+That discipline is acceptable because mentci-lib's API itself
+encodes the contract — the shell cannot accidentally bypass
+the data-out / events-in shape if mentci-lib only exposes
+those two things.
+
+The right place for iced's enforcement is **`mentci-iced`** as
+the second family member. Once mentci-lib's contract has been
+exercised by the egui shell, the iced shell becomes a faithful
+re-implementation that *additionally* type-enforces what egui
+holds by discipline. The family converges on the same logic;
+each member's strength is a different one.
+
+Family roadmap (no ordering imposed beyond first):
+
+1. **`mentci-egui`** — first; canvas-centric; Rust-native;
+   ecosystem-rich; Linux + Mac first-class.
+2. **`mentci-iced`** — Elm-arch enforcement; cleanest
+   contract verification.
+3. **`mentci-flutter`** — when the Rust-native family has
+   exercised the contract enough that the FFI shim is
+   stable; brings polished cross-platform rendering and
+   mobile reach.
+4. **`mentci-gpui`**, **`mentci-xilem`**, others — as the
+   Rust GUI ecosystem matures; each member is a peer.
 
 ---
 
