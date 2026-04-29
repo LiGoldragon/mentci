@@ -91,27 +91,31 @@ this design.**
 
 ## 4 · Projection 2 — runtime creation via `lojix-daemon` (prism emits the source)
 
-The records-to-runtime path is owned by **`lojix-daemon`**, not by
-`prism` alone. The flow is documented in
+The records-to-runtime path is owned by **`lojix-daemon`**. The flow
+is documented in
 [`criome/ARCHITECTURE.md` §7 — Compile + self-host loop](../repos/criome/ARCHITECTURE.md):
 on a `Compile` request, criome reads the Opus + transitive OpusDeps
-from sema, prism emits `.rs` from those records, lojix-daemon
-assembles the scratch workdir (the emitted `.rs` + `Cargo.toml` +
-`flake.nix` + crane glue), criome dispatches `RunNix` to lojix
-which compiles via nix-via-crane-and-fenix, lojix runs
-`BundleIntoLojixStore` (copy-closure, RPATH rewrite via patchelf,
-deterministic bundle, blake3 hash, write under
-`~/.lojix/store/<blake3>/`), and criome asserts a `CompiledBinary`
-record back to sema.
+from sema and **forwards them to lojix** as a typed `lojix-schema`
+verb. **criome itself runs nothing** — per the workspace doctrine
+(criome ARCH §10), criome communicates and persists; effect-bearing
+work is done elsewhere. lojix-daemon links `prism` and runs the
+full pipeline internally: prism emits `.rs` from the records →
+lojix assembles the scratch workdir (`.rs` + `Cargo.toml` +
+`flake.nix` + crane glue) → NixRunner spawns `nix build` →
+StoreWriter runs `BundleIntoLojixStore` (copy-closure, RPATH
+rewrite via patchelf, deterministic bundle, blake3 hash, write
+tree under `~/.lojix/store/<blake3>/`). lojix replies with
+`{ store_entry_hash, narhash, wall_ms }`; criome asserts a
+`CompiledBinary` record back to sema.
 
-**`prism` is the code-emission piece**; the orchestration around
-it is criome+lojix-daemon owning the existing
-[`lojix-schema`](../repos/lojix-schema/) verbs (`RunNix`,
-`BundleIntoLojixStore`, `MaterializeFiles`). The rest of this
-section focuses on prism's piece — the code-emission shape —
-since that's where the macro-programming happens. The exact
-shape of how lojix-daemon orchestrates internally is open until
-lojix-daemon is built; today it's "skeleton-as-design" (see
+**`prism` is the code-emission piece** of lojix's pipeline. The
+rest of this section focuses on prism's piece — the code-emission
+shape — since that's where the macro-programming happens. The
+exact `lojix-schema` verb that carries records from criome to
+lojix lands when `lojix-daemon` is wired (candidates: a new
+`Build(records)` verb or a sequence of `MaterializeFiles` +
+`RunNix` + `BundleIntoLojixStore`). Today both prism and
+lojix-daemon are skeleton-as-design (see
 [`lojix/ARCHITECTURE.md`](../repos/lojix/ARCHITECTURE.md)).
 
 `prism` reads flow-graph records from sema and emits Rust source code.
@@ -178,8 +182,10 @@ for edges, kind-driven styling. **Real-time**: when sema changes, the
 visual updates without manual refresh.
 
 The "real-time" requirement implies subscribe-protocol support
-(M2+ on criome's roadmap). Until subscribes ship, mentci can poll;
-the edit loop works either way.
+(M2+ on criome's roadmap). Per the workspace rule **push, not
+pull** ([tools-documentation/programming/push-not-pull.md](../repos/tools-documentation/programming/push-not-pull.md)),
+mentci's UI launches *after* `Subscribe` ships — there is no
+poll fallback.
 
 ### Edit
 
@@ -194,7 +200,7 @@ User gestures translate into signal edit messages:
 | Bulk-edit (rename + retype) | `AtomicBatch([…])` | sequence of operations |
 
 Each *committed* gesture becomes one signal message. mentci shuttles
-it to `criome-daemon` (path TBD: see open question 5).
+it to `criome-daemon` directly over UDS, speaking signal.
 
 ### Local in-flight buffer — typing isn't keystroke-by-keystroke
 
@@ -221,8 +227,9 @@ The table's gesture rows are therefore **commit-time atoms**:
   dropped in dead space.
 - "Drag a new box onto canvas" = the type-and-place gesture finishes
   with the placement + name commit → one `Assert(Node)`. Or
-  potentially `AtomicBatch([…])` if the user wired some initial edges
-  in the same "create" gesture (see open question 11).
+  `AtomicBatch([…])` if the user wired some initial edges in the
+  same "create" gesture — composite gestures wrap atomically per
+  §8 Q11 RESOLVED.
 
 ### The accept-and-reflect loop
 
@@ -299,7 +306,8 @@ orbits.
 
 ## 7 · Phasing
 
-Tentative — depends on Li's answers below.
+§8 answers are in (resolved 11; deferred 1). Phases as
+currently understood:
 
 - **M0** — nexus text shuttle, criome+nexus daemons ractor-hosted, demo
   graph operations end-to-end. **Done.**
@@ -482,17 +490,37 @@ The deep dive surfaces decisions that gate concrete design work:
 
 ## 9 · Where this report leaves to implementation
 
-After Li answers the open questions, concrete work per layer:
+§8 questions are resolved (11) or deferred (1, Q10). Concrete
+work per layer:
 
-- **`prism`** — emission templates per node-kind / edge-kind (templates
-  hand-coded in prism); macro/templating DSL; build-system integration
-  choice (per Q3).
-- **`mentci`** — UI tech choice + skeleton; gesture→signal mapping;
-  diagnostic surface; criome connection (per Q4–Q8).
-- **`signal`** — `Subscribe` request shape (M2; design likely needs
-  its own report when it lands).
-- **`criome`** — per-kind sema tables (`bd mentci-next-7tv`);
-  Subscribe verb; diagnostic-emission richness.
+- **`signal`** — new `BuildRequest` verb with `target: Slot`
+  payload (per Li 2026-04-29: the verb criome accepts/denies
+  and forwards to lojix); 5 first node-kind structs as the
+  taxonomy lands (Source / Transformer / Sink / Junction /
+  Supervisor — Q1 resolved); `RelationKind` grows
+  control-plane variants when Supervisor lands (`Supervises`,
+  `EscalatesTo`); `Subscribe` request stays as M2 work.
+- **`lojix-schema`** — new verb (or verb sequence) carrying
+  records from criome to lojix; exact shape lands with
+  lojix-daemon's wiring.
+- **`criome`** — `BuildRequest` engine handler (validates +
+  forwards to lojix); per-kind sema tables (bd
+  mentci-next-7tv); `LojixLink` client module mirroring
+  nexus's `CriomeLink`; diagnostic-emission richness; Subscribe
+  verb at M2. **criome runs nothing** (§10) — handler validates
+  and forwards; lojix executes.
+- **`lojix`** — UDS listener body; receives the new build verb;
+  links `prism` as a library; orchestrates prism →
+  FileMaterialiser → NixRunner → StoreWriter internally.
+- **`prism`** — library skeleton + first emission template
+  (one node-kind → one ractor `Actor` skeleton; per Q3
+  resolved: prism is a library, not a CLI). Linked by lojix.
+- **`mentci-lib`** — separate crate (Q7 resolved): gesture →
+  signal envelope translation + criome-link logic; consumed
+  by the future GUI repo and any alternative UIs (mobile, etc).
+- **GUI repo** — egui-based flow-graph editor (Q4 resolved);
+  speaks signal directly to criome via mentci-lib (Q5
+  resolved); landing post-prototype.
 
 ## 10 · Where this report goes when it's no longer needed
 
