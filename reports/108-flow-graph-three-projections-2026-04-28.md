@@ -93,9 +93,11 @@ this design.**
 
 The records-to-runtime path is owned by **`forge-daemon`**. The flow
 is documented in
-[`criome/ARCHITECTURE.md` §7 — Compile + self-host loop](../repos/criome/ARCHITECTURE.md):
-on a `Compile` request, criome reads the Opus + transitive OpusDeps
-from sema and **forwards them to forge** as a signal verb.
+[`criome/ARCHITECTURE.md` §7 — Build + self-host loop](../repos/criome/ARCHITECTURE.md):
+on a `BuildRequest` naming a target Graph, criome validates and
+reads the Graph plus its transitive `DependsOn` graphs and
+`Contains` nodes from sema, then **forwards the records to
+forge** as a signal-forge `Build` verb.
 **criome itself runs nothing** — per the workspace doctrine
 (criome ARCH §10), criome communicates and persists; effect-bearing
 work is done elsewhere. forge-daemon links `prism` and runs the

@@ -26,8 +26,8 @@ Design history and decision records are in [`reports/`](reports/).
 | [`criome/ARCHITECTURE.md`](https://github.com/LiGoldragon/criome/blob/main/ARCHITECTURE.md) | **Project-wide canonical.** Prose + diagrams only. No code. High-level shape, invariants, relationships, rules of the engine being built. | "criome owns sema; forge owns arca; text crosses only at nexus" |
 | [`mentci/ARCHITECTURE.md`](ARCHITECTURE.md) | **This dev environment.** Workspace conventions, role, layout. Points at criome for the project itself. | "mentci is the dev workshop; long-term it becomes the universal UI" |
 | `<repo>/ARCHITECTURE.md` | **Per-repo bird's-eye view.** This repo's role, boundaries (owns / does not own), code map, status. Points at criome for cross-cutting context — does *not* duplicate it. Per the matklad ARCHITECTURE.md convention. | `arca/ARCHITECTURE.md` "owns the `~/.arca/` layout + index DB" |
-| [`reports/NNN-*.md`](reports/) | **Concrete shapes + decision records.** Type sketches, record definitions, message enums, research syntheses, historical context. | `Opus { … }` full rkyv sketch |
-| the repos themselves | **Implementation.** Rust code, tests, flakes, Cargo.toml. | `nexus-schema/src/opus.rs` |
+| [`reports/NNN-*.md`](reports/) | **Concrete shapes + decision records.** Type sketches, record definitions, message enums, research syntheses, historical context. | `Graph { … }` full rkyv sketch |
+| the repos themselves | **Implementation.** Rust code, tests, flakes, Cargo.toml. | `signal/src/flow.rs` |
 
 If a layer rule is violated, rewrite: move type sketches out of `criome/ARCHITECTURE.md` into a report or skeleton code; move runnable code out of reports into the appropriate repo. The architecture stays slim so it remains readable in one pass.
 
@@ -53,7 +53,7 @@ When creating a new canonical repo: write `ARCHITECTURE.md` at root before the f
 
 MVP goal: **self-hosting** — write the system's own source as records in the sema database; prism projects those records to `.rs` files (one phase of forge-daemon's runtime-creation pipeline); rustc compiles them; the new binary reads and extends its own database.
 
-An **opus** is the database's compilation-unit term — one opus compiles to one artifact (library or binary). Corresponds to one Rust crate on the filesystem side.
+A **`Graph`** record is the database's compilation unit — a flow-graph of `Node` records (joined by `Edge` records carrying `RelationKind::Contains` for membership and `DependsOn` for cross-graph dependencies) that compiles to one artifact (library or binary). The flow-graph IS the program. Corresponds to one Rust crate on the filesystem side.
 
 Write discoveries in [`reports/`](reports/) or in tools-documentation as topic files, don't scatter them across the repo root.
 
@@ -151,7 +151,7 @@ Examples (bad → good):
 3. **Generic type parameters.** `T`, `U`, `V`, `K`, `E`. Use a descriptive name when the parameter has non-trivial semantic content.
 4. **Acronyms that have passed into general English.** `id`, `url`, `http`, `json`, `uuid`, `db`, `os`, `cpu`, `ram`, `io`, `ui`, `tcp`, `udp`, `dns`. Spell them when ambiguous in context.
 5. **Names inherited from std / well-known libraries.** `Vec`, `HashMap`, `Arc`, `Rc`, `Box`, `Cell`, `RefCell`, `Mutex`, `mpsc`, `regex`. Do not rename these; do *not* extend the abbreviation pattern to your own types.
-6. **Domain-standard short names already documented in an ARCHITECTURE.md.** `slot`, `opus`, `node`, `frame` are full words and need no exception. If a true short form is load-bearing in the schema, name it in ARCHITECTURE.md so the exception is explicit; otherwise spell it out.
+6. **Domain-standard short names already documented in an ARCHITECTURE.md.** `slot`, `graph`, `node`, `edge`, `frame` are full words and need no exception. If a true short form is load-bearing in the schema, name it in ARCHITECTURE.md so the exception is explicit; otherwise spell it out.
 
 ### Rule of thumb (Martin / Linus, combined)
 
