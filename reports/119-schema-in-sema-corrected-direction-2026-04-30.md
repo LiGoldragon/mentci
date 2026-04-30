@@ -40,7 +40,7 @@ ARCHITECTURE.md or signal's ARCHITECTURE.md.*
    │                        future nexus renderer, agents, the    │
    │                        constructor flow) reads schema by    │
    │                        QUERYING sema for KindDecl records   │
-   │   authz:               KindDecl records are system-only-    │
+   │   access control:               KindDecl records are system-only-    │
    │                        write — normal users have read-only  │
    │                        access; only privileged genesis +     │
    │                        future schema-evolution flows can    │
@@ -86,12 +86,12 @@ Three problems with the shape reports/115 and 118 carried:
    │                                                             │
    └─────────────────────────────────────────────────────────────┘
 
-   ┌── 3. authz is a category error ─────────────────────────────┐
+   ┌── 3. access control is a category error ─────────────────────────────┐
    │                                                             │
    │  schema needs different access control than user records:  │
    │  read-only by default, write only via explicit privileged  │
-   │  paths. The compiled-in const can't carry authz at all —   │
-   │  it's just bytes in the binary. Records-in-sema get authz  │
+   │  paths. The compiled-in const can't carry access control at all —   │
+   │  it's just bytes in the binary. Records-in-sema get access control  │
    │  from the same machinery every other record gets it from   │
    │  (capability tokens, signed proofs, etc.), with the        │
    │  distinguishing dimension just being "which Principal can  │
@@ -104,52 +104,85 @@ Three problems with the shape reports/115 and 118 carried:
 
 ## 2 · The shape of what changes
 
-Three new record kinds in signal:
+Sema-native — every cross-record reference is a `Slot<KindDecl>`,
+not a string lookup. Names exist exactly once, on the canonical
+record they identify. Same discipline as `Edge.from: Slot<Node>`.
 
 ```
    KindDecl
    ─────────────────────────────────────────────────────────
-   name : String                ← the kind's English name
-   shape: KindShapeDecl          ← Record or Enum
+   name  : String              ← the kind's English name
+   shape : KindShapeDecl       ← tag only: Record or Enum
 
-   KindShapeDecl  (closed enum)
+   KindShapeDecl  (closed enum, no payload)
    ─────────────────────────────────────────────────────────
-   Record { fields: Vec<Slot<FieldDecl>> }
-   Enum   { variants: Vec<String> }
+   Record
+   Enum
 
    FieldDecl
    ─────────────────────────────────────────────────────────
-   name        : String
+   kind        : Slot<KindDecl>   ← which kind this field belongs to
+   position    : u32              ← declaration order
+   name        : String           ← field name (the only string here)
    field_type  : FieldTypeDecl
    is_optional : bool
    is_list     : bool
 
+   VariantDecl
+   ─────────────────────────────────────────────────────────
+   kind     : Slot<KindDecl>      ← which Enum-shape kind this is
+                                   a variant of
+   position : u32                  ← declaration order
+   name     : String              ← variant name (the only string)
+
    FieldTypeDecl  (closed enum)
    ─────────────────────────────────────────────────────────
-   Text                              ← String-typed field
-   Bool                              ← bool-typed field
-   Integer                           ← any integer primitive
-   Float                             ← any float primitive
-   SlotRef { of_kind: String }      ← Slot<NamedKind>
-   AnyKind                           ← Slot<AnyKind> (type-erased)
-   Record  { kind_name: String }    ← reference to another kind
-                                       — resolved by querying sema
-                                       for that kind by name
+   Text                                       ← String-typed field
+   Bool                                        ← bool-typed
+   Integer                                     ← any integer primitive
+   Float                                       ← any float primitive
+   AnyKind                                     ← Slot<AnyKind>
+                                                (type-erased)
+   SlotRef { of_kind: Slot<KindDecl> }        ← Slot<NamedKind>
+   Record  { kind:    Slot<KindDecl> }        ← reference to another kind
 ```
 
-A few things to notice:
+The relational shape:
 
-- **`KindDecl` references its fields by `Slot<FieldDecl>`**, not
-  inline. Every field is its own record. The graph of "what kinds
-  reference what kinds via what fields" becomes a navigable
-  structure inside sema.
-- **`FieldTypeDecl::Record { kind_name }` does deferred
-  resolution.** Same pattern as the compile-time `FieldType`: the
-  consumer queries sema for the named kind to learn its shape.
-- **There is no Slot-typed reference inside `FieldTypeDecl`**.
-  Fields reference kinds *by name* because the kind name is the
-  stable identifier across schema evolution; the kind's slot is
-  an implementation detail that may change.
+```
+   "what is the kind named 'Edge'?"
+       → Query KindDecl where name = "Edge" → kind_slot
+       → read shape tag: Record
+
+   "what are Edge's fields?"
+       → Query FieldDecl where kind = kind_slot, ORDER BY position
+       → returns three FieldDecls: from, to, kind
+
+   "the 'kind' field of Edge — what's its type?"
+       → field_type = Record { kind: relation_kind_slot }
+       → Query KindDecl by slot relation_kind_slot → "RelationKind"
+       → read shape tag: Enum
+
+   "what are RelationKind's variants?"
+       → Query VariantDecl where kind = relation_kind_slot,
+         ORDER BY position
+       → returns nine VariantDecls: Flow, DependsOn, …
+```
+
+Three things follow from this shape:
+
+- **Names appear once**, on the record they identify. References
+  elsewhere are `Slot<KindDecl>`. Renaming a kind means mutating
+  one record; every reference keeps working.
+- **No cycles in the seed order.** KindDecls assert first (they
+  reference nothing). FieldDecls + VariantDecls assert next
+  (they reference KindDecls, which exist). FieldTypeDecl::Record
+  fields reference KindDecls — also fine because KindDecls
+  exist before FieldDecls do. No `Mutate` required.
+- **The recursion lands clean.** KindDecl describes itself: there's
+  a KindDecl record named "KindDecl" with shape Record, and three
+  FieldDecls whose `kind` field points at that KindDecl's own
+  slot. Self-reference at the data level, not in dependency order.
 
 ### 2.1 The flow, before vs after
 
@@ -189,7 +222,7 @@ A few things to notice:
                                                       ▼
                                             criome stores the
                                             records in sema with
-                                            system-write authz
+                                            system-write access control
                                                       │
                                                       ▼
                                             mentci-lib at runtime
@@ -200,6 +233,80 @@ A few things to notice:
 ```
 
 ---
+
+## 2.1 · Are we re-implementing parts of nexus?
+
+Per Li 2026-04-30: *"are we re-implementing parts of nexus with
+this? I feel like strings are creeping in from everywhere. How
+does nexus 'store' the strings for variants?"*
+
+**Short answer: no, we're not re-implementing the codec.** What's
+happening is that the *same logical truth* (the Rust type
+definitions in signal) gets projected into two different forms
+for two different consumers:
+
+```
+   the Rust source                        the truth
+   in signal/ — the                       ─────────
+   single source of truth                 ┌─────────────────────┐
+                                          │  signal record kind │
+                                          │  definitions        │
+                                          │  (Node, Edge, …)    │
+                                          └──────────┬──────────┘
+                                                     │
+                       ┌─────────────────────────────┼─────────────────────────────┐
+                       │ projected into              │             projected into  │
+                       │ codec impls at              │             schema records  │
+                       │ compile time                │             at boot time    │
+                       │ (nota-derive)               │             (signal-derive  │
+                       │                             │              + seed step)   │
+                       ▼                             │                             ▼
+   ┌─────────────────────────────────┐               │             ┌─────────────────────────────┐
+   │ NotaEncode + NotaDecode for     │               │             │ KindDecl, FieldDecl,        │
+   │ wire form — knows variant       │               │             │ VariantDecl records in sema │
+   │ names + integer tags            │               │             │ — knows variant names too,  │
+   │                                 │               │             │ but as data not code        │
+   │ Consumer: nexus daemon when     │               │             │                             │
+   │   parsing/rendering text        │               │             │ Consumers: mentci-lib's     │
+   │ Consumer: rkyv when             │               │             │   constructor flow,         │
+   │   encoding/decoding bytes       │               │             │   nexus-daemon's renderer,  │
+   │                                 │               │             │   future agents asking      │
+   │ Form: compile-time generated    │               │             │   "what kinds exist?"       │
+   │   match-on-variant code         │               │             │                             │
+   └─────────────────────────────────┘               │             └─────────────────────────────┘
+                                                     │
+   How nexus "stores" variant strings today          │
+   ───────────────────────────────────────           │
+   It doesn't, at runtime. The strings appear        │
+   in nexus TEXT (e.g. `Flow` in `(Edge … Flow)`).   │
+   The wire form stores an integer tag chosen by     │
+   the NotaEnum derive. The mapping between          │
+   them lives in the codec's compile-time            │
+   generated code — never persisted.                 │
+                                                     │
+                                          one source of truth
+```
+
+The strings *do* exist in two places — but they're not
+duplicating each other. The codec needs them to encode/decode
+text; sema needs them as data so consumers can introspect at
+runtime. Neither reads from the other; both come from the same
+source (the Rust type defs), and the proc-macros are projection
+mechanisms.
+
+The same shape holds at scale: prism (when wired) projects sema
+records to Rust source; the projection is one-way; the canonical
+truth lives in sema; the .rs files are downstream artefacts. We
+already accept that pattern. signal-derive + nota-derive are a
+similar pair: both are projections out of Rust source, neither
+is the other's authority.
+
+The only thing that *would* be re-implementation is if we
+asked sema to be the authority for codec encoding/decoding too —
+i.e. if nota-codec started reading variant-tag mappings from
+sema instead of having them baked in. We're not doing that. The
+codec stays compile-time; sema stays the authority for
+introspection.
 
 ## 3 · The proc-macro's revised role
 
@@ -238,7 +345,7 @@ consumes.
 
 ## 4 · Authz: read-only normally, system-edit only
 
-The authz model that distinguishes `KindDecl` records from user
+The access control model that distinguishes `KindDecl` records from user
 records:
 
 ```
@@ -265,7 +372,7 @@ records:
 ```
 
 The mechanism: criome's validator (currently `todo!()` skeleton)
-checks the writing Principal's authz against the record kind
+checks the writing Principal's access control against the record kind
 being written. KindDecl writes require a special "system write"
 capability that only the genesis-bootstrap path holds.
 
@@ -329,7 +436,7 @@ Compared with [reports/117 §5](117-implementation-gap-2026-04-30.md#5--sequence
 
    10 criome Mutate / Retract / AtomicBatch     unchanged
    11 Subscribe push delta / sub-id              unchanged
-   12 NEW — KindDecl authz                      tighten so normal
+   12 NEW — KindDecl access control                      tighten so normal
                                                  Asserts of KindDecl
                                                  are rejected; only
                                                  the genesis path
@@ -367,7 +474,7 @@ There's a beautiful recursion that this direction enables:
    back records describing every kind including KindDecl
    itself. The workbench can paint the schema as records, edit
    them through the same constructor flow it uses for user
-   records (with authz catching the writes), watch them change
+   records (with access control catching the writes), watch them change
    through the same Subscribe push, render them through the
    same nexus renderer.
 ```
@@ -382,21 +489,15 @@ that the workspace should land there from the first runtime, not
 
 ## 7 · Open shapes
 
-**Q1 — `KindDecl::shape`: nested or flat?** Two shapes:
+**Q1 — `KindDecl::shape`: tag-only or carry the children?**
+Resolved as a tag-only enum after the §2 redesign — the children
+(FieldDecls / VariantDecls) point back at their KindDecl rather
+than the KindDecl listing them. Cleaner and avoids the cycle in
+the seed order. Confirm that's the right call?
 
-- (a) `shape: KindShapeDecl` enum, embedded inline (matches the
-  compile-time form)
-- (b) Two record kinds — `RecordKindDecl` and `EnumKindDecl` —
-  with `KindDecl` carrying just the name and a `Slot<…>` to
-  whichever shape applies
-
-(a) is a single record kind; (b) is two but more uniform with
-the rest of the schema (every shape is its own kind). I lean (a)
-for first-cut simplicity; revisit if it feels cramped.
-
-**Q2 — Authz carrier.** Today's MVP is `AuthProof::SingleOperator`.
-The KindDecl-write capability is what gates schema writes. Two
-shapes:
+**Q2 — Access-control carrier.** Today's MVP is
+`AuthProof::SingleOperator`. The KindDecl-write capability is
+what gates schema writes. Two shapes:
 
 - a special "genesis context" flag in criome that's only true
   during boot
