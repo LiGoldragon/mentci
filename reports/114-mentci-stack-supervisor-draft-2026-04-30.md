@@ -26,23 +26,20 @@ $ nix run .#up
    ↳ Ctrl-C tears the whole stack down cleanly
 ```
 
-A second command swaps a daemon for an upgraded build without taking
-the workbench down:
-
-```
-$ nix run .#reload criome     # rebuild criome, swap the running daemon
-```
-
-A third gives an explicit teardown for cases where the supervisor is
-running detached:
+A second command gives an explicit teardown for cases where the
+supervisor is running detached:
 
 ```
 $ nix run .#down              # graceful shutdown via the supervisor's
                               #  control socket
 ```
 
-These three are the user-facing surface. Everything else is the
-supervisor's internal concern.
+These two are the first-cut user-facing surface. The hot-swap
+verb sketched in §4.4 (`nix run .#reload <daemon>`) is a later
+iteration — useful once the engine itself is exercised end-to-end,
+but not on the path to the first working stack. The first cut is:
+supervise, respawn-on-crash, seed-on-empty-sema, serve the control
+protocol. Everything else is the supervisor's internal concern.
 
 ---
 
@@ -483,36 +480,30 @@ nexus instead:
   the same flow nexus-cli already does for any text input — no
   separate "internal seed" path with its own bugs.
 
-#### 4.2.4 Sketch of `genesis.nexus`
+#### 4.2.4 What the seed contains
 
-(Provisional shape — actual nexus syntax follows the
-[delimiter-family matrix](../repos/criome/ARCHITECTURE.md#9--grammar-shape).)
+The seed is the **project's own design**, expressed as a
+flow-graph: one Graph titled "Criome" holding one Node per
+canonical component (sema, criome, signal, nexus, forge, arca,
+mentci-egui, process-manager, …) and one Edge per architectural
+relationship between them (`Contains`, `DependsOn`, `Calls`,
+`References`).
 
-```nexus
-;; A Graph the workbench paints on first run.
-(Assert (Graph "First Graph"
-                nodes:    [@ticks @double @stdout]
-                edges:    [@e1 @e2]
-                subgraphs: []))
+The full Node + Edge enumeration, RelationKind choices per pair,
+slot-range allocation in `[0, 1024)`, and open shapes (where
+`Supervises` would land if/when the RelationKind enum grows)
+are in **[reports/116](116-genesis-seed-as-design-graph-2026-04-30.md)**.
 
-;; Three Nodes that live inside it.
-(Assert (Node "ticks"))
-(Assert (Node "double"))
-(Assert (Node "stdout"))
+The shape this gives mentci-ui's first frame on a fresh install:
+the architectural map of the workspace, painted as a flow-graph,
+ready to edit. New canonical components land as new Nodes via
+the constructor flow; new architectural dependencies land as
+new Edges via drag-wire — the design grows in the engine the
+design is *about*.
 
-;; Two Edges of kind Flow connecting them in a chain.
-(Assert (Edge from:@ticks  to:@double  kind:Flow))
-(Assert (Edge from:@double to:@stdout  kind:Flow))
-
-;; A Principal so the user has a default identity.
-(Assert (Principal display_name: "operator" note: ""))
-```
-
-The `@name` form is the bind-back convention — the parser captures
-each Assert's resulting slot under the name so subsequent records can
-reference it. (Whether nexus already supports this in
-assertion-positions is §10 Q11 below — the alternative is two passes,
-or letting criome resolve names via the `name` field after the fact.)
+Slots are hard-coded to genesis-reserved values (no bind-on-
+Assert needed in the parser); this is the (b) path from the
+earlier seed-binds discussion.
 
 #### 4.2.5 Seed in upgrade / reload paths
 
@@ -554,7 +545,14 @@ small to add.
                         we auto-reconnect — see §10 Q5)
 ```
 
-### 4.4 Reload / swap (upgrade flow)
+### 4.4 Reload / swap (upgrade flow — *later iteration, not first cut*)
+
+The shape below is what swap *would* look like once the engine is
+exercised end-to-end and an in-place hot-swap becomes worth its
+complexity. The first cut of process-manager doesn't ship swap —
+the user upgrades by `nix run .#down` then `nix run .#up` against
+the new build. Swap lands when the lost-session cost of full
+restart starts to bite.
 
 ```
    user types `nix run .#reload criome` in another shell
@@ -829,16 +827,15 @@ loose collection of edge cases, process-manager is missing structure.
 
 ---
 
-## 10 · Status of the open questions
+## 10 · Status of the design questions — all resolved
 
-Most of the questions below resolve cleanly against principles
-already in the workspace's design canon (per
+Every question raised in earlier drafts has settled — most
+against principles already in the workspace's design canon (per
 [`tools-documentation/programming/`](../repos/tools-documentation/programming/)
-+ [criome/ARCHITECTURE.md](../repos/criome/ARCHITECTURE.md)). The
-genuinely open ones — the calls that need a personal preference,
-not a principle — are a much shorter list.
++ [criome/ARCHITECTURE.md](../repos/criome/ARCHITECTURE.md)),
+the rest by Li's calls during this session.
 
-### 10.1 Resolved by the principles
+### 10.1 Resolved
 
 ```
    Q   │ resolution                              │ grounded on
@@ -898,25 +895,63 @@ not a principle — are a much shorter list.
        │                                          │   path forward
 ```
 
-### 10.2 Genuinely open — the calls that need Li
+### 10.2 Resolved by Li's call during this session
 
-**Q5 — Reconnect after intentional swap.** Provisional answer:
-auto-reconnect on a process-manager-initiated swap (the swap is itself a
-user-initiated state replacement, so auto-reconnect is *aligned*
-with intent), keep the chip-click discipline for crashes (where
-the user did not initiate the disconnect). The seam: process-manager's swap
-path emits a control message to mentci-egui's driver flagging
-the disconnect as intentional; the driver flips a one-shot
-"auto-reconnect-on-next-disconnect" hint. Confirm this UX shape?
+**Q1 — Name.** `process-manager`. Reads as English; says directly
+what the crate is.
 
-**Q11 (the rest) — What to seed.** The chain shape (a small
-hand-crafted Graph + 3 Nodes + 2 Edges + a Principal) is in
-§4.2.4. The actual *names* — whether to reuse the existing
-handshake-test seed ("Echo Pipeline" / "ticks" / "double" /
-"stdout") or pick fresh ones that frame what mentci is — are
-open. This is the user's first impression of mentci on a fresh
-install; what shows up matters more than the implementation
-cost.
+**Q5 — Reconnect after intentional swap.** UX shape accepted
+(auto-reconnect on intentional swap; chip-click for crashes; the
+swap path emits a control message to mentci-egui's driver
+flagging intent). **Implementation deferred** — swap itself is a
+later iteration; the first cut of process-manager doesn't ship
+hot-swap. See §4.4.
+
+**Q6 — `mentci` as a CLI shim.** Not built. process-manager's
+terminal home is inside CriomOS as a system-level service module;
+the dev-shell `nix run .#up` is plumbing for the current era only.
+There is no user-facing CLI surface like `mentci up` on `$PATH`.
+See §8.
+
+**Q11 — What to seed.** The seed is the project's own design,
+expressed as a flow-graph — every CANON component as a Node,
+every architectural relationship as an Edge. See
+**[reports/116](116-genesis-seed-as-design-graph-2026-04-30.md)**.
+The (b) bind path (hard-coded genesis-reserved slot values) is
+what makes this work without nexus-grammar changes.
+
+### 10.3 First-cut scope
+
+The smallest process-manager that gets the engine running
+end-to-end:
+
+```
+   ┌─────────────────────────────────────────────────────────────┐
+   │  IN scope for the first cut                                  │
+   ├─────────────────────────────────────────────────────────────┤
+   │  • read nota config                                          │
+   │  • create state directories (with key-dir perms per Q8)     │
+   │  • spawn each daemon in dependency order                    │
+   │  • readiness probes (handshake / socket-bound / immediate)  │
+   │  • seed sema from genesis.nexus (the design graph) on        │
+   │    empty-sema check                                          │
+   │  • supervise: respawn-on-crash with bounded backoff          │
+   │  • serve control protocol (Stop, Status)                    │
+   │  • clean tear-down on Ctrl-C / SIGTERM                       │
+   └─────────────────────────────────────────────────────────────┘
+
+   ┌─────────────────────────────────────────────────────────────┐
+   │  OUT of first cut, lands later                               │
+   ├─────────────────────────────────────────────────────────────┤
+   │  • hot-swap (§4.4 design stands; build when needed)          │
+   │  • watch mode (file-system → "rebuild needed" log lines)    │
+   │  • CriomOS service module (production deployment)           │
+   └─────────────────────────────────────────────────────────────┘
+```
+
+The engine working — the daemons running, mentci-egui painting
+the design graph the user is here to think about — is the
+priority. Everything else is incremental from there.
 
 ---
 
