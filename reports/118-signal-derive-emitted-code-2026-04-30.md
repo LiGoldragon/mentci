@@ -6,6 +6,15 @@ shape the macro handles. Lifetime: until the derive's lowering
 rules drift enough that the examples stop matching reality; then
 this folds into signal-derive's `ARCHITECTURE.md` or gets deleted.*
 
+> **Read alongside [reports/119](119-schema-in-sema-corrected-direction-2026-04-30.md).**
+> The const `DESCRIPTOR` shown below is the macro's *compile-time
+> output*; it is **not** the runtime catalogue. Per Li 2026-04-30
+> ("this looks like it should be data in sema"), the runtime
+> authority is sema-resident `KindDecl` records. The macro's role
+> is to project Rust type definitions into the seed records that
+> populate sema on first boot. Reports/119 names the shift; this
+> report still describes the macro's emission accurately.
+
 ---
 
 ## 0 · TL;DR
