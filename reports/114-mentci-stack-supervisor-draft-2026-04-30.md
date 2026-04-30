@@ -789,18 +789,30 @@ loose collection of edge cases, process-manager is missing structure.
 
 ## 8 · What this design does *not* try to be
 
-- **Not a NixOS service module.** Production deploys go through
-  per-host NixOS modules per [criome ARCH §8](../repos/criome/ARCHITECTURE.md#8--repo-layout).
-  process-manager is for the dev / single-user / foreground case.
+- **Not a separate-from-the-OS thing.** process-manager's
+  terminal home is *inside* CriomOS as a system-level service
+  module. The dev-shell foreground run via `nix run .#up` is
+  the same binary, the same `Config`, the same control protocol —
+  just invoked in user-session context until CriomOS deploys it.
+  There is no second supervisor "for production."
+- **Not a user-facing CLI surface.** No `mentci up` / `mentci
+  down` / `mentci reload` shim on `$PATH`. Once process-manager
+  is in CriomOS, "running mentci" means logging in and using the
+  GUI shell — the daemons are already running as system
+  services. The dev-shell `nix run .#up` is plumbing for the
+  current era only; it does not graduate to a user-facing CLI.
 - **Not a container orchestrator.** No images, no networks, no
   multi-host. One user, one host, one process-manager.
 - **Not a log aggregator.** Pass-through to stdout/stderr today;
-  structured logging is a separate concern.
-- **Not a build tool.** nix is the build tool; process-manager runs binaries
-  nix produced.
-- **Not a process-manager replacement for systemd.** Different
-  domain — process-manager is for the user-session foreground case. Production
-  still goes through systemd via NixOS modules.
+  structured logging is a separate concern in a separate crate
+  if and when it lands.
+- **Not a build tool.** nix is the build tool; process-manager
+  runs binaries nix produced.
+- **Not a replacement for systemd.** When process-manager is
+  CriomOS-deployed, it runs *under* systemd as a `Type=notify`
+  service supervising its children. systemd supervises
+  process-manager; process-manager supervises the daemon
+  cluster.
 
 ---
 
@@ -896,13 +908,6 @@ the user did not initiate the disconnect). The seam: process-manager's swap
 path emits a control message to mentci-egui's driver flagging
 the disconnect as intentional; the driver flips a one-shot
 "auto-reconnect-on-next-disconnect" hint. Confirm this UX shape?
-
-**Q6 — `mentci` as a CLI shim.** Provisional: build it. Per
-the noun-naming discipline, `mentci` as a CLI noun owning the
-verbs `up`/`down`/`reload`/`seed` is the right shape;
-`nix run .#up` is plumbing the noun should hide. The shim adds
-tab completion, uniform error messages, and an obvious entry
-point in `$PATH`. Confirm worth building from day one?
 
 **Q11 (the rest) — What to seed.** The chain shape (a small
 hand-crafted Graph + 3 Nodes + 2 Edges + a Principal) is in
