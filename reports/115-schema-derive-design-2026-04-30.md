@@ -77,37 +77,39 @@ and what it cannot:
 | `bool` | `Bool` | inferred |
 | `u8 / u16 / u32 / u64 / i64` | `Integer` | inferred |
 | `f32 / f64` | `Float` | inferred |
-| `Slot` | `SlotRef { of_kind: ??? }` | **needs annotation** — the *kind* the slot points at is semantic, not in the type |
+| `Slot<T>` | `SlotRef { of_kind: T's name }` | inferred — `T` carries the kind |
 | `Vec<T>` | `List { item: T's FieldType }` | recursive |
 | `Option<T>` | `Optional { inner: T's FieldType }` | inferred |
 | `RelationKind` (enum) | `Enum { variants: [...] }` | inferred — enum's own `Schema` derive emits the variant list |
 | `IntentToken / GlyphToken / StrokeToken / ActionToken / SizeIntent` | `Enum { variants: [...] }` | same — every `NotaEnum` also derives `Schema` |
 | nested struct (e.g. `KeybindEntry` inside `KeybindMap.bindings`) | `Record { kind: "KeybindEntry" }` | inferred from type name |
 
-The annotation needed for slot fields:
+The shape that carries the kind in the type:
 
 ```
-   pub struct Edge {
-       #[schema(refs = "Node")]  pub from: Slot,
-       #[schema(refs = "Node")]  pub to:   Slot,
-       pub kind: RelationKind,
-   }
+   Edge                            Tweaks
+   ────────────────────────        ────────────────────────────
+   from : Slot<Node>               principal : Slot<Principal>
+   to   : Slot<Node>               theme     : Slot<Theme>
+   kind : RelationKind             layout    : Slot<Layout>
+                                   keybinds  : Slot<KeybindMap>
 
-   pub struct Tweaks {
-       #[schema(refs = "Principal")]  pub principal: Slot,
-       #[schema(refs = "Theme")]      pub theme:     Slot,
-       #[schema(refs = "Layout")]     pub layout:    Slot,
-       #[schema(refs = "KeybindMap")] pub keybinds:  Slot,
-   }
+   Graph
+   ────────────────────────────
+   title     : String
+   nodes     : Vec<Slot<Node>>
+   edges     : Vec<Slot<Edge>>
+   subgraphs : Vec<Slot<Graph>>
 ```
 
-Without `#[schema(refs = "...")]`, the macro can't know that
-`Edge.from` references a Node and not, say, a Graph. Every `Slot`
-field gets exactly one annotation.
+`Slot<T>` is a phantom-typed newtype — the wire format is still a
+plain u64 (the `T` is compile-time only), but the type system carries
+the kind. Every reading of a Slot field tells the type system, the
+macro, and the human reader the same thing. No annotation; the type
+*is* the annotation.
 
-(`Vec<Slot>` like `Graph.nodes` follows the same pattern:
-`#[schema(refs = "Node")]` on the field, item-kind inferred from the
-annotation.)
+This eliminates the (a) hard part below at the type-system level —
+see §2.1.
 
 ---
 
@@ -136,17 +138,17 @@ pieces of information sit *outside* the type system — they live in
 the meaning of the design, not in any type signature — so the macro
 can't see them. Each is small and named.
 
-### 2.1 (a) Which kind a Slot points at
+### 2.1 (a) Which kind a Slot points at — solved by phantom-typing the Slot
 
-**The situation.** A `Slot` is just a u64. From the type system's
-view, every Slot looks identical — there is no compile-time
-difference between "a slot pointing at a Node" and "a slot pointing
-at a Theme." But that difference matters semantically. An Edge's
-`from` slot must point at a Node; a Tweaks record's `theme` slot
-must point at a Theme record (not a Node, not a Layout).
+**The situation as it exists today.** `Slot` in signal is a bare u64
+newtype. From the type system's view, every Slot looks identical —
+there is no compile-time difference between "a slot pointing at a
+Node" and "a slot pointing at a Theme." That difference matters
+semantically: an Edge's `from` slot must point at a Node; a Tweaks
+record's `theme` slot must point at a Theme record.
 
 ```
-   the type signature the macro sees:
+   today's type signature — every Slot looks the same:
 
        Edge
        ─────────────────────────────────────
@@ -155,46 +157,116 @@ must point at a Theme record (not a Node, not a Layout).
        kind : RelationKind
 ```
 
-**Concrete example.** The user drag-wires from one node on the
-canvas to another to create a new Edge. The constructor opens. It
-needs to populate the "from" picker with valid candidates. Without
-knowing that `from` references Nodes specifically, the picker has
-two bad options: show *every* slot in sema (Themes, Layouts,
-Principals, KeybindMaps — overwhelming and mostly nonsense), or
-silently fall back to "any slot," which lets the user create
-valid-looking but semantically broken Edges.
+**The concrete cost.** The user drag-wires between two canvas
+elements to create an Edge. The constructor needs to populate the
+"from" picker with valid candidates. With every Slot looking
+identical, the picker has two bad options: show *every* slot in
+sema (overwhelming and mostly nonsense) or silently fall back to
+"any slot," which lets the user create valid-looking but
+semantically broken Edges.
 
 ```
-   no annotation:                       #[schema(refs = "Node")]:
-   ─────────────                        ─────────────────────────
+   today (Slot is bare u64):
 
-   "from" picker offers ALL slots:      "from" picker offers only Nodes:
+   "from" picker offers ALL slots:
 
-     ▢ Theme "Sunset"                     ▢ Node "ticks"
-     ▢ Layout "compact"                   ▢ Node "double"
-     ▢ Node "ticks"           ✓           ▢ Node "stdout"
+     ▢ Theme "Sunset"
+     ▢ Layout "compact"
+     ▢ Node "ticks"           ✓ what the user actually wants
      ▢ Principal "operator"
-     ▢ KeybindMap "default"              (every non-Node hidden)
+     ▢ KeybindMap "default"
      ▢ Node "double"          ✓
      …
 ```
 
-**Why the macro can't see it.** The macro reads `pub from: Slot`
-and learns "this field is a Slot." It cannot infer that this
-particular slot points at Nodes. The fact that `from` *means* "the
-source Node" lives in the design's prose and the developer's mental
-model — not in any compile-checkable place.
+**The fix is to make Slot carry the kind.** Phantom-type the
+newtype: `Slot<T>` instead of `Slot`. The `T` is compile-time only;
+the wire format stays a plain u64. But every place a Slot appears,
+the type names what it points at:
 
-**The resolution.** A per-field attribute that names the missing
-word: `#[schema(refs = "Node")]`. The macro reads it and emits
-`FieldType::SlotRef { of_kind: "Node" }` in the descriptor; the
-constructor flow narrows the picker correctly. One annotation per
-Slot field; the rule is uniform.
+```
+   tomorrow (Slot phantom-typed):
 
-This pattern repeats wherever Slot appears: Edge's two endpoints
-reference Nodes; Tweaks's four fields reference Principal / Theme /
-Layout / KeybindMap; NodePlacement's two fields reference Graph and
-Node; etc.
+   Edge { from: Slot<Node>, to: Slot<Node>, kind: RelationKind }
+
+       the macro reads `Slot<Node>` and emits
+       FieldType::SlotRef { of_kind: "Node" } directly.
+       no annotation needed.
+```
+
+Three things fall out of this change:
+
+```
+   ┌── before (Slot is bare u64) ──┐  ┌── after (Slot<T>) ─────────────────┐
+   │                                │  │                                    │
+   │  picker has to be told the     │  │  picker reads `Slot<Node>` and     │
+   │  kind via annotation           │  │  knows the kind directly           │
+   │                                │  │                                    │
+   │  passing a Theme-slot where    │  │  passing a Theme-slot where        │
+   │  a Node-slot is expected       │  │  a Node-slot is expected is a      │
+   │  compiles — silent bug         │  │  type error — caught at compile    │
+   │                                │  │                                    │
+   │  the kind information lives    │  │  the kind information lives        │
+   │  in attribute metadata —       │  │  inside the type — single source   │
+   │  parallel to the type system   │  │  of truth                          │
+   │                                │  │                                    │
+   └────────────────────────────────┘  └────────────────────────────────────┘
+```
+
+The wire format does not change — `Slot<T>` archives identically
+to `Slot` (one u64; the phantom is purely compile-time). nota-codec's
+`NotaTransparent` derive renders `Slot<T>` as a bare integer in
+nexus text, same as today. The change is *internal* to Rust.
+
+**What this means for the schema derive.** The proc-macro reads
+field types from the syntax tree. `Slot<Node>` parses as a typed
+path with `Node` as a generic argument; the macro extracts "Node"
+mechanically. No `#[schema(refs = "...")]` attribute, no
+hand-maintained parallel list. The kind information is in exactly
+one place (the type), and every consumer — the type checker, the
+schema derive, the human reader — reads it from there.
+
+**Cost.** This is a signal-level type-design change. It touches:
+
+```
+   ┌── signal/src/slot.rs ─────────────────────────────────────────┐
+   │  Slot becomes Slot<T> with PhantomData<fn() -> T>             │
+   │  NotaTransparent derive still renders as bare u64             │
+   └───────────────────────────────────────────────────────────────┘
+   ┌── signal/src/{flow,identity,style,layout,keybind,tweaks}.rs ──┐
+   │  every `: Slot` field becomes `: Slot<Kind>`                  │
+   │  every `Vec<Slot>` becomes `Vec<Slot<Kind>>`                  │
+   └───────────────────────────────────────────────────────────────┘
+   ┌── signal::Records variants ───────────────────────────────────┐
+   │  Records::Node(Vec<(Slot, Node)>) becomes                     │
+   │    Records::Node(Vec<(Slot<Node>, Node)>) — the type          │
+   │    parameter is now redundant with the variant, which is      │
+   │    fine: the type system rechecks the consistency for free    │
+   └───────────────────────────────────────────────────────────────┘
+   ┌── criome's reader.rs decode_kind<T> ──────────────────────────┐
+   │  the conversion sema::Slot → signal::Slot<T> is monomorphic   │
+   │  per kind — each find_nodes / find_edges / find_graphs        │
+   │  knows its T. drop-in change.                                 │
+   └───────────────────────────────────────────────────────────────┘
+   ┌── mentci-lib's WorkbenchState + cache + canvas ──────────────-┐
+   │  WorkbenchState.principal: Slot becomes Slot<Principal>       │
+   │  ModelCache fields stay homogeneous-per-kind                  │
+   │  RenderedEdge.from / .to become Slot<Node>                    │
+   └───────────────────────────────────────────────────────────────┘
+```
+
+A genuinely heterogeneous Slot list (e.g., a future "pinned items"
+record holding slots of mixed kinds) is handled by either type
+erasure into a `RawSlot` newtype, or — per the perfect-specificity
+invariant — a typed enum naming the kinds it can hold. Both shapes
+exist; both are clean. The need is hypothetical today.
+
+**The honest accounting.** This was the right answer the first
+time and the report was wrong to reach for the annotation pattern.
+Annotation lists are how you do it when you don't control the
+underlying type (ORM frameworks over `i64` foreign keys, for
+example). Here we own `Slot`; phantom-typing it is the answer the
+type system was already asking for.
 
 ### 2.2 (b) Which RelationKind variants make sense between which kinds
 
