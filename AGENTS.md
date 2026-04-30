@@ -307,6 +307,44 @@ How to apply:
 - Especially load-bearing when the next step is committing, pushing, or spawning an agent that consumes the written file.
 - When a `Write` fails on the must-Read-first guard, do the Read then redo the Write before continuing.
 
+## Architectural defaults agents keep getting wrong
+
+Three frames that agents (this one included) repeatedly slip into
+when designing schema, bootstrap, or localization. All three are
+rejected — see [criome/ARCHITECTURE.md §10.1](repos/criome/ARCHITECTURE.md)
+for the canonical statement. Restated here as agent-facing rules so
+the failure mode is visible during design:
+
+- **Don't propose nexus files as a storage or seed mechanism.**
+  Nexus is the text request language; its parser produces signal
+  envelopes for criome. Files of nexus assertions
+  (`bootstrap.nexus`, `genesis.nexus`, `kinds.nexus`, …) are a
+  hack — a human typing assertions into a file and feeding them
+  through a tool. Don't repeat the pattern for new concerns.
+  Schema bootstrap is hand-coded in criome's init; domain data
+  enters sema through Assert frames at runtime (mentci-egui,
+  agents, scripts), never by criome reading a `.nexus` file off
+  disk.
+- **Don't put schema-identity strings in sema.** Kind, field, and
+  variant identifiers are slot ids in per-kind indexes — never
+  strings. Display names, per-language translations, and other
+  human-facing text labels for schema records live in a separate
+  localization store, distinct from sema and arca. Sema can hold
+  user-data text content (e.g. a `Label` field on a domain
+  record), but not schema-identity strings.
+- **Don't default to "compile-time baked" for data.** When the
+  architecture treats X as data (schema is data, kinds are data,
+  localization is data), proposing "X lives as compile-time tables
+  in the binary" is regressing to a config-style pattern that
+  contradicts the principle. Data lives in a database (sema, the
+  localization store, or a future store with its own bounded
+  context); not in a const array or generated source file.
+
+If the design you are sketching pulls toward any of these,
+question it before proceeding. The defaults exist because they're
+agent-natural (training data taught them); the architecture rules
+out all three.
+
 ## Commit message style
 
 Single line. Short. Lead with the repo name, then a short verb + scope. Optionally one short clause naming the change. No nested parens, no em-dashes, no Li-quote markers, no enumerated bullets. Detail belongs in the diff and the report, not the commit message.
