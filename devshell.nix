@@ -19,6 +19,7 @@ let
     "prism"
     "arca"
     "lojix-cli"
+    "lojix-cli-v2"
     "forge"
     # mentci interaction surface
     "mentci-lib"

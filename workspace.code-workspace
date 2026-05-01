@@ -8,6 +8,7 @@
     { "name": "signal-forge", "path": "/home/li/git/signal-forge" },
     { "name": "forge", "path": "/home/li/git/forge" },
     { "name": "lojix-cli", "path": "/home/li/git/lojix-cli" },
+    { "name": "lojix-cli-v2", "path": "/home/li/git/lojix-cli-v2" },
     { "name": "arca", "path": "/home/li/git/arca" },
     { "name": "nota", "path": "/home/li/git/nota" },
     { "name": "nota-codec", "path": "/home/li/git/nota-codec" },

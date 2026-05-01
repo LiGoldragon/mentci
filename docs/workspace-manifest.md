@@ -54,6 +54,7 @@ For project-wide architecture, read `criome/ARCHITECTURE.md`.
 | Repo | Note |
 |---|---|
 | `lojix-cli` | Working deploy CLI for CriomOS. Migrates to a thin signal-speaking client of the `forge` daemon when that lands. Don't rewrite. |
+| `lojix-cli-v2` | Forked development repo for the next-generation deploy CLI. Safe place for the Nota-native CLI, config/request loading, and home deploy work while `lojix-cli` stays operational. |
 | `prism` | Stub today. Records-to-Rust source projector — code-emission subcomponent of `forge-daemon`'s runtime-creation pipeline. Renamed from `rsc` 2026-04-28. |
 
 ## SHELVED
