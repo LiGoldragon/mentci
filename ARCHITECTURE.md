@@ -12,14 +12,14 @@ sema-ecosystem repo under `repos/` for unified navigation.
 
 A development environment. Its concrete responsibilities:
 
-- **Workspace orchestration.** [`devshell.nix`](devshell.nix)'s
+- **Workspace orchestration.** `devshell.nix`'s
   `linkedRepos` symlinks every canonical sema-ecosystem repo
-  into [`repos/`](repos/) on `nix develop` / direnv entry.
+  into `repos/` on `nix develop` / direnv entry.
   Agents working here see the entire ecosystem at one path.
-- **Design corpus.** [`reports/`](reports/) holds the evolving
-  decision-trail (soft cap at ~12 per [AGENTS.md](AGENTS.md)
+- **Design corpus.** `reports/` holds the evolving
+  decision-trail (soft cap at ~12 per `AGENTS.md`
   "Report rollover").
-- **Workspace manifest.** [`docs/workspace-manifest.md`](docs/workspace-manifest.md)
+- **Workspace manifest.** `docs/workspace-manifest.md`
   tracks every repo in `~/git/` with its status (CANON,
   TRANSITIONAL, CANON-MISSING, RETIRED, ARCHIVED, SHELVED,
   OFF-SCOPE). `devshell.nix`'s `linkedRepos` mirrors the
@@ -74,7 +74,7 @@ own flakes; this repo composes.
 
 ## How agents work here
 
-Per [AGENTS.md](AGENTS.md) and the workspace-wide contract at
+Per `AGENTS.md` and the workspace-wide contract at
 `github:ligoldragon/lore`:
 
 1. **Read this file** for the dev environment shape.

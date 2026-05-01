@@ -13,17 +13,17 @@ ecosystem is **mentci** (mentci-lib + mentci-egui), which is a
 distinct concern from this meta-repo.
 
 This repo hosts:
-- [`docs/workspace-manifest.md`](docs/workspace-manifest.md) —
+- `docs/workspace-manifest.md` —
   every repo under `~/git/` with its CANON / TRANSITIONAL /
   SHELVED status. `devshell.nix`'s `linkedRepos` mirrors the
   CANON + TRANSITIONAL entries.
-- [`reports/`](reports/) — decision records and design syntheses.
+- `reports/` — decision records and design syntheses.
 - The `repos/` symlink directory created on `nix develop` /
   direnv entry, exposing every workspace repo as a sibling for
   cross-repo reading + editing.
 
 For implementation detail of the workspace meta-repo itself:
-see [`ARCHITECTURE.md`](ARCHITECTURE.md) at this repo's root.
+see `ARCHITECTURE.md` at this repo's root.
 
 ---
 
@@ -43,7 +43,7 @@ commit messages and bd memories, not in reports.
 
 ## Reports — rollover at the soft cap
 
-**Soft cap: ~12 active reports** in [`reports/`](reports/). When
+**Soft cap: ~12 active reports** in `reports/`. When
 the count exceeds this, run a rollover pass before adding the
 next report. For each existing report, decide one of:
 
