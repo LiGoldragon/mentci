@@ -8,9 +8,10 @@ carve-outs only.
 
 This repo is the **dev environment + meta-deploy aggregator**
 for the sema ecosystem. The project being built is **criome**
-(the engine). The future user-facing UI being built across the
-ecosystem is **mentci** (mentci-lib + mentci-egui), which is a
-distinct concern from this meta-repo.
+(the engine). The user-facing interaction surface is the
+**mentci** family — `mentci-lib` (application logic) +
+`mentci-egui` (GUI shell) — separate repos, distinct concerns
+from this meta-repo.
 
 This repo hosts:
 - `docs/workspace-manifest.md` —
