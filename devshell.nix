@@ -1,7 +1,7 @@
-{ pkgs, inputs, system }:
+{ pkgs, ... }:
 let
   # Sibling repos under ~/git/ exposed as symlinks in ./repos/
-  # at devshell entry. Multi-root workspace (mentci.code-workspace)
+  # at devshell entry. Multi-root workspace (workspace.code-workspace)
   # gives editors the same view via additional folders.
   linkedRepos = [
     "lore"
@@ -43,8 +43,8 @@ let
 in
 pkgs.mkShell {
   packages = [
-    inputs.mentci-tools.packages.${system}.beads
-    inputs.mentci-tools.packages.${system}.dolt
+    pkgs.beads
+    pkgs.dolt
   ];
 
   env = { };

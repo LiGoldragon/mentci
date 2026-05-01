@@ -1,15 +1,11 @@
 {
-  description = "mentci — sema-ecosystem dev workspace";
+  description = "workspace — sema-ecosystem dev meta-repo";
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs?ref=nixos-unstable";
 
     blueprint.url = "github:numtide/blueprint";
     blueprint.inputs.nixpkgs.follows = "nixpkgs";
-
-    mentci-tools.url = "github:LiGoldragon/mentci-tools";
-    mentci-tools.inputs.nixpkgs.follows = "nixpkgs";
-    mentci-tools.inputs.blueprint.follows = "blueprint";
 
     fenix.url = "github:nix-community/fenix";
     fenix.inputs.nixpkgs.follows = "nixpkgs";
@@ -19,7 +15,7 @@
     # ─── canonical sema-ecosystem crates ─────────────────────
     # Each crate's flake exposes `checks.default` which the
     # workspace-level `checks/default.nix` aggregates so that
-    # `nix flake check` from mentci runs every crate's tests
+    # `nix flake check` from this repo runs every crate's tests
     # in a single sandboxed pass.
     nota-derive = {
       url = "github:LiGoldragon/nota-derive";
