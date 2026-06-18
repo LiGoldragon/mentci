@@ -1,0 +1,39 @@
+# INTENT — mentci
+
+Mentci is the human approval organ for the local per-Unix-user criome. It is
+a daemon, because the programmable UI state is daemon-owned state: every TUI,
+CLI, editor integration, status bar, popup, and agentic client renders the
+same canonical state and submits events back to the daemon.
+
+## Purpose
+
+Mentci presents questions that require the psyche, especially criome
+escalations. It keeps pending questions, decisions, subscriptions, and the UI
+revision as durable daemon state. Clients do not own approval logic; they
+subscribe to projected state and send typed responses.
+
+## Component triad
+
+- `mentci` — this daemon/runtime repository. It owns the daemon, thin CLI, and
+  daemon-local Nexus and SEMA schemas.
+- `signal-mentci` — the working programmable-UI contract:
+  `PresentQuestion`, `PushUpdate`, `ObserveInterfaceState`, `AnswerQuestion`,
+  edited-answer proposal admission, and observation retraction.
+- `meta-signal-mentci` — the meta policy contract for startup configuration
+  and reconfiguration: which local criome socket to bind, persona identity,
+  and enabled notification clients.
+
+## Constraints
+
+- Criome is per-Unix-user. Mentci talks to the user's local criome; it is not a
+  multi-user shared approval daemon.
+- Criome owns key custody. Mentci presents key-unlock and approval surfaces;
+  the real cryptographic signing path waits on the criome key-custody work.
+- Verdicts are closed: approve suggested answer, reject, or defer. Editing a
+  suggestion creates a new typed proposal object that goes through normal
+  criome authorization; the edited answer is not carried inside a verdict.
+- The SEMA state is the canonical UI state. A client render exists only after
+  a SEMA revision changed and the daemon published a projected state delivery.
+- Local UI revision is a plain monotonic counter for the single-machine
+  daemon. Attested moments are reserved for a future cross-machine subscriber
+  scope.

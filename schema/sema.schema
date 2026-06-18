@@ -1,0 +1,355 @@
+;; sema.schema — the mentci daemon's INTERNAL state engine. NOT an external
+;; wire contract: the two contracts are signal-mentci (working signal) and
+;; meta-signal-mentci (meta policy signal); Signal / Nexus / SEMA are the
+;; runtime engines inside the daemon (Spirit 7sx6). SEMA is the persistence
+;; layer — what the daemon STORES and, per Spirit 7x5z, what IS the canonical
+;; UI state. The UI changes if and only if this SEMA state changes; thin
+;; clients render exactly what the SEMA last published.
+;;
+;; The SEMA is the bottom of the compose chain (Spirit 7x5z):
+;;   Signal (signal-mentci request)  ->  Nexus (operations)  ->  SEMA (this state)
+;; A PresentQuestion signal drives the Nexus AdmitQuestion operation, which
+;; writes the pending-questions family here and bumps the revision; the bumped
+;; revision is what fans a fresh InterfaceState to every subscriber. See
+;; nexus.schema for the operations side.
+;;
+;; What the SEMA persists, per the brief:
+;;   - the pending ApprovalQuestions, keyed by daemon-minted identifier;
+;;   - their decisions (the recorded CLOSED verdicts);
+;;   - the edited-answer proposals admitted on the normal authorization path
+;;     (operator 421 / Q2), keyed by daemon-minted proposal identifier;
+;;   - the active subscription registry (daemon-minted tokens + interest);
+;;   - the InterfaceState revision counter (plain monotonic — Q3 default).
+;;
+;; Q3 (open psyche question) — the revision counter shape. DESIGNER
+;; RECOMMENDATION: a PLAIN MONOTONIC RevisionCounter for a single-machine UI
+;; daemon with local thin clients. Subscribers detect staleness by comparing
+;; counters; no shared clock is needed. The ALTERNATIVE, noted for when
+;; cross-machine thin clients subscribe to one daemon's state, is to stamp each
+;; revision with an AttestedMoment (the ay3y attested-clock treatment the head
+;; loop uses), so two clients can agree on ordering without trusting wall-clock.
+;; The AttestedRevision type below is declared but unused, marking exactly where
+;; that upgrade lands; RevisionRecord uses the plain counter today.
+;;
+;; STANDALONE / SELF-CONTAINED VOCABULARY. All record types are declared
+;; locally; this schema lowers with ZERO imports through
+;; schema_next::SchemaEngine on current schema-next main. Cross-import of the
+;; signal-mentci payload types is deferred (Woe 4); local types tagged
+;; ;; (engine boundary: signal-mentci)  identify the eventual mirror source.
+;;
+;; SCHEMA STRUCTURE — 4 root objects: (1) imports, (2) input root, (3) output
+;; root, (4) namespace. The SEMA rosters split write from read on each side, so
+;; the input root is `[WriteInput ReadInput]` and the output root is
+;; `[WriteOutput ReadOutput]` — the same four-roster shape the spirit SEMA uses.
+;; The persisted record families live in the namespace block as
+;; (Family { record … table … key … }) declarations. Named struct fields use
+;; the current positional grammar: `field_name.TypeName` names a plain-typed
+;; field; `(FieldRole (Optional X))` / `(FieldRole (Vector X))` names an
+;; applied-type field with a PascalCase role differentiator; a bare PascalCase
+;; type is an anonymous positional field.
+
+;; (1) imports — empty: standalone (Woe 4 defers cross-import).
+{}
+
+;; (2) input root — the SEMA operations the Nexus commands: a write side and a
+;; read side.
+[WriteInput ReadInput]
+
+;; (3) output root — what the SEMA returns: write receipts and read results.
+[WriteOutput ReadOutput]
+
+;; (4) namespace — every declaration: the rosters, the persisted families, and
+;; the supporting record types.
+{
+  ;; -------------------------------------------------------------------
+  ;; The SEMA operation rosters. WriteInput / ReadInput are what the Nexus
+  ;; asks the SEMA to do; WriteOutput / ReadOutput are what the SEMA returns.
+  ;; These mutate / read the families below. Every successful write bumps the
+  ;; revision — state change is the ONLY trigger for a re-render (7x5z).
+  ;; -------------------------------------------------------------------
+  WriteInput [
+    (UpsertQuestion ApprovalQuestion)
+    (RecordDecision DecisionRecord)
+    (RecordAnswerProposal AnswerProposalRecord)
+    (ApplyMutation InterfaceUpdate)
+    (RegisterSubscription SubscriptionRequest)
+    (DropSubscription SubscriptionToken)
+  ]
+
+  ReadInput [
+    (ReadInterfaceState StateMarker)
+    (LookupPendingQuestion QuestionIdentifier)
+    (ListSubscriptions StateMarker)
+  ]
+
+  WriteOutput [
+    (QuestionUpserted RevisionReceipt)
+    (DecisionRecorded RevisionReceipt)
+    (AnswerProposalRecorded ProposalReceipt)
+    (MutationApplied RevisionReceipt)
+    (SubscriptionRegistered SubscriptionReceipt)
+    (SubscriptionDropped DropReceipt)
+    (WriteMissed ErrorReport)
+  ]
+
+  ReadOutput [
+    (InterfaceStateRead InterfaceState)
+    (PendingQuestionFound PendingQuestion)
+    (SubscriptionsListed SubscriptionRoster)
+    (ReadMissed ErrorReport)
+  ]
+
+  ;; -------------------------------------------------------------------
+  ;; Primitive newtypes — distinct newtypes, not transparent aliases
+  ;; (Spirit qz6j). Mirror the signal / nexus primitives.
+  ;; -------------------------------------------------------------------
+  QuestionIdentifier String
+  ProposalIdentifier String
+  UpdateIdentifier String
+  SubscriberName String
+  SubscriptionToken String
+  PromptText String
+  AnswerText String
+  ExplanationText String
+  ContextLabel String
+  ContextBody String
+  StatusText String
+  NotificationText String
+  PaneLabel String
+  TimestampNanos Integer
+  RevisionCounter Integer
+  ProposalDigest String
+
+  ;; -------------------------------------------------------------------
+  ;; AttestedMoment — the Q3 ALTERNATIVE (engine boundary: signal-criome ay3y
+  ;; attested clock). Declared for completeness so the upgrade path is visible;
+  ;; NOT used by RevisionRecord today (plain counter per the recommendation). A
+  ;; cross-machine deployment would swap RevisionRecord's plain `revision` for
+  ;; an AttestedRevision.
+  ;; -------------------------------------------------------------------
+  AttestedMoment {
+    counter.RevisionCounter
+    attested_at.TimestampNanos
+  }
+
+  AttestedRevision {
+    revision.RevisionCounter
+    moment.AttestedMoment
+  }
+
+  ;; -------------------------------------------------------------------
+  ;; Signal-layer payload mirrors (engine boundary: signal-mentci). The
+  ;; question / verdict / state shapes the SEMA persists. Declared locally so
+  ;; the SEMA schema lowers standalone; structurally identical to
+  ;; signal-mentci's types of the same name.
+  ;; -------------------------------------------------------------------
+  ApprovalSource [
+    CriomeEscalation
+    AgentQuestion
+    LocalSystemPrompt
+  ]
+
+  QuestionContext {
+    label.ContextLabel
+    body.ContextBody
+  }
+
+  ;; QuestionProposal — the id-less content a question carries until the daemon
+  ;; mints its identifier (operator 421 §2).
+  QuestionProposal {
+    source.ApprovalSource
+    prompt.PromptText
+    (SuggestedAnswer (Optional AnswerText))
+    explanation.ExplanationText
+    (Context (Vector QuestionContext))
+  }
+
+  ;; ApprovalQuestion — the daemon-stored question: the minted identifier plus
+  ;; the proposal content.
+  ApprovalQuestion {
+    identifier.QuestionIdentifier
+    proposal.QuestionProposal
+  }
+
+  ;; CLOSED verdict set (Q2 RESOLVED: psyche correction + operator 421):
+  ;; ApproveSuggestedAnswer + Reject + Defer. There is NO free-text / authored
+  ;; answer variant — the held-out PendingAnswer carrier is DELETED. An edited
+  ;; answer is a separate admitted object (AnswerProposalRecord), approved later
+  ;; through this same closed verdict.
+  ApprovalDecision [
+    ApproveSuggestedAnswer
+    Reject
+    Defer
+  ]
+
+  PaneContent {
+    pane.PaneLabel
+    body.ContextBody
+  }
+
+  InterfaceMutation [
+    (SetStatus StatusText)
+    (PostNotification NotificationText)
+    (SetPaneContent PaneContent)
+    (ClearPane PaneLabel)
+    (PresentApprovalQuestion QuestionProposal)
+    (WithdrawApprovalQuestion QuestionIdentifier)
+  ]
+
+  InterfaceUpdate {
+    identifier.UpdateIdentifier
+    mutation.InterfaceMutation
+  }
+
+  ;; -------------------------------------------------------------------
+  ;; The canonical UI state record (Spirit 7x5z: this IS the UI). The SEMA
+  ;; stores exactly one InterfaceState; every published render is a snapshot of
+  ;; it. The revision is the plain monotonic counter (Q3 default).
+  ;; -------------------------------------------------------------------
+  InterfaceState {
+    revision.RevisionCounter
+    status.StatusText
+    (Notification (Optional NotificationText))
+    (Panes (Vector PaneContent))
+    (PendingQuestions (Vector ApprovalQuestion))
+  }
+
+  ;; InterfaceInterest — the projection a subscription is entitled to (operator
+  ;; 421 §4). Persisted on the ActiveSubscription so the fan-out delivers only
+  ;; the slice the subscriber asked for; a status bar or popup never sees full
+  ;; question context by default.
+  InterfaceInterest [
+    FullInterfaceState
+    StatusOnly
+    Notifications
+    PendingQuestions
+  ]
+
+  ;; -------------------------------------------------------------------
+  ;; The persisted record families. Each is one redb-style table (the same
+  ;; (Family { record … table … key … }) shape the spirit SEMA uses). The key
+  ;; kind selects the engine registration shape: `Identified` (each record
+  ;; carries its own identity field — QuestionIdentifier, SubscriptionToken,
+  ;; RevisionMarker — the application-keyed case) rather than `Domain` (the
+  ;; Spirit-domain-keyed case spirit uses). These five families ARE the
+  ;; daemon's durable state; on restart the daemon self-resumes from them (the
+  ;; daemon never re-parses NOTA — it rehydrates the SEMA).
+  ;; -------------------------------------------------------------------
+
+  ;; PendingQuestion — a pending ApprovalQuestion, keyed by its identifier.
+  ;; (engine boundary: signal-mentci ApprovalQuestion.)
+  PendingQuestion {
+    identifier.QuestionIdentifier
+    question.ApprovalQuestion
+  }
+  PendingQuestionsFamily (Family { record PendingQuestion table pending_questions key Identified })
+
+  ;; DecisionRecord — the recorded verdict on a question, keyed by the same
+  ;; question identifier. A question moves from pending to decided when its
+  ;; DecisionRecord lands; the decision is what the verdict egress later signs.
+  DecisionRecord {
+    question.QuestionIdentifier
+    decision.ApprovalDecision
+    answered_by.SubscriberName
+    decided_at.TimestampNanos
+  }
+  DecisionsFamily (Family { record DecisionRecord table decisions key Identified })
+
+  ;; AnswerProposalRecord — an edited-answer proposal admitted as a NEW object on
+  ;; the normal authorization path (operator 421 / Q2), keyed by its
+  ;; daemon-minted ProposalIdentifier. The daemon stores the typed body and the
+  ;; canonical ProposalDigest criome later approves through the closed verdict —
+  ;; never a loose answer string.
+  AnswerProposalRecord {
+    proposal.ProposalIdentifier
+    question.QuestionIdentifier
+    body.AnswerText
+    authored_by.SubscriberName
+    digest.ProposalDigest
+    proposed_at.TimestampNanos
+  }
+  AnswerProposalsFamily (Family { record AnswerProposalRecord table answer_proposals key Identified })
+
+  ;; ActiveSubscription — one open state subscription, keyed by its DAEMON-MINTED
+  ;; token (operator 421 §3). The active subscription registry: who is observing
+  ;; and at which projection, so the Nexus knows whom to fan a fresh PROJECTED
+  ;; InterfaceState to on every revision bump.
+  ActiveSubscription {
+    token.SubscriptionToken
+    subscriber.SubscriberName
+    interest.InterfaceInterest
+    opened_at.TimestampNanos
+  }
+  SubscriptionsFamily (Family { record ActiveSubscription table subscriptions key Identified })
+
+  ;; RevisionRecord — the InterfaceState revision counter (the single state
+  ;; head). Keyed by a singleton marker so there is exactly one row. PLAIN
+  ;; MONOTONIC per Q3 recommendation; swap `revision.RevisionCounter` for an
+  ;; AttestedRevision when cross-machine subscribers arrive.
+  RevisionMarker [InterfaceHead]
+  RevisionRecord {
+    marker.RevisionMarker
+    revision.RevisionCounter
+    updated_at.TimestampNanos
+  }
+  RevisionFamily (Family { record RevisionRecord table revision key Identified })
+
+  ;; -------------------------------------------------------------------
+  ;; Operation payloads and receipts.
+  ;; -------------------------------------------------------------------
+
+  ;; SubscriptionRequest — what RegisterSubscription carries. It names the
+  ;; subscriber and the interest/projection it wants; it does NOT supply a
+  ;; token. The SEMA write MINTS the SubscriptionToken (operator 421 §3) and
+  ;; returns it in the receipt.
+  SubscriptionRequest {
+    subscriber.SubscriberName
+    interest.InterfaceInterest
+  }
+
+  ;; RevisionReceipt — the new revision a write produced, plus its stamp. Plain
+  ;; monotonic counter (Q3 default).
+  RevisionReceipt {
+    revision.RevisionCounter
+    updated_at.TimestampNanos
+  }
+
+  ;; ProposalReceipt — the result of admitting an edited-answer proposal: the
+  ;; minted proposal id, the canonical digest, and the revision the admit bumped.
+  ProposalReceipt {
+    proposal.ProposalIdentifier
+    question.QuestionIdentifier
+    digest.ProposalDigest
+    revision.RevisionCounter
+    updated_at.TimestampNanos
+  }
+
+  ;; The minted token comes back in the receipt; the subscriber's interest rides
+  ;; along so the caller can confirm the projection it was granted.
+  SubscriptionReceipt {
+    token.SubscriptionToken
+    subscriber.SubscriberName
+    interest.InterfaceInterest
+  }
+
+  DropReceipt {
+    token.SubscriptionToken
+  }
+
+  ActiveSubscriptionView {
+    token.SubscriptionToken
+    subscriber.SubscriberName
+    interest.InterfaceInterest
+  }
+  SubscriptionRoster {
+    (Subscriptions (Vector ActiveSubscriptionView))
+  }
+
+  ;; A read-side singleton marker: reads that take no key still take one
+  ;; positional argument (the daemon's one-argument discipline).
+  StateMarker [InterfaceHead]
+
+  ErrorReport {
+    detail.ExplanationText
+  }
+}

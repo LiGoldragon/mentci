@@ -1,0 +1,476 @@
+;; nexus.schema — the mentci daemon's INTERNAL operations engine. NOT an
+;; external wire contract: the two contracts are signal-mentci (working signal)
+;; and meta-signal-mentci (meta policy signal); Signal / Nexus / SEMA are the
+;; runtime engines that live INSIDE the mentci daemon (Spirit 7sx6 — signal +
+;; meta-signal are the two contracts; Signal/Nexus/SEMA are the engines).
+;;
+;; Nexus is the operations layer: the vocabulary of what the daemon DOES
+;; internally when a signal-mentci request arrives. It reacts to an arrived
+;; signal, commands effects (admit a question, retire/answer it, apply an
+;; interface update, register/drop a subscription, frame a criome escalation,
+;; route a verdict to the home criome), and continues the work as effects
+;; complete. The reaction frame is the same Work / Action shape every
+;; schema-derived daemon uses (the message / spirit exemplars): a Work is an
+;; event the engine reacts to; an Action is the engine's response — reply,
+;; command an effect, or continue.
+;;
+;; The compose chain this schema sits in the middle of (Spirit 7x5z):
+;;   Signal (signal-mentci request)  ->  Nexus (these operations)  ->  SEMA (state)
+;; A PresentQuestion signal arrives as a SignalArrived Work; the Nexus admits it
+;; with an AdmitQuestion effect command; that effect mutates the SEMA
+;; pending-questions family and bumps the InterfaceState revision; the revision
+;; bump fans a fresh InterfaceState to every subscriber. See sema.schema for the
+;; persisted state side.
+;;
+;; STANDALONE / SELF-CONTAINED VOCABULARY. The signal-mentci payload types and
+;; the SEMA result receipts are declared LOCALLY here rather than cross-imported.
+;; Cross-import is deferred (Woe 4): signal-criome is still on stale dot-field
+;; notation and will not lower under current positional grammar, and
+;; signal-standard is not yet a crate. So this schema lowers with ZERO imports
+;; through schema_next::SchemaEngine on current schema-next main. Local types
+;; tagged  ;; (engine boundary: …)  identify the eventual import / mirror source:
+;; signal-mentci for the request payloads, sema.schema for the state receipts,
+;; signal-criome / signal-standard for the escalation origin and standard socket.
+;;
+;; SCHEMA STRUCTURE — 4 root objects: (1) imports, (2) input root, (3) output
+;; root, (4) namespace. The empty imports block reflects the zero-import
+;; posture; the input/output roots are the Work / Action reaction-frame
+;; applications; the namespace block holds every declaration. Named struct
+;; fields use the current positional grammar: a bare PascalCase type is an
+;; anonymous positional field; `field_name.TypeName` names a plain-typed field;
+;; `(FieldRole (Optional X))` / `(FieldRole (Vector X))` names an applied-type
+;; field with a PascalCase role differentiator.
+
+;; (1) imports — empty: standalone (Woe 4 defers cross-import).
+{}
+
+;; (2) input root — a Work: an event the engine reacts to. The frame arguments
+;; bind the arrived Signal, the SEMA write/read sides, and the Nexus effect
+;; result.
+(Work SignalInput SemaWriteOutput SemaReadOutput NexusEffectResult)
+
+;; (3) output root — an Action: the engine's response. Reply, command a SEMA
+;; write / read, command an effect, or continue the work.
+(Action SignalOutput CommandSemaWrite SemaReadInput NexusEffectCommand (Work SignalInput SemaWriteOutput SemaReadOutput NexusEffectResult))
+
+;; (4) namespace — every declaration.
+{
+  ;; -------------------------------------------------------------------
+  ;; The reaction frame bodies. A Work is one of: a signal arrived, a SEMA
+  ;; write completed, a SEMA read completed, an effect completed. An Action is
+  ;; one of: reply to the signal, command a SEMA write, command a SEMA read,
+  ;; command an effect, or continue the work. The parameterized heads bind the
+  ;; same plane names the roots applied.
+  ;; -------------------------------------------------------------------
+  (| Work Event WriteDone ReadDone EffectDone |) [(SignalArrived Event) (SemaWriteCompleted WriteDone) (SemaReadCompleted ReadDone) (EffectCompleted EffectDone)]
+  (| Action Reply Write Read Effect Continuation |) [(ReplyToSignal Reply) (CommandSemaWrite Write) (CommandSemaRead Read) (CommandEffect Effect) (Continue Continuation)]
+
+  ;; -------------------------------------------------------------------
+  ;; Primitive newtypes — distinct newtypes, not transparent aliases
+  ;; (Spirit qz6j). Mirror the signal-mentci primitives so the Nexus carries
+  ;; the same identifiers the signal layer minted.
+  ;; -------------------------------------------------------------------
+  QuestionIdentifier String
+  ProposalIdentifier String
+  UpdateIdentifier String
+  SubscriberName String
+  SubscriptionToken String
+  PromptText String
+  AnswerText String
+  ExplanationText String
+  ContextLabel String
+  ContextBody String
+  StatusText String
+  NotificationText String
+  PaneLabel String
+  TimestampNanos Integer
+  RevisionCounter Integer
+  SocketPath Path
+  ProposalDigest String
+  VerdictPreimage String
+  VerdictSignature String
+
+  ;; -------------------------------------------------------------------
+  ;; Signal-layer payload mirrors (engine boundary: signal-mentci). The
+  ;; request payloads the daemon receives over the working signal. Declared
+  ;; locally so this engine schema lowers standalone; structurally identical
+  ;; to signal-mentci's types of the same name.
+  ;; -------------------------------------------------------------------
+  ApprovalSource [
+    CriomeEscalation
+    AgentQuestion
+    LocalSystemPrompt
+  ]
+
+  QuestionContext {
+    label.ContextLabel
+    body.ContextBody
+  }
+
+  ;; QuestionProposal — the content a PresentQuestion carries, WITHOUT identity.
+  ;; The DAEMON mints the QuestionIdentifier on AdmitQuestion (operator 421 §2);
+  ;; external agents never choose local SEMA row identity.
+  QuestionProposal {
+    source.ApprovalSource
+    prompt.PromptText
+    (SuggestedAnswer (Optional AnswerText))
+    explanation.ExplanationText
+    (Context (Vector QuestionContext))
+  }
+
+  ;; ApprovalQuestion — the daemon-stored question: the minted identifier plus
+  ;; the proposal content. This is what the SEMA persists and the Nexus
+  ;; publishes.
+  ApprovalQuestion {
+    identifier.QuestionIdentifier
+    proposal.QuestionProposal
+  }
+
+  ;; CLOSED verdict set (Q2 RESOLVED: psyche correction + operator 421). Criome
+  ;; only authorizes objects submitted for authorization; a contract's answers
+  ;; are a CLOSED SET. The verdict is exactly ApproveSuggestedAnswer + Reject +
+  ;; Defer — no free-text / authored-answer variant. The held-out PendingAnswer
+  ;; carrier is DELETED. Authoring a different answer enters through
+  ;; AnswerProposal (a new admitted object), then this same closed verdict
+  ;; approves THAT object's digest.
+  ApprovalDecision [
+    ApproveSuggestedAnswer
+    Reject
+    Defer
+  ]
+
+  ApprovalVerdict {
+    question.QuestionIdentifier
+    decision.ApprovalDecision
+    answered_by.SubscriberName
+  }
+
+  ;; AnswerProposal — "author your own answer" done correctly (operator 421 /
+  ;; Q2). An edited answer is a NEW typed object admitted through the normal
+  ;; authorization path, NOT a verdict variant. The Nexus AdmitAnswerProposal
+  ;; operation admits it, mints a ProposalIdentifier, and computes the canonical
+  ;; ProposalDigest criome will later approve through the SAME closed verdict.
+  AnswerProposal {
+    question.QuestionIdentifier
+    body.AnswerText
+    authored_by.SubscriberName
+  }
+
+  PaneContent {
+    pane.PaneLabel
+    body.ContextBody
+  }
+
+  InterfaceMutation [
+    (SetStatus StatusText)
+    (PostNotification NotificationText)
+    (SetPaneContent PaneContent)
+    (ClearPane PaneLabel)
+    (PresentApprovalQuestion QuestionProposal)
+    (WithdrawApprovalQuestion QuestionIdentifier)
+  ]
+
+  InterfaceUpdate {
+    identifier.UpdateIdentifier
+    mutation.InterfaceMutation
+  }
+
+  ;; Filtered subscriptions (operator 421 §4). An observation declares the
+  ;; interest/projection the subscriber is entitled to; the daemon delivers only
+  ;; that slice. A status bar or popup never receives full question context
+  ;; unless it asked for FullInterfaceState.
+  InterfaceInterest [
+    FullInterfaceState
+    StatusOnly
+    Notifications
+    PendingQuestions
+  ]
+
+  InterfaceObservation {
+    subscriber.SubscriberName
+    interest.InterfaceInterest
+  }
+
+  ;; InterfaceState — the canonical render-state the daemon publishes. The SEMA
+  ;; owns this (sema.schema); the Nexus reads and re-publishes it as the result
+  ;; of any state-mutating effect. Plain monotonic RevisionCounter per Q3
+  ;; recommendation (single-machine UI daemon); the AttestedMoment alternative
+  ;; is noted in sema.schema.
+  InterfaceState {
+    revision.RevisionCounter
+    status.StatusText
+    (Notification (Optional NotificationText))
+    (Panes (Vector PaneContent))
+    (PendingQuestions (Vector ApprovalQuestion))
+  }
+
+  ;; ProjectedInterfaceState — the filtered render the Nexus fans to a
+  ;; subscriber per its interest (operator 421 §4). The revision plus exactly
+  ;; the slice the interest selected; a notification client never receives full
+  ;; question context unless it asked for FullProjection.
+  ProjectedInterfaceState {
+    revision.RevisionCounter
+    projection.InterfaceProjection
+  }
+
+  InterfaceProjection [
+    (FullProjection InterfaceState)
+    (StatusProjection StatusText)
+    (NotificationProjection (Optional NotificationText))
+    (PendingQuestionsProjection PendingQuestionsView)
+  ]
+
+  PendingQuestionsView {
+    (VisibleQuestions (Vector ApprovalQuestion))
+  }
+
+  ;; -------------------------------------------------------------------
+  ;; Escalation framing (engine boundary: signal-criome — the criome
+  ;; EscalateToPsyche origin, Spirit gc0n). A criome escalation arrives as a
+  ;; raw escalation request; the Nexus FRAMES it into a QuestionProposal, then
+  ;; AdmitQuestion mints the identifier (operator 421 §2 — the daemon, not the
+  ;; escalating agent, owns the local question identity). Declared locally
+  ;; PENDING signal-criome's migration off stale dot-field notation.
+  ;; -------------------------------------------------------------------
+  CriomeEscalationRequest {
+    prompt.PromptText
+    (SuggestedAnswer (Optional AnswerText))
+    explanation.ExplanationText
+    (Context (Vector QuestionContext))
+  }
+
+  ;; -------------------------------------------------------------------
+  ;; Verdict egress (engine boundary: signal-criome / signal-standard). When a
+  ;; psyche verdict is routed home, the Nexus carries the signed preimage over
+  ;; the standard socket to the home criome. The signing itself is the Q2-gated
+  ;; egress; this schema carries only the routing envelope. StandardSocket
+  ;; mirrors signal-standard's eaf7 connection point.
+  ;; -------------------------------------------------------------------
+  StandardSocket {
+    path.SocketPath
+  }
+
+  SignedVerdict {
+    question.QuestionIdentifier
+    decision.ApprovalDecision
+    preimage.VerdictPreimage
+    signature.VerdictSignature
+  }
+
+  VerdictRouting {
+    verdict.SignedVerdict
+    home.StandardSocket
+  }
+
+  ;; -------------------------------------------------------------------
+  ;; SEMA-result mirrors (engine boundary: sema.schema). The receipts a state
+  ;; mutation returns; the Nexus folds these into its effect results.
+  ;; -------------------------------------------------------------------
+  RevisionStamp {
+    revision.RevisionCounter
+    at.TimestampNanos
+  }
+
+  ;; The daemon MINTS the SubscriptionToken when it registers a subscription
+  ;; (operator 421 §3); the receipt carries the minted token plus the
+  ;; subscriber's declared interest, so the fan-out knows which projection to
+  ;; deliver.
+  SubscriptionReceipt {
+    token.SubscriptionToken
+    subscriber.SubscriberName
+    interest.InterfaceInterest
+  }
+
+  ;; QuestionAdmission — the daemon admitted a pushed proposal and MINTED its
+  ;; QuestionIdentifier (operator 421 §2); the receipt carries the minted id and
+  ;; the revision the admit bumped.
+  QuestionAdmission {
+    question.QuestionIdentifier
+    revision.RevisionStamp
+  }
+
+  ;; ProposalAdmission — the daemon admitted an edited-answer AnswerProposal as a
+  ;; NEW object on the normal authorization path (operator 421 / Q2): a minted
+  ;; ProposalIdentifier and the canonical ProposalDigest criome will later
+  ;; approve through the closed verdict.
+  ProposalAdmission {
+    proposal.ProposalIdentifier
+    question.QuestionIdentifier
+    digest.ProposalDigest
+    revision.RevisionStamp
+  }
+
+  ;; A delivery the daemon must fan to a subscriber: the PROJECTED canonical
+  ;; state addressed to one open subscription, filtered to the subscriber's
+  ;; interest (operator 421 §4). The load-bearing 7x5z invariant — UI changes
+  ;; IFF state changes — is mechanical: a delivery is the ONLY path to a client
+  ;; render, and a delivery exists only because the SEMA revision moved.
+  InterfaceDelivery {
+    token.SubscriptionToken
+    state.ProjectedInterfaceState
+  }
+
+  ;; -------------------------------------------------------------------
+  ;; Rejection — a Nexus operation that cannot proceed.
+  ;; -------------------------------------------------------------------
+  RejectionReason [
+    UnknownQuestion
+    QuestionAlreadyAnswered
+    UnknownSubscriber
+    UnsupportedMutation
+    MalformedEscalation
+    MalformedProposal
+    UnauthorizedProjection
+    VerdictEgressUnavailable
+  ]
+
+  Rejection {
+    reason.RejectionReason
+  }
+
+  ErrorReport {
+    detail.ExplanationText
+  }
+
+  ;; -------------------------------------------------------------------
+  ;; The signal sides. SignalInput is what arrives over signal-mentci;
+  ;; SignalOutput is the reply the daemon sends back. (engine boundary:
+  ;; signal-mentci Input / Output — mirrored locally for standalone lowering.)
+  ;; -------------------------------------------------------------------
+  SignalInput [
+    (PresentQuestion QuestionProposal)
+    (PushUpdate InterfaceUpdate)
+    (ObserveInterfaceState InterfaceObservation)
+    (AnswerQuestion ApprovalVerdict)
+    (ProposeEditedAnswer AnswerProposal)
+    (RetractInterfaceObservation SubscriptionToken)
+  ]
+
+  SignalOutput [
+    (QuestionPresented QuestionAdmission)
+    (UpdateAccepted RevisionStamp)
+    (InterfaceStateSnapshot ProjectedInterfaceState)
+    (VerdictAccepted RevisionStamp)
+    (AnswerProposalAdmitted ProposalAdmission)
+    (InterfaceObservationRetracted SubscriptionToken)
+    (Rejected Rejection)
+  ]
+
+  ;; -------------------------------------------------------------------
+  ;; The SEMA command sides. CommandSemaWrite / SemaReadInput are what the
+  ;; Nexus asks the SEMA to do; SemaWriteOutput / SemaReadOutput are what the
+  ;; SEMA returns. (engine boundary: sema.schema WriteInput / ReadInput /
+  ;; WriteOutput / ReadOutput — mirrored locally for standalone lowering.)
+  ;; -------------------------------------------------------------------
+  CommandSemaWrite [
+    (UpsertQuestion ApprovalQuestion)
+    (RecordDecision ApprovalVerdict)
+    (RecordAnswerProposal AnswerProposal)
+    (ApplyMutation InterfaceUpdate)
+    (RegisterSubscription InterfaceObservation)
+    (DropSubscription SubscriptionToken)
+  ]
+
+  SemaWriteOutput [
+    (QuestionUpserted RevisionStamp)
+    (DecisionRecorded RevisionStamp)
+    (AnswerProposalRecorded ProposalAdmission)
+    (MutationApplied RevisionStamp)
+    (SubscriptionRegistered SubscriptionReceipt)
+    (SubscriptionDropped SubscriptionToken)
+    (WriteRejected Rejection)
+  ]
+
+  SemaReadInput [
+    (ReadInterfaceState NoArgument)
+    (ReadPendingQuestion QuestionIdentifier)
+    (ListSubscriptions NoArgument)
+  ]
+
+  SemaReadOutput [
+    (InterfaceStateRead InterfaceState)
+    (PendingQuestionRead ApprovalQuestion)
+    (SubscriptionsListed SubscriptionRoster)
+    (ReadMissed Rejection)
+  ]
+
+  NoArgument { }
+  SubscriptionRoster {
+    (Subscriptions (Vector SubscriptionReceipt))
+  }
+
+  ;; -------------------------------------------------------------------
+  ;; NexusEffectCommand — THE INTERNAL OPERATIONS VOCABULARY. This is the heart
+  ;; of the Nexus: the named operations the daemon performs internally. Each is
+  ;; what the daemon DOES in response to an arrived signal, beyond a plain SEMA
+  ;; read/write — the operations that frame, route, and fan out.
+  ;;
+  ;;   AdmitQuestion           — admit a pushed proposal, MINTING its id (421 §2)
+  ;;   RetireQuestion          — answer/retire a question, recording the decision
+  ;;   AdmitAnswerProposal     — admit an edited-answer proposal as a new object
+  ;;                             on the normal authorization path (421 / Q2)
+  ;;   ApplyInterfaceUpdate    — apply a programmable interface mutation
+  ;;   RegisterSubscriber      — register a subscription, MINTING its token (421 §3)
+  ;;   DropSubscriber          — drop a subscription (retract / disconnect)
+  ;;   FrameEscalation         — frame a criome escalation into a QuestionProposal
+  ;;   RouteVerdict            — route a psyche verdict to the home criome
+  ;;   PublishInterfaceState   — fan the PROJECTED canonical state to subscribers
+  ;; -------------------------------------------------------------------
+  NexusEffectCommand [
+    (AdmitQuestion QuestionProposal)
+    (RetireQuestion ApprovalVerdict)
+    (AdmitAnswerProposal AnswerProposal)
+    (ApplyInterfaceUpdate InterfaceUpdate)
+    (RegisterSubscriber InterfaceObservation)
+    (DropSubscriber SubscriptionToken)
+    (FrameEscalation CriomeEscalationRequest)
+    (RouteVerdict VerdictRouting)
+    (PublishInterfaceState InterfaceState)
+  ]
+
+  ;; -------------------------------------------------------------------
+  ;; NexusEffectResult — the result types, one per operation (plus the failure
+  ;; arms). These are what each internal operation returns to the reaction loop
+  ;; as an EffectCompleted Work.
+  ;;
+  ;;   QuestionAdmitted        — admitted; carries the MINTED id + revision (421 §2)
+  ;;   QuestionRetired         — retired; carries the recorded decision + revision
+  ;;   AnswerProposalAdmitted  — edited-answer proposal admitted as a new object;
+  ;;                             carries minted proposal id + canonical digest
+  ;;   InterfaceUpdated        — mutation applied; carries the new revision
+  ;;   SubscriberRegistered    — subscription opened; carries its receipt + token
+  ;;   SubscriberDropped       — subscription closed by token
+  ;;   EscalationFramed        — escalation framed into a QuestionProposal
+  ;;   VerdictRouted           — verdict carried to the home criome
+  ;;   InterfaceStatePublished — projected deliveries fanned to every subscriber
+  ;;   OperationRejected       — a typed rejection (unknown question, etc.)
+  ;;   OperationFailed         — an unexpected failure
+  ;; -------------------------------------------------------------------
+  NexusEffectResult [
+    (QuestionAdmitted QuestionAdmission)
+    (QuestionRetired QuestionRetirement)
+    (AnswerProposalAdmitted ProposalAdmission)
+    (InterfaceUpdated RevisionStamp)
+    (SubscriberRegistered SubscriptionReceipt)
+    (SubscriberDropped SubscriptionToken)
+    (EscalationFramed QuestionProposal)
+    (VerdictRouted SignedVerdict)
+    (InterfaceStatePublished InterfaceFanOut)
+    (OperationRejected Rejection)
+    (OperationFailed ErrorReport)
+  ]
+
+  QuestionRetirement {
+    question.QuestionIdentifier
+    decision.ApprovalDecision
+    revision.RevisionStamp
+  }
+
+  ;; The fan-out result: every delivery the publish produced. The presence of
+  ;; deliveries is the mechanical witness that state changed (7x5z): no revision
+  ;; move, no deliveries, no client render.
+  InterfaceFanOut {
+    revision.RevisionCounter
+    (Deliveries (Vector InterfaceDelivery))
+  }
+}
