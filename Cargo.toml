@@ -1,0 +1,23 @@
+[package]
+name         = "mentci"
+version      = "0.1.0"
+edition      = "2024"
+rust-version = "1.88"
+license      = "MIT OR Apache-2.0"
+repository   = "https://github.com/LiGoldragon/mentci"
+description  = "Mentci daemon: programmable human approval surface over signal-mentci."
+
+[dependencies]
+kameo              = { version = "0.20", default-features = false, features = ["macros", "tracing"] }
+meta-signal-mentci = { git = "https://github.com/LiGoldragon/meta-signal-mentci", branch = "main" }
+rkyv               = { version = "0.8", default-features = false, features = ["std", "bytecheck", "little_endian", "pointer_width_32", "unaligned"] }
+signal-frame       = { git = "https://github.com/LiGoldragon/signal-frame", branch = "main" }
+signal-mentci      = { git = "https://github.com/LiGoldragon/signal-mentci", branch = "main", features = ["nota-text"] }
+thiserror          = "2"
+tokio              = { version = "1", features = ["io-util", "macros", "net", "rt-multi-thread"] }
+
+[dev-dependencies]
+tempfile = "3"
+
+[lints.rust]
+unsafe_code = "forbid"

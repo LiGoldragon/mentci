@@ -32,12 +32,22 @@ original question directly.
 
 ## Current Status
 
-The internal schemas are imported from the validated Mentci PoC and kept
-standalone until the contract remotes exist. The daemon binary is deliberately
-not bootstrapped yet: doing so now would require local path dependencies on
-unpublished contract crates or duplicating the PoC transport, both of which are
-the wrong production foundation.
+The first runtime slice is bootstrapped against canonical remote contract
+crates, not local path dependencies:
 
-The next production slice is to create or confirm canonical remotes for
-`signal-mentci`, `meta-signal-mentci`, `signal-standard`, and `mentci`, then
-wire the daemon crate against generated contract nouns and `mentci-lib`.
+- `mentci-daemon` takes exactly one binary startup file. The file is a
+  length-prefixed `meta-signal-mentci` frame whose input payload is
+  `Configure(MentciDaemonConfiguration)`.
+- `mentci` is the thin CLI client. It takes exactly one request input: a
+  length-prefixed binary `signal-mentci` frame file, a `.nota` request file, or
+  inline NOTA text. It connects to the local daemon socket and writes the binary
+  reply frame to stdout.
+- The daemon speaks `signal-mentci` over Unix sockets with the shared
+  `signal-frame` envelope and generated rkyv/NOTA nouns.
+- The current SEMA implementation is in-memory. It is the executable shape of
+  the daemon state machine, not yet the durable persisted family.
+
+The remaining production gaps are durable SEMA storage, notification fan-out
+events beyond request/reply, and cryptographic verdict egress through criome
+key custody. Those are integration gaps around the runtime slice, not blockers
+to the contract-shaped daemon boot.
