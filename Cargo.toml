@@ -8,7 +8,7 @@ repository   = "https://github.com/LiGoldragon/mentci"
 description  = "Mentci daemon: programmable human approval surface over signal-mentci."
 
 [dependencies]
-kameo              = { version = "0.20", default-features = false, features = ["macros", "tracing"] }
+kameo              = { git = "https://github.com/LiGoldragon/kameo.git", branch = "main", default-features = false, features = ["macros", "tracing"] }
 meta-signal-mentci = { git = "https://github.com/LiGoldragon/meta-signal-mentci", branch = "main" }
 rkyv               = { version = "0.8", default-features = false, features = ["std", "bytecheck", "little_endian", "pointer_width_32", "unaligned"] }
 signal-frame       = { git = "https://github.com/LiGoldragon/signal-frame", branch = "main" }
@@ -21,3 +21,6 @@ tempfile = "3"
 
 [lints.rust]
 unsafe_code = "forbid"
+
+[patch.crates-io]
+kameo = { git = "https://github.com/LiGoldragon/kameo.git", branch = "main" }
