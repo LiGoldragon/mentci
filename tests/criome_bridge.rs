@@ -3,8 +3,6 @@ use std::path::Path;
 use std::thread;
 
 use criome::daemon::{CriomeDaemon, CriomeDaemonConfiguration};
-use criome::language::AttestedMomentStatement;
-use criome::master_key::MasterKey;
 use criome::tables::StoreLocation;
 use criome::transport::CriomeClient;
 use mentci::configuration::DaemonConfiguration;
@@ -18,10 +16,8 @@ use meta_signal_mentci::{
 use signal_criome::{
     AttestedMoment, AttestedMomentProposition, AuthorizationEvaluation, AuthorizationMode,
     AuthorizedObjectInterest, AuthorizedObjectKind, AuthorizedObjectObservation, ComponentKind,
-    Contract, CriomeReply, CriomeRequest, EvaluationDecision, Evidence, Identity,
-    IdentityRegistration, KeyPurpose, OperationDigest, PublicKeyFingerprint,
-    RequiredSignatureThreshold, Rule, SignatureEnvelope, SignatureScheme, TimeSignature,
-    TimeWindow, TimestampNanos,
+    CriomeReply, CriomeRequest, EvaluationDecision, Evidence, Identity, OperationDigest,
+    RequiredSignatureThreshold, TimeWindow, TimestampNanos,
 };
 use signal_frame::{
     ExchangeIdentifier, ExchangeLane, LaneSequence, Reply, RequestPayload, SessionEpoch, SubReply,
@@ -60,40 +56,6 @@ fn exchange() -> ExchangeIdentifier {
 
 fn operation_digest(seed: &[u8]) -> OperationDigest {
     OperationDigest::from_bytes(seed)
-}
-
-fn signed_time_evidence(seed: &[u8], timekeeper: &MasterKey, signer: Identity) -> Evidence {
-    let operation = operation_digest(seed);
-    let proposition = AttestedMomentProposition::new(
-        TimeWindow {
-            opens_at: TimestampNanos::new(1),
-            closes_at: TimestampNanos::new(2),
-        },
-        RequiredSignatureThreshold::new(1),
-        vec![signer.clone()],
-    );
-    Evidence::new(
-        ComponentKind::Spirit,
-        operation,
-        AttestedMoment::new(
-            proposition.clone(),
-            vec![TimeSignature {
-                signer,
-                envelope: SignatureEnvelope {
-                    scheme: SignatureScheme::Bls12_381MinPk,
-                    public_key: timekeeper.public_key(),
-                    signature: timekeeper.sign(
-                        AttestedMomentStatement::new(&proposition)
-                            .to_signing_bytes()
-                            .expect("moment statement")
-                            .as_slice(),
-                    ),
-                },
-            }],
-        ),
-        Vec::new(),
-        Vec::new(),
-    )
 }
 
 fn unproven_evidence(seed: &[u8]) -> Evidence {
@@ -257,13 +219,11 @@ fn mentci_closed_verdict_approves_criome_escalation_over_meta_socket() {
     let criome_socket = workspace.join("criome.sock");
     let criome_meta_socket = workspace.join("criome-meta.sock");
     let mentci_socket = workspace.join("mentci.sock");
-    let criome = CriomeDaemon::new(
-        &criome_socket,
-        StoreLocation::new(workspace.join("criome.sema")),
-    )
-    .with_meta_socket(&criome_meta_socket)
-    .bind()
-    .expect("bind criome");
+    let store = StoreLocation::new(workspace.join("criome.sema"));
+    let criome = CriomeDaemon::new(&criome_socket, store.clone())
+        .with_meta_socket(&criome_meta_socket)
+        .bind()
+        .expect("bind criome");
     let mentci =
         Daemon::from_configuration(mentci_configuration(&mentci_socket, &criome_meta_socket))
             .expect("mentci daemon")
@@ -273,65 +233,67 @@ fn mentci_closed_verdict_approves_criome_escalation_over_meta_socket() {
     wait_for_socket(&criome_meta_socket);
     wait_for_socket(&mentci_socket);
 
-    let timekeeper = MasterKey::generate().expect("timekeeper key");
-    let timekeeper_identity = Identity::cluster("timekeeper".to_string());
-    thread::scope(|scope| {
-        let server = scope.spawn(|| criome.serve_next().expect("serve timekeeper registration"));
-        let reply = CriomeClient::new(&criome_socket)
-            .send(CriomeRequest::RegisterIdentity(IdentityRegistration::new(
-                timekeeper_identity.clone(),
-                timekeeper.public_key(),
-                PublicKeyFingerprint::new("timekeeper-fingerprint".to_string()),
-                KeyPurpose::ReleaseAuthorization,
-                None,
-            )))
-            .expect("register timekeeper");
-        assert_eq!(server.join().expect("join registration server"), reply);
-    });
-
-    let contract_reply = thread::scope(|scope| {
-        let server = scope.spawn(|| criome.serve_next().expect("serve contract admission"));
-        let reply = CriomeClient::new(&criome_socket)
-            .send(CriomeRequest::AdmitContract(Contract::new(
-                Rule::EscalateToPsyche,
-            )))
-            .expect("admit contract");
-        assert_eq!(server.join().expect("join contract server"), reply);
+    let bridge = CriomeApprovalBridge::new(&criome_meta_socket);
+    let configured = thread::scope(|scope| {
+        let server = scope.spawn(|| {
+            criome
+                .serve_next_meta()
+                .expect("serve client approval mode")
+        });
+        let configuration = CriomeDaemonConfiguration::new(
+            criome_socket.display().to_string(),
+            store.as_path().display().to_string(),
+        )
+        .with_meta_socket_path(criome_meta_socket.display().to_string())
+        .with_authorization_mode(AuthorizationMode::ClientApproval);
+        let reply = bridge.configure(configuration).expect("configure criome");
+        assert_eq!(server.join().expect("join meta configure server"), reply);
         reply
     });
-    let CriomeReply::ContractAdmitted(admitted) = contract_reply else {
-        panic!("expected ContractAdmitted, got {contract_reply:?}");
+    let meta_signal_criome::Output::Configured(configured) = configured else {
+        panic!("expected Configured, got {configured:?}");
     };
-    let contract = admitted.into_payload();
-    let evidence = signed_time_evidence(
-        b"mentci-bridged-head",
-        &timekeeper,
-        timekeeper_identity.clone(),
-    );
+    assert_eq!(configured.payload().value(), 1);
+
+    let evidence = unproven_evidence(b"mentci-bridged-head");
     let object = signal_criome::AuthorizedObjectReference {
         component: ComponentKind::Spirit,
         digest: evidence.operation.object_digest().clone(),
         kind: AuthorizedObjectKind::Head,
     };
+    let contract = signal_criome::ContractDigest::from_bytes(b"mentci-bridged-contract");
     let evaluation = AuthorizationEvaluation {
         contract: contract.clone(),
         object: object.clone(),
         evidence: evidence.clone(),
     };
 
-    let escalated = thread::scope(|scope| {
-        let server = scope.spawn(|| criome.serve_next().expect("serve escalation"));
+    let pending = thread::scope(|scope| {
+        let server = scope.spawn(|| criome.serve_next().expect("serve client approval park"));
         let reply = CriomeClient::new(&criome_socket)
             .send(CriomeRequest::EvaluateAuthorization(evaluation.clone()))
             .expect("evaluate authorization");
-        assert_eq!(server.join().expect("join escalation server"), reply);
+        assert_eq!(server.join().expect("join park server"), reply);
         reply
     });
-    let CriomeReply::AuthorizationEvaluated(escalated) = escalated else {
-        panic!("expected AuthorizationEvaluated, got {escalated:?}");
+    let CriomeReply::AuthorizationPending(pending) = pending else {
+        panic!("expected AuthorizationPending, got {pending:?}");
     };
-    assert_eq!(escalated.decision, EvaluationDecision::EscalateToPsyche);
-    println!("PROOF (a) criome ordinary socket escalated the head to psyche");
+    println!("PROOF (a) criome ordinary socket parked the head for client approval");
+
+    let parked = thread::scope(|scope| {
+        let server = scope.spawn(|| criome.serve_next_meta().expect("serve parked list"));
+        let snapshot = bridge.parked_authorizations().expect("list parked");
+        let reply = server.join().expect("join parked list server");
+        assert!(matches!(
+            reply,
+            meta_signal_criome::Output::ParkedAuthorizationSnapshot(_)
+        ));
+        snapshot
+    });
+    assert_eq!(parked.parked().len(), 1);
+    assert_eq!(parked.parked()[0].request_slot, pending.request_slot);
+    println!("PROOF (b) mentci bridge listed the parked criome request by slot");
 
     let question = thread::scope(|scope| {
         let server = scope.spawn(|| mentci.serve_next().expect("serve question"));
@@ -346,7 +308,7 @@ fn mentci_closed_verdict_approves_criome_escalation_over_meta_socket() {
         panic!("expected QuestionPresented, got {question:?}");
     };
     println!(
-        "PROOF (b) mentci daemon presented question {:?}",
+        "PROOF (c) mentci daemon presented question {:?}",
         presented.question
     );
     let verdict = ApprovalVerdict {
@@ -362,13 +324,13 @@ fn mentci_closed_verdict_approves_criome_escalation_over_meta_socket() {
         );
         server.join().expect("join verdict server");
         assert!(matches!(reply, MentciReply::VerdictAccepted(_)));
-        println!("PROOF (c) mentci daemon accepted closed approve verdict");
+        println!("PROOF (d) mentci daemon accepted closed approve verdict");
     });
 
     let approved = thread::scope(|scope| {
         let server = scope.spawn(|| criome.serve_next_meta().expect("serve meta approval"));
-        let reply = CriomeApprovalBridge::new(&criome_meta_socket)
-            .submit_verdict(evaluation.clone(), &verdict)
+        let reply = bridge
+            .submit_verdict(pending.request_slot.clone(), &verdict)
             .expect("submit criome approval");
         assert_eq!(server.join().expect("join meta server"), reply);
         reply
@@ -376,8 +338,12 @@ fn mentci_closed_verdict_approves_criome_escalation_over_meta_socket() {
     let meta_signal_criome::Output::AuthorizationApprovalRecorded(approved) = approved else {
         panic!("expected AuthorizationApprovalRecorded, got {approved:?}");
     };
-    assert_eq!(approved.payload().decision, EvaluationDecision::Authorized);
-    println!("PROOF (d) mentci bridge submitted approval to criome meta socket");
+    assert_eq!(approved.request_slot, pending.request_slot);
+    assert_eq!(
+        approved.decision,
+        meta_signal_criome::AuthorizationApprovalDecision::Approve
+    );
+    println!("PROOF (e) mentci bridge submitted approval to criome meta socket by slot");
 
     let snapshot = thread::scope(|scope| {
         let server = scope.spawn(|| criome.serve_next().expect("serve authorized observation"));
@@ -399,7 +365,7 @@ fn mentci_closed_verdict_approves_criome_escalation_over_meta_socket() {
     assert_eq!(updates.len(), 1);
     assert_eq!(updates[0].object, object);
     assert_eq!(updates[0].decision, EvaluationDecision::Authorized);
-    println!("PROOF (e) criome ordinary socket exposes the authorized head pulse");
+    println!("PROOF (f) criome ordinary socket exposes the authorized head pulse");
 
     mentci.shutdown().expect("shutdown mentci");
     criome.shutdown().expect("shutdown criome");

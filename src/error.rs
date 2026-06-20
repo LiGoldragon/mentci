@@ -46,6 +46,9 @@ pub enum Error {
     #[error("criome: {0}")]
     Criome(#[from] criome::Error),
 
+    #[error("unexpected criome meta reply")]
+    UnexpectedCriomeMetaReply,
+
     #[error("signal-mentci frame error: {0}")]
     SignalMentci(#[from] signal_mentci::SignalFrameError),
 

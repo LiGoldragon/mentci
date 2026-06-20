@@ -12,6 +12,23 @@ fn update_request() -> MentciRequest {
 }
 
 #[test]
+fn client_recognizes_criome_parked_command_atom() {
+    let command = ClientCommand::from_arguments(["criome:parked"], "/tmp/unused-mentci.socket");
+
+    assert!(command.criome_command().expect("criome command").is_some());
+}
+
+#[test]
+fn client_recognizes_criome_approval_command_atom() {
+    let command = ClientCommand::from_arguments(
+        ["criome:approve:authorization-request-1"],
+        "/tmp/unused-mentci.socket",
+    );
+
+    assert!(command.criome_command().expect("criome command").is_some());
+}
+
+#[test]
 fn client_builds_request_frame_from_inline_nota() {
     let request = update_request();
     let command = ClientCommand::from_arguments([request.to_nota()], "/tmp/unused-mentci.socket");

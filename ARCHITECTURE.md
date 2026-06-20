@@ -42,12 +42,20 @@ crates, not local path dependencies:
   length-prefixed binary `signal-mentci` frame file, a `.nota` request file, or
   inline NOTA text. It connects to the local daemon socket and writes the binary
   reply frame to stdout.
+- The same one-argument CLI also accepts criome approval atoms:
+  `criome:parked`, `criome:approve:<slot>`, `criome:reject:<slot>`, and
+  `criome:defer:<slot>`. These commands use `MENTCI_CRIOME_META_SOCKET` or
+  `/tmp/criome-meta.socket` and talk to criome's meta socket without changing
+  `signal-mentci`.
 - The daemon speaks `signal-mentci` over Unix sockets with the shared
   `signal-frame` envelope and generated rkyv/NOTA nouns.
+- `CriomeApprovalBridge` lists criome's parked authorizations and submits
+  closed decisions by `AuthorizationRequestSlot`; it never resubmits an
+  `AuthorizationEvaluation` by value.
 - The current SEMA implementation is in-memory. It is the executable shape of
   the daemon state machine, not yet the durable persisted family.
 
 The remaining production gaps are durable SEMA storage, notification fan-out
-events beyond request/reply, and cryptographic verdict egress through criome
-key custody. Those are integration gaps around the runtime slice, not blockers
-to the contract-shaped daemon boot.
+events beyond request/reply, and making the daemon's parked-authorization
+poller continuous instead of CLI-triggered. Those are integration gaps around
+the runtime slice, not blockers to the contract-shaped daemon boot.
