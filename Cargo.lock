@@ -363,6 +363,7 @@ version = "0.1.0"
 dependencies = [
  "criome",
  "kameo",
+ "mentci-lib",
  "meta-signal-criome",
  "meta-signal-mentci",
  "rkyv",
@@ -372,6 +373,19 @@ dependencies = [
  "tempfile",
  "thiserror",
  "tokio",
+]
+
+[[package]]
+name = "mentci-lib"
+version = "0.1.0"
+source = "git+https://github.com/LiGoldragon/mentci-lib?branch=main#0731c374f9c03a70f564b22ce9e90d2cef3461c0"
+dependencies = [
+ "meta-signal-criome",
+ "meta-signal-mentci",
+ "signal-criome",
+ "signal-frame",
+ "signal-mentci",
+ "thiserror",
 ]
 
 [[package]]
@@ -740,7 +754,7 @@ dependencies = [
 [[package]]
 name = "signal-mentci"
 version = "0.1.0"
-source = "git+https://github.com/LiGoldragon/signal-mentci?branch=main#c187a611322d917580284149f79b3d2a6773c7a5"
+source = "git+https://github.com/LiGoldragon/signal-mentci?branch=main#58dd5a26d9b2e64a98fb64d30ac44ba0d3febe8e"
 dependencies = [
  "nota-next",
  "rkyv",

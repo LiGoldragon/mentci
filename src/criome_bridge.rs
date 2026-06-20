@@ -2,11 +2,12 @@ use std::path::PathBuf;
 
 use criome::transport::CriomeMetaClient;
 use meta_signal_criome::{AuthorizationApproval, AuthorizationApprovalDecision};
+use mentci_lib::CriomeVerdict;
 use signal_criome::{
     AuthorizationRequestSlot, CriomeDaemonConfiguration, ParkedAuthorizationObservation,
     ParkedAuthorizationSnapshot,
 };
-use signal_mentci::{ApprovalDecision, ApprovalVerdict};
+use signal_mentci::ApprovalVerdict;
 
 use crate::Result;
 
@@ -36,7 +37,11 @@ impl CriomeApprovalBridge {
         request_slot: AuthorizationRequestSlot,
         verdict: &ApprovalVerdict,
     ) -> Result<meta_signal_criome::Output> {
-        self.submit_decision(request_slot, Self::map_decision(verdict.decision))
+        let criome_verdict = CriomeVerdict::from_decision(request_slot, verdict.decision);
+        self.submit_decision(
+            criome_verdict.request_slot().clone(),
+            criome_verdict.decision(),
+        )
     }
 
     pub fn submit_decision(
@@ -66,11 +71,4 @@ impl CriomeApprovalBridge {
         Ok(snapshot)
     }
 
-    fn map_decision(decision: ApprovalDecision) -> AuthorizationApprovalDecision {
-        match decision {
-            ApprovalDecision::ApproveSuggestedAnswer => AuthorizationApprovalDecision::Approve,
-            ApprovalDecision::Reject => AuthorizationApprovalDecision::Reject,
-            ApprovalDecision::Defer => AuthorizationApprovalDecision::Defer,
-        }
-    }
 }
