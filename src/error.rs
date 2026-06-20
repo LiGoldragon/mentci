@@ -1,5 +1,6 @@
 use std::path::PathBuf;
 
+use meta_signal_mentci::ComponentSocketKind;
 use thiserror::Error;
 
 #[derive(Debug, Error)]
@@ -36,6 +37,9 @@ pub enum Error {
 
     #[error("unsupported socket: only Unix sockets are implemented in this slice")]
     UnsupportedSocket,
+
+    #[error("configuration is missing required component socket: {kind:?}")]
+    MissingComponentSocket { kind: ComponentSocketKind },
 
     #[error("daemon IO error: {0}")]
     Io(#[from] std::io::Error),

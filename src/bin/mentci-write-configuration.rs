@@ -9,8 +9,8 @@ use std::path::PathBuf;
 
 use mentci::configuration::ConfigurationFile;
 use meta_signal_mentci::{
-    ComponentKind, MentciDaemonConfiguration, NotificationClient, PersonaIdentity, PersonaKeyLabel,
-    PersonaName, StandardSocket,
+    ComponentKind, ComponentSocket, ComponentSocketKind, MentciDaemonConfiguration,
+    NotificationClient, PersonaIdentity, PersonaKeyLabel, PersonaName, StandardSocket,
 };
 
 /// The encode request for the daemon socket, local criome meta socket, and
@@ -38,8 +38,16 @@ impl ConfigurationEncoding {
 
     fn run(self) {
         let configuration = MentciDaemonConfiguration::new(
-            StandardSocket::unix(self.socket),
-            StandardSocket::unix(self.criome),
+            vec![
+                ComponentSocket::new(
+                    ComponentSocketKind::Mentci,
+                    StandardSocket::unix(self.socket),
+                ),
+                ComponentSocket::new(
+                    ComponentSocketKind::MetaCriome,
+                    StandardSocket::unix(self.criome),
+                ),
+            ],
             PersonaIdentity::new(
                 PersonaName::new("psyche"),
                 ComponentKind::Persona,

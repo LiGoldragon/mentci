@@ -60,7 +60,7 @@ impl Daemon {
         fs::set_permissions(&socket_path, fs::Permissions::from_mode(0o600))?;
         let runtime = tokio::runtime::Runtime::new()?;
         let criome_bridge =
-            CriomeApprovalBridge::new(self.configuration.home_criome_socket_path()?);
+            CriomeApprovalBridge::new(self.configuration.criome_meta_socket_path()?);
         let state =
             runtime.block_on(async { StateOwner::spawn(StateOwner::new(State::default())) });
         let codec = FrameCodec::new();
@@ -186,8 +186,8 @@ mod tests {
     use std::os::unix::net::UnixStream;
 
     use meta_signal_mentci::{
-        ComponentKind, MentciDaemonConfiguration, NotificationClient, PersonaIdentity,
-        PersonaKeyLabel, PersonaName, StandardSocket,
+        ComponentKind, ComponentSocket, ComponentSocketKind, MentciDaemonConfiguration,
+        NotificationClient, PersonaIdentity, PersonaKeyLabel, PersonaName, StandardSocket,
     };
     use signal_frame::{
         ExchangeIdentifier, ExchangeLane, LaneSequence, RequestPayload, SessionEpoch,
@@ -201,8 +201,16 @@ mod tests {
 
     fn configuration() -> DaemonConfiguration {
         DaemonConfiguration::new(MentciDaemonConfiguration::new(
-            StandardSocket::unix("/tmp/mentci-test.socket"),
-            StandardSocket::unix("/tmp/criome-test.socket"),
+            vec![
+                ComponentSocket::new(
+                    ComponentSocketKind::Mentci,
+                    StandardSocket::unix("/tmp/mentci-test.socket"),
+                ),
+                ComponentSocket::new(
+                    ComponentSocketKind::MetaCriome,
+                    StandardSocket::unix("/tmp/criome-test.socket"),
+                ),
+            ],
             PersonaIdentity::new(
                 PersonaName::new("psyche"),
                 ComponentKind::Persona,

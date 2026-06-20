@@ -389,7 +389,7 @@ dependencies = [
 [[package]]
 name = "meta-signal-mentci"
 version = "0.1.0"
-source = "git+https://github.com/LiGoldragon/meta-signal-mentci?branch=main#74283470cca65f6fc621d35857154bf19770c142"
+source = "git+https://github.com/LiGoldragon/meta-signal-mentci?branch=main#42222f306e71e189f80619ff194429f1bb21aff1"
 dependencies = [
  "rkyv",
  "schema-rust-next",

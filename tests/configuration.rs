@@ -4,14 +4,22 @@ use mentci::Error;
 use mentci::command::DaemonCommand;
 use mentci::configuration::ConfigurationFile;
 use meta_signal_mentci::{
-    ComponentKind, MentciDaemonConfiguration, NotificationClient, PersonaIdentity, PersonaKeyLabel,
-    PersonaName, StandardSocket,
+    ComponentKind, ComponentSocket, ComponentSocketKind, MentciDaemonConfiguration,
+    NotificationClient, PersonaIdentity, PersonaKeyLabel, PersonaName, StandardSocket,
 };
 
 fn configuration(socket_path: &str, criome_path: &str) -> MentciDaemonConfiguration {
     MentciDaemonConfiguration::new(
-        StandardSocket::unix(socket_path),
-        StandardSocket::unix(criome_path),
+        vec![
+            ComponentSocket::new(
+                ComponentSocketKind::Mentci,
+                StandardSocket::unix(socket_path),
+            ),
+            ComponentSocket::new(
+                ComponentSocketKind::MetaCriome,
+                StandardSocket::unix(criome_path),
+            ),
+        ],
         PersonaIdentity::new(
             PersonaName::new("psyche"),
             ComponentKind::Persona,
@@ -46,7 +54,7 @@ fn startup_configuration_round_trips_as_meta_signal_frame() {
     );
     assert_eq!(
         daemon_configuration
-            .home_criome_socket_path()
+            .criome_meta_socket_path()
             .expect("criome socket path"),
         Path::new(criome.to_str().expect("criome utf8")),
     );

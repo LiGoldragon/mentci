@@ -38,6 +38,10 @@ crates, not local path dependencies:
 - `mentci-daemon` takes exactly one binary startup file. The file is a
   length-prefixed `meta-signal-mentci` frame whose input payload is
   `Configure(MentciDaemonConfiguration)`.
+- Startup configuration carries typed component socket endpoints. The daemon
+  binds the `Mentci` socket and uses the `MetaCriome` socket for criome parked
+  authorization pickup; socket paths are not interpreted as generic
+  ordinary/meta positions.
 - `mentci` is the thin CLI client. It takes exactly one request input: a
   length-prefixed binary `signal-mentci` frame file, a `.nota` request file, or
   inline NOTA text. It connects to the local daemon socket and writes the binary

@@ -20,13 +20,15 @@ subscribe to projected state and send typed responses.
   `PresentQuestion`, `PushUpdate`, `ObserveInterfaceState`, `AnswerQuestion`,
   edited-answer proposal admission, and observation retraction.
 - `meta-signal-mentci` — the meta policy contract for startup configuration
-  and reconfiguration: which local criome socket to bind, persona identity,
-  and enabled notification clients.
+  and reconfiguration: typed component socket endpoints, persona identity, and
+  enabled notification clients.
 
 ## Constraints
 
 - Criome is per-Unix-user. Mentci talks to the user's local criome; it is not a
-  multi-user shared approval daemon.
+  multi-user shared approval daemon. Socket paths are typed by component and
+  authority lane, such as `Mentci` and `MetaCriome`, because Mentci will connect
+  to more components than criome alone.
 - Criome owns key custody. Mentci presents key-unlock and approval surfaces;
   the real cryptographic signing path waits on the criome key-custody work.
 - Verdicts are closed: approve suggested answer, reject, or defer. Editing a

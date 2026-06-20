@@ -1,6 +1,6 @@
 use std::path::{Path, PathBuf};
 
-use meta_signal_mentci::{Input as MetaInput, MentciDaemonConfiguration};
+use meta_signal_mentci::{ComponentSocketKind, Input as MetaInput, MentciDaemonConfiguration};
 
 use crate::{Error, Result};
 
@@ -50,14 +50,22 @@ impl DaemonConfiguration {
     }
 
     pub fn socket_path(&self) -> Result<&Path> {
-        Ok(Path::new(self.inner.socket_path.payload().as_str()))
+        self.component_socket_path(ComponentSocketKind::Mentci)
     }
 
-    pub fn home_criome_socket_path(&self) -> Result<&Path> {
-        Ok(Path::new(self.inner.home_criome_socket.payload().as_str()))
+    pub fn criome_meta_socket_path(&self) -> Result<&Path> {
+        self.component_socket_path(ComponentSocketKind::MetaCriome)
     }
 
     pub fn into_inner(self) -> MentciDaemonConfiguration {
         self.inner
+    }
+
+    fn component_socket_path(&self, kind: ComponentSocketKind) -> Result<&Path> {
+        let component_socket = self
+            .inner
+            .component_socket(kind)
+            .ok_or(Error::MissingComponentSocket { kind })?;
+        Ok(Path::new(component_socket.socket.payload().as_str()))
     }
 }

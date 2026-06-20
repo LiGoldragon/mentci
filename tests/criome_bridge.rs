@@ -10,8 +10,9 @@ use mentci::criome_bridge::CriomeApprovalBridge;
 use mentci::daemon::Daemon;
 use mentci::frame_codec::FrameCodec;
 use meta_signal_mentci::{
-    ComponentKind as MentciComponentKind, MentciDaemonConfiguration, NotificationClient,
-    PersonaIdentity, PersonaKeyLabel, PersonaName, StandardSocket,
+    ComponentKind as MentciComponentKind, ComponentSocket, ComponentSocketKind,
+    MentciDaemonConfiguration, NotificationClient, PersonaIdentity, PersonaKeyLabel, PersonaName,
+    StandardSocket,
 };
 use signal_criome::{
     AttestedMoment, AttestedMomentProposition, AuthorizationEvaluation, AuthorizationMode,
@@ -83,8 +84,16 @@ fn unproven_evidence(seed: &[u8]) -> Evidence {
 
 fn mentci_configuration(socket: &Path, criome_meta_socket: &Path) -> DaemonConfiguration {
     DaemonConfiguration::new(MentciDaemonConfiguration::new(
-        StandardSocket::unix(socket.display().to_string()),
-        StandardSocket::unix(criome_meta_socket.display().to_string()),
+        vec![
+            ComponentSocket::new(
+                ComponentSocketKind::Mentci,
+                StandardSocket::unix(socket.display().to_string()),
+            ),
+            ComponentSocket::new(
+                ComponentSocketKind::MetaCriome,
+                StandardSocket::unix(criome_meta_socket.display().to_string()),
+            ),
+        ],
         PersonaIdentity::new(
             PersonaName::new("psyche"),
             MentciComponentKind::Persona,
