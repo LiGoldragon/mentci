@@ -115,7 +115,7 @@ dependencies = [
 [[package]]
 name = "criome"
 version = "0.1.1"
-source = "git+https://github.com/LiGoldragon/criome?branch=main#6ce7decd7a47f6a48984a8388e4ef7f756f5be92"
+source = "git+https://github.com/LiGoldragon/criome?branch=main#9b364cd09fedef316cf08eaca397e54de144d89c"
 dependencies = [
  "blake3",
  "blst",
@@ -377,7 +377,7 @@ dependencies = [
 [[package]]
 name = "meta-signal-criome"
 version = "0.1.0"
-source = "git+https://github.com/LiGoldragon/meta-signal-criome?branch=main#f14c0324e33468542897450cabb1626240f11a1b"
+source = "git+https://github.com/LiGoldragon/meta-signal-criome?branch=main#2a2f7d95142de850b19dd38480f2b2f2d3cfc789"
 dependencies = [
  "rkyv",
  "schema-rust-next",
@@ -705,7 +705,7 @@ checksum = "f8fadd59c855ef2080decdef8ff161eb6661b86933c9d82e5ba29dc602a55aba"
 [[package]]
 name = "signal-criome"
 version = "0.1.0"
-source = "git+https://github.com/LiGoldragon/signal-criome?branch=main#caa02a98b542e397ee043e225a43450534960a8e"
+source = "git+https://github.com/LiGoldragon/signal-criome?branch=main#aa5498abe8c840c994775885889ddd2719551ed6"
 dependencies = [
  "blake3",
  "blst",

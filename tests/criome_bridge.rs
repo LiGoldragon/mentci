@@ -2,7 +2,7 @@ use std::os::unix::net::UnixStream;
 use std::path::Path;
 use std::thread;
 
-use criome::daemon::CriomeDaemon;
+use criome::daemon::{CriomeDaemon, CriomeDaemonConfiguration};
 use criome::language::AttestedMomentStatement;
 use criome::master_key::MasterKey;
 use criome::tables::StoreLocation;
@@ -16,11 +16,12 @@ use meta_signal_mentci::{
     PersonaIdentity, PersonaKeyLabel, PersonaName, StandardSocket,
 };
 use signal_criome::{
-    AttestedMoment, AttestedMomentProposition, AuthorizationEvaluation, AuthorizedObjectInterest,
-    AuthorizedObjectKind, AuthorizedObjectObservation, ComponentKind, Contract, CriomeReply,
-    CriomeRequest, EvaluationDecision, Evidence, Identity, IdentityRegistration, KeyPurpose,
-    OperationDigest, PublicKeyFingerprint, RequiredSignatureThreshold, Rule, SignatureEnvelope,
-    SignatureScheme, TimeSignature, TimeWindow, TimestampNanos,
+    AttestedMoment, AttestedMomentProposition, AuthorizationEvaluation, AuthorizationMode,
+    AuthorizedObjectInterest, AuthorizedObjectKind, AuthorizedObjectObservation, ComponentKind,
+    Contract, CriomeReply, CriomeRequest, EvaluationDecision, Evidence, Identity,
+    IdentityRegistration, KeyPurpose, OperationDigest, PublicKeyFingerprint,
+    RequiredSignatureThreshold, Rule, SignatureEnvelope, SignatureScheme, TimeSignature,
+    TimeWindow, TimestampNanos,
 };
 use signal_frame::{
     ExchangeIdentifier, ExchangeLane, LaneSequence, Reply, RequestPayload, SessionEpoch, SubReply,
@@ -95,6 +96,27 @@ fn signed_time_evidence(seed: &[u8], timekeeper: &MasterKey, signer: Identity) -
     )
 }
 
+fn unproven_evidence(seed: &[u8]) -> Evidence {
+    let operation = operation_digest(seed);
+    Evidence::new(
+        ComponentKind::Spirit,
+        operation,
+        AttestedMoment::new(
+            AttestedMomentProposition::new(
+                TimeWindow {
+                    opens_at: TimestampNanos::new(1),
+                    closes_at: TimestampNanos::new(2),
+                },
+                RequiredSignatureThreshold::new(1),
+                Vec::new(),
+            ),
+            Vec::new(),
+        ),
+        Vec::new(),
+        Vec::new(),
+    )
+}
+
 fn mentci_configuration(socket: &Path, criome_meta_socket: &Path) -> DaemonConfiguration {
     DaemonConfiguration::new(MentciDaemonConfiguration::new(
         StandardSocket::unix(socket.display().to_string()),
@@ -144,6 +166,89 @@ fn question_proposal() -> QuestionProposal {
             body: ContextBody::new("authorized-head-reference"),
         }],
     )
+}
+
+#[test]
+fn mentci_bridge_configures_criome_auto_approve_over_meta_socket() {
+    let workspace = fixture_path("configured-auto-approve");
+    let criome_socket = workspace.join("criome.sock");
+    let criome_meta_socket = workspace.join("criome-meta.sock");
+    let store = StoreLocation::new(workspace.join("criome.sema"));
+    let criome = CriomeDaemon::new(&criome_socket, store.clone())
+        .with_meta_socket(&criome_meta_socket)
+        .bind()
+        .expect("bind criome");
+    wait_for_socket(&criome_socket);
+    wait_for_socket(&criome_meta_socket);
+
+    let bridge = CriomeApprovalBridge::new(&criome_meta_socket);
+    let configured = thread::scope(|scope| {
+        let server = scope.spawn(|| criome.serve_next_meta().expect("serve meta configure"));
+        let configuration = CriomeDaemonConfiguration::new(
+            criome_socket.display().to_string(),
+            store.as_path().display().to_string(),
+        )
+        .with_meta_socket_path(criome_meta_socket.display().to_string())
+        .with_authorization_mode(AuthorizationMode::AutoApprove);
+        let reply = bridge.configure(configuration).expect("configure criome");
+        assert_eq!(server.join().expect("join meta configure server"), reply);
+        reply
+    });
+    let meta_signal_criome::Output::Configured(configured) = configured else {
+        panic!("expected Configured, got {configured:?}");
+    };
+    assert_eq!(configured.payload().value(), 1);
+
+    let evidence = unproven_evidence(b"mentci-configured-auto-approved-head");
+    let object = signal_criome::AuthorizedObjectReference {
+        component: ComponentKind::Spirit,
+        digest: evidence.operation.object_digest().clone(),
+        kind: AuthorizedObjectKind::Head,
+    };
+    let contract = signal_criome::ContractDigest::from_bytes(b"mentci-auto-approve-contract");
+    let evaluation = AuthorizationEvaluation {
+        contract: contract.clone(),
+        object: object.clone(),
+        evidence: evidence.clone(),
+    };
+
+    let approved = thread::scope(|scope| {
+        let server = scope.spawn(|| criome.serve_next().expect("serve auto approve"));
+        let reply = CriomeClient::new(&criome_socket)
+            .send(CriomeRequest::EvaluateAuthorization(evaluation))
+            .expect("evaluate auto approve");
+        assert_eq!(server.join().expect("join auto approve server"), reply);
+        reply
+    });
+    let CriomeReply::AuthorizationEvaluated(approved) = approved else {
+        panic!("expected AuthorizationEvaluated, got {approved:?}");
+    };
+    assert_eq!(approved.decision, EvaluationDecision::Authorized);
+
+    let snapshot = thread::scope(|scope| {
+        let server = scope.spawn(|| criome.serve_next().expect("serve authorized observation"));
+        let reply = CriomeClient::new(&criome_socket)
+            .send(CriomeRequest::ObserveAuthorizedObjects(
+                AuthorizedObjectObservation {
+                    subscriber: Identity::agent("mentci-auto-approve-observer".to_string()),
+                    interest: AuthorizedObjectInterest::Component(ComponentKind::Spirit),
+                },
+            ))
+            .expect("observe authorized objects");
+        assert_eq!(server.join().expect("join observation server"), reply);
+        reply
+    });
+    let CriomeReply::AuthorizedObjectUpdateSnapshot(snapshot) = snapshot else {
+        panic!("expected AuthorizedObjectUpdateSnapshot, got {snapshot:?}");
+    };
+    let updates = snapshot.into_updates();
+    assert_eq!(updates.len(), 1);
+    assert_eq!(updates[0].object, object);
+    assert_eq!(updates[0].contract, contract);
+    assert_eq!(updates[0].decision, EvaluationDecision::Authorized);
+    assert_eq!(updates[0].stamp, evidence.stamp);
+
+    criome.shutdown().expect("shutdown criome");
 }
 
 #[test]

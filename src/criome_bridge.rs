@@ -2,7 +2,7 @@ use std::path::PathBuf;
 
 use criome::transport::CriomeMetaClient;
 use meta_signal_criome::{AuthorizationApproval, AuthorizationApprovalDecision};
-use signal_criome::AuthorizationEvaluation;
+use signal_criome::{AuthorizationEvaluation, CriomeDaemonConfiguration};
 use signal_mentci::{ApprovalDecision, ApprovalVerdict};
 
 use crate::Result;
@@ -17,6 +17,15 @@ impl CriomeApprovalBridge {
         Self {
             meta_socket: meta_socket.into(),
         }
+    }
+
+    pub fn configure(
+        &self,
+        configuration: CriomeDaemonConfiguration,
+    ) -> Result<meta_signal_criome::Output> {
+        CriomeMetaClient::new(&self.meta_socket)
+            .send(meta_signal_criome::Input::Configure(configuration))
+            .map_err(Into::into)
     }
 
     pub fn submit_verdict(
