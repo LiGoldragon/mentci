@@ -7,6 +7,7 @@
 pub mod client;
 pub mod command;
 pub mod configuration;
+pub mod criome_bridge;
 pub mod daemon;
 pub mod error;
 pub mod frame_codec;

@@ -8,9 +8,12 @@ repository   = "https://github.com/LiGoldragon/mentci"
 description  = "Mentci daemon: programmable human approval surface over signal-mentci."
 
 [dependencies]
+criome             = { git = "https://github.com/LiGoldragon/criome", branch = "main" }
 kameo              = { git = "https://github.com/LiGoldragon/kameo.git", branch = "main", default-features = false, features = ["macros", "tracing"] }
+meta-signal-criome = { git = "https://github.com/LiGoldragon/meta-signal-criome", branch = "main" }
 meta-signal-mentci = { git = "https://github.com/LiGoldragon/meta-signal-mentci", branch = "main" }
 rkyv               = { version = "0.8", default-features = false, features = ["std", "bytecheck", "little_endian", "pointer_width_32", "unaligned"] }
+signal-criome      = { git = "https://github.com/LiGoldragon/signal-criome", branch = "main" }
 signal-frame       = { git = "https://github.com/LiGoldragon/signal-frame", branch = "main" }
 signal-mentci      = { git = "https://github.com/LiGoldragon/signal-mentci", branch = "main", features = ["nota-text"] }
 thiserror          = "2"

@@ -50,11 +50,11 @@ impl DaemonConfiguration {
     }
 
     pub fn socket_path(&self) -> Result<&Path> {
-        Ok(Path::new(self.inner.socket_path.payload().as_ref()))
+        Ok(Path::new(self.inner.socket_path.payload().as_str()))
     }
 
     pub fn home_criome_socket_path(&self) -> Result<&Path> {
-        Ok(Path::new(self.inner.home_criome_socket.payload().as_ref()))
+        Ok(Path::new(self.inner.home_criome_socket.payload().as_str()))
     }
 
     pub fn into_inner(self) -> MentciDaemonConfiguration {

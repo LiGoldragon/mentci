@@ -43,6 +43,9 @@ pub enum Error {
     #[error("frame error: {0}")]
     Frame(#[from] signal_frame::FrameError),
 
+    #[error("criome: {0}")]
+    Criome(#[from] criome::Error),
+
     #[error("signal-mentci frame error: {0}")]
     SignalMentci(#[from] signal_mentci::SignalFrameError),
 

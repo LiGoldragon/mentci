@@ -1,5 +1,7 @@
 use std::fs;
+use std::os::unix::fs::PermissionsExt;
 use std::os::unix::net::UnixListener;
+use std::path::PathBuf;
 
 use kameo::Actor;
 use kameo::actor::{ActorRef, Spawn};
@@ -16,6 +18,14 @@ use crate::{Error, Result};
 #[derive(Debug)]
 pub struct Daemon {
     configuration: DaemonConfiguration,
+}
+
+pub struct BoundDaemon {
+    socket_path: PathBuf,
+    listener: UnixListener,
+    runtime: tokio::runtime::Runtime,
+    state: ActorRef<StateOwner>,
+    codec: FrameCodec,
 }
 
 #[derive(Debug)]
@@ -38,44 +48,69 @@ impl Daemon {
         Ok(Self { configuration })
     }
 
-    pub fn run(&self) -> Result<()> {
+    pub fn bind(&self) -> Result<BoundDaemon> {
         let socket_path = self.configuration.socket_path()?.to_path_buf();
         if socket_path.exists() {
             fs::remove_file(&socket_path)?;
         }
         let listener = UnixListener::bind(&socket_path)?;
+        fs::set_permissions(&socket_path, fs::Permissions::from_mode(0o600))?;
         let runtime = tokio::runtime::Runtime::new()?;
         let state =
             runtime.block_on(async { StateOwner::spawn(StateOwner::new(State::default())) });
         let codec = FrameCodec::new();
-        for incoming in listener.incoming() {
-            let mut stream = incoming?;
-            self.handle_connection(&runtime, &state, &codec, &mut stream)?;
+        Ok(BoundDaemon {
+            socket_path,
+            listener,
+            runtime,
+            state,
+            codec,
+        })
+    }
+
+    pub fn run(&self) -> Result<()> {
+        self.bind()?.serve_forever()
+    }
+}
+
+impl BoundDaemon {
+    pub fn socket_path(&self) -> &PathBuf {
+        &self.socket_path
+    }
+
+    pub fn serve_forever(self) -> Result<()> {
+        loop {
+            let (mut stream, _address) = self.listener.accept()?;
+            self.handle_connection(&mut stream)?;
         }
+    }
+
+    pub fn serve_next(&self) -> Result<()> {
+        let (mut stream, _address) = self.listener.accept()?;
+        self.handle_connection(&mut stream)
+    }
+
+    pub fn shutdown(self) -> Result<()> {
+        let _ = fs::remove_file(&self.socket_path);
         Ok(())
     }
 
-    fn handle_connection(
-        &self,
-        runtime: &tokio::runtime::Runtime,
-        state: &ActorRef<StateOwner>,
-        codec: &FrameCodec,
-        stream: &mut std::os::unix::net::UnixStream,
-    ) -> Result<()> {
-        let frame = codec.read_mentci_frame(stream)?;
+    fn handle_connection(&self, stream: &mut std::os::unix::net::UnixStream) -> Result<()> {
+        let frame = self.codec.read_mentci_frame(stream)?;
         let MentciFrameBody::Request { exchange, request } = frame.into_body() else {
             return Err(Error::ExpectedRequest);
         };
         let request = request.payloads.into_head();
-        let reply = runtime
-            .block_on(state.ask(ApplyRequest { request }).send())
+        let reply = self
+            .runtime
+            .block_on(self.state.ask(ApplyRequest { request }).send())
             .map_err(|error| Error::ActorCall(error.to_string()))?
             .into_reply();
         let frame = MentciFrame::new(MentciFrameBody::Reply {
             exchange,
             reply: Reply::committed(NonEmpty::single(SubReply::Ok(reply))),
         });
-        codec.write_mentci_frame(stream, &frame)
+        self.codec.write_mentci_frame(stream, &frame)
     }
 }
 
@@ -159,10 +194,7 @@ mod tests {
     #[test]
     fn connection_handler_returns_signal_reply_frame() {
         let daemon = Daemon::from_configuration(configuration()).expect("daemon");
-        let runtime = tokio::runtime::Runtime::new().expect("runtime");
-        let state =
-            runtime.block_on(async { StateOwner::spawn(StateOwner::new(State::default())) });
-        let codec = FrameCodec::new();
+        let bound = daemon.bind().expect("bound daemon");
         let (mut client, mut server) = UnixStream::pair().expect("stream pair");
         let frame = MentciFrame::new(MentciFrameBody::Request {
             exchange: exchange(),
@@ -173,13 +205,15 @@ mod tests {
             .into_request(),
         });
 
-        codec
+        bound
+            .codec
             .write_mentci_frame(&mut client, &frame)
             .expect("write request");
-        daemon
-            .handle_connection(&runtime, &state, &codec, &mut server)
+        bound
+            .handle_connection(&mut server)
             .expect("handle connection");
-        let reply = codec
+        let reply = bound
+            .codec
             .read_mentci_frame(&mut client)
             .expect("read reply frame");
 
@@ -190,5 +224,6 @@ mod tests {
             },
             other => panic!("expected reply frame, got {other:?}"),
         }
+        bound.shutdown().expect("shutdown daemon");
     }
 }
