@@ -1,12 +1,14 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
+use signal_criome::ParkedAuthorization;
 use signal_mentci::{
-    AnswerProposal, AnswerProposalAdmitted, ApprovalDecision, ApprovalQuestion, ApprovalVerdict,
-    InterfaceInterest, InterfaceMutation, InterfaceObservationOpened, InterfaceProjection,
-    InterfaceState, InterfaceStateObservation, MentciReply, MentciRequest, NotificationText,
-    PaneContent, PendingQuestionsView, ProjectedInterfaceState, ProposalDigest, ProposalIdentifier,
-    QuestionIdentifier, QuestionPresented, Rejection, RejectionReason, RevisionCounter, StatusText,
-    SubscriptionToken, TimestampNanos, UpdateAccepted,
+    AnswerProposal, AnswerProposalAdmitted, AnswerText, ApprovalDecision, ApprovalQuestion,
+    ApprovalSource, ApprovalVerdict, ContextBody, ContextLabel, ExplanationText, InterfaceInterest,
+    InterfaceMutation, InterfaceObservationOpened, InterfaceProjection, InterfaceState,
+    InterfaceStateObservation, MentciReply, MentciRequest, NotificationText, PaneContent,
+    PendingQuestionsView, ProjectedInterfaceState, PromptText, ProposalDigest, ProposalIdentifier,
+    QuestionContext, QuestionIdentifier, QuestionPresented, Rejection, RejectionReason,
+    RevisionCounter, StatusText, SubscriptionToken, TimestampNanos, UpdateAccepted,
 };
 
 #[derive(Debug, Clone)]
@@ -23,6 +25,7 @@ pub struct State {
     status: StatusText,
     notification: Option<NotificationText>,
     panes: Vec<PaneContent>,
+    criome_request_slots: BTreeSet<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -30,6 +33,11 @@ pub struct AnswerProposalRecord {
     pub proposal: ProposalIdentifier,
     pub body: AnswerProposal,
     pub digest: ProposalDigest,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CriomeParkedApproval {
+    parked: ParkedAuthorization,
 }
 
 impl Default for State {
@@ -47,6 +55,7 @@ impl Default for State {
             status: StatusText::new("ready"),
             notification: None,
             panes: Vec::new(),
+            criome_request_slots: BTreeSet::new(),
         }
     }
 }
@@ -78,6 +87,20 @@ impl State {
             self.panes.clone(),
             self.pending_questions.clone(),
         )
+    }
+
+    pub fn absorb_criome_parked_authorizations(&mut self, parked: Vec<ParkedAuthorization>) {
+        for authorization in parked {
+            let approval = CriomeParkedApproval::new(authorization);
+            if self.criome_request_slots.insert(approval.slot_key()) {
+                let question = self.mint_question_identifier();
+                self.pending_questions.push(ApprovalQuestion {
+                    identifier: question,
+                    proposal: approval.into_question_proposal(),
+                });
+                self.bump_revision();
+            }
+        }
     }
 
     fn present_question(&mut self, proposal: signal_mentci::QuestionProposal) -> MentciReply {
@@ -255,5 +278,44 @@ impl State {
         let token = SubscriptionToken::new(format!("subscription-{}", self.next_subscription));
         self.next_subscription += 1;
         token
+    }
+}
+
+impl CriomeParkedApproval {
+    pub fn new(parked: ParkedAuthorization) -> Self {
+        Self { parked }
+    }
+
+    pub fn slot_key(&self) -> String {
+        self.parked.request_slot.payload().clone()
+    }
+
+    pub fn into_question_proposal(self) -> signal_mentci::QuestionProposal {
+        let slot = self.parked.request_slot.payload().clone();
+        let contract = format!("{:?}", self.parked.evaluation.contract);
+        let object = &self.parked.evaluation.object;
+        signal_mentci::QuestionProposal::new(
+            ApprovalSource::CriomeEscalation,
+            PromptText::new(format!("Authorize criome request {slot}")),
+            Some(AnswerText::new("approve")),
+            ExplanationText::new("criome parked an authorization request in ClientApproval mode"),
+            vec![
+                QuestionContext {
+                    label: ContextLabel::new("criome-request-slot"),
+                    body: ContextBody::new(slot),
+                },
+                QuestionContext {
+                    label: ContextLabel::new("contract"),
+                    body: ContextBody::new(contract),
+                },
+                QuestionContext {
+                    label: ContextLabel::new("object"),
+                    body: ContextBody::new(format!(
+                        "{:?}:{:?}:{:?}",
+                        object.component, object.kind, object.digest
+                    )),
+                },
+            ],
+        )
     }
 }

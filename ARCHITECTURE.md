@@ -52,10 +52,14 @@ crates, not local path dependencies:
 - `CriomeApprovalBridge` lists criome's parked authorizations and submits
   closed decisions by `AuthorizationRequestSlot`; it never resubmits an
   `AuthorizationEvaluation` by value.
+- `ObserveInterfaceState` checks the configured local criome meta socket for
+  parked ClientApproval authorizations before projecting interface state, so a
+  newly connected client sees criome-queued requests without a separate CLI
+  polling step.
 - The current SEMA implementation is in-memory. It is the executable shape of
   the daemon state machine, not yet the durable persisted family.
 
 The remaining production gaps are durable SEMA storage, notification fan-out
-events beyond request/reply, and making the daemon's parked-authorization
-poller continuous instead of CLI-triggered. Those are integration gaps around
-the runtime slice, not blockers to the contract-shaped daemon boot.
+events beyond request/reply, and turning observe-triggered parked-authorization
+pickup into a continuous subscription/push loop. Those are integration gaps
+around the runtime slice, not blockers to the contract-shaped daemon boot.

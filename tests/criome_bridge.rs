@@ -17,15 +17,17 @@ use signal_criome::{
     AttestedMoment, AttestedMomentProposition, AuthorizationEvaluation, AuthorizationMode,
     AuthorizedObjectInterest, AuthorizedObjectKind, AuthorizedObjectObservation, ComponentKind,
     CriomeReply, CriomeRequest, EvaluationDecision, Evidence, Identity, OperationDigest,
-    RequiredSignatureThreshold, TimeWindow, TimestampNanos,
+    ParkedAuthorization, RequiredSignatureThreshold, TimeWindow, TimestampNanos,
 };
 use signal_frame::{
     ExchangeIdentifier, ExchangeLane, LaneSequence, Reply, RequestPayload, SessionEpoch, SubReply,
 };
 use signal_mentci::{
-    AnswerText, ApprovalDecision, ApprovalSource, ApprovalVerdict, ContextBody, ContextLabel,
-    ExplanationText, MentciFrame, MentciFrameBody, MentciReply, MentciRequest, PromptText,
-    QuestionContext, QuestionProposal, SubscriberName,
+    AnswerText, ApprovalDecision, ApprovalQuestion, ApprovalSource, ApprovalVerdict, ContextBody,
+    ContextLabel, ExplanationText, InterfaceInterest, InterfaceObservationOpened,
+    InterfaceProjection, MentciFrame, MentciFrameBody, MentciReply, MentciRequest,
+    PendingQuestionsView, ProjectedInterfaceState, PromptText, QuestionContext, QuestionIdentifier,
+    QuestionProposal, RevisionCounter, SubscriberName, SubscriptionToken,
 };
 
 fn fixture_path(name: &str) -> std::path::PathBuf {
@@ -210,6 +212,112 @@ fn mentci_bridge_configures_criome_auto_approve_over_meta_socket() {
     assert_eq!(updates[0].decision, EvaluationDecision::Authorized);
     assert_eq!(updates[0].stamp, evidence.stamp);
 
+    criome.shutdown().expect("shutdown criome");
+}
+
+#[test]
+fn mentci_observe_picks_up_parked_criome_client_approval_request() {
+    let workspace = fixture_path("picked-up");
+    let criome_socket = workspace.join("criome.sock");
+    let criome_meta_socket = workspace.join("criome-meta.sock");
+    let mentci_socket = workspace.join("mentci.sock");
+    let store = StoreLocation::new(workspace.join("criome.sema"));
+    let criome = CriomeDaemon::new(&criome_socket, store.clone())
+        .with_meta_socket(&criome_meta_socket)
+        .bind()
+        .expect("bind criome");
+    let mentci =
+        Daemon::from_configuration(mentci_configuration(&mentci_socket, &criome_meta_socket))
+            .expect("mentci daemon")
+            .bind()
+            .expect("bind mentci");
+    wait_for_socket(&criome_socket);
+    wait_for_socket(&criome_meta_socket);
+    wait_for_socket(&mentci_socket);
+
+    let bridge = CriomeApprovalBridge::new(&criome_meta_socket);
+    thread::scope(|scope| {
+        let server = scope.spawn(|| {
+            criome
+                .serve_next_meta()
+                .expect("serve client approval mode")
+        });
+        let configuration = CriomeDaemonConfiguration::new(
+            criome_socket.display().to_string(),
+            store.as_path().display().to_string(),
+        )
+        .with_meta_socket_path(criome_meta_socket.display().to_string())
+        .with_authorization_mode(AuthorizationMode::ClientApproval);
+        let reply = bridge.configure(configuration).expect("configure criome");
+        assert_eq!(server.join().expect("join meta configure server"), reply);
+    });
+
+    let evidence = unproven_evidence(b"mentci-picked-up-head");
+    let object = signal_criome::AuthorizedObjectReference {
+        component: ComponentKind::Spirit,
+        digest: evidence.operation.object_digest().clone(),
+        kind: AuthorizedObjectKind::Head,
+    };
+    let contract = signal_criome::ContractDigest::from_bytes(b"mentci-picked-up-contract");
+    let evaluation = AuthorizationEvaluation {
+        contract,
+        object,
+        evidence,
+    };
+
+    let pending = thread::scope(|scope| {
+        let server = scope.spawn(|| criome.serve_next().expect("serve client approval park"));
+        let reply = CriomeClient::new(&criome_socket)
+            .send(CriomeRequest::EvaluateAuthorization(evaluation.clone()))
+            .expect("evaluate authorization");
+        assert_eq!(server.join().expect("join park server"), reply);
+        reply
+    });
+    let CriomeReply::AuthorizationPending(pending) = pending else {
+        panic!("expected AuthorizationPending, got {pending:?}");
+    };
+
+    let observed = thread::scope(|scope| {
+        let criome_meta_server =
+            scope.spawn(|| criome.serve_next_meta().expect("serve parked list"));
+        let mentci_server = scope.spawn(|| mentci.serve_next().expect("serve observe"));
+        let reply = send_mentci(
+            &mentci_socket,
+            MentciRequest::ObserveInterfaceState(signal_mentci::InterfaceStateObservation {
+                subscriber: SubscriberName::new("mentci-egui"),
+                interest: InterfaceInterest::PendingQuestions,
+            }),
+        );
+        assert!(matches!(
+            criome_meta_server.join().expect("join parked list"),
+            meta_signal_criome::Output::ParkedAuthorizationSnapshot(_)
+        ));
+        mentci_server.join().expect("join observe server");
+        reply
+    });
+
+    let parked = ParkedAuthorization {
+        request_slot: pending.request_slot,
+        evaluation,
+    };
+    let expected_question = ApprovalQuestion {
+        identifier: QuestionIdentifier::new("question-1"),
+        proposal: mentci::state::CriomeParkedApproval::new(parked).into_question_proposal(),
+    };
+    assert_eq!(
+        observed,
+        MentciReply::InterfaceObservationOpened(InterfaceObservationOpened {
+            token: SubscriptionToken::new("subscription-1"),
+            state: ProjectedInterfaceState {
+                revision: RevisionCounter::new(1),
+                projection: InterfaceProjection::PendingQuestionsProjection(
+                    PendingQuestionsView::from_questions(vec![expected_question]),
+                ),
+            },
+        })
+    );
+
+    mentci.shutdown().expect("shutdown mentci");
     criome.shutdown().expect("shutdown criome");
 }
 

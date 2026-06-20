@@ -11,6 +11,7 @@ use signal_frame::{NonEmpty, Reply, SubReply};
 use signal_mentci::{MentciFrame, MentciFrameBody, MentciReply, MentciRequest};
 
 use crate::configuration::DaemonConfiguration;
+use crate::criome_bridge::CriomeApprovalBridge;
 use crate::frame_codec::FrameCodec;
 use crate::state::State;
 use crate::{Error, Result};
@@ -25,6 +26,7 @@ pub struct BoundDaemon {
     listener: UnixListener,
     runtime: tokio::runtime::Runtime,
     state: ActorRef<StateOwner>,
+    criome_bridge: CriomeApprovalBridge,
     codec: FrameCodec,
 }
 
@@ -36,6 +38,7 @@ pub struct StateOwner {
 #[derive(Debug)]
 pub struct ApplyRequest {
     request: MentciRequest,
+    parked_authorizations: Vec<signal_criome::ParkedAuthorization>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, kameo::Reply)]
@@ -56,6 +59,8 @@ impl Daemon {
         let listener = UnixListener::bind(&socket_path)?;
         fs::set_permissions(&socket_path, fs::Permissions::from_mode(0o600))?;
         let runtime = tokio::runtime::Runtime::new()?;
+        let criome_bridge =
+            CriomeApprovalBridge::new(self.configuration.home_criome_socket_path()?);
         let state =
             runtime.block_on(async { StateOwner::spawn(StateOwner::new(State::default())) });
         let codec = FrameCodec::new();
@@ -64,6 +69,7 @@ impl Daemon {
             listener,
             runtime,
             state,
+            criome_bridge,
             codec,
         })
     }
@@ -101,9 +107,17 @@ impl BoundDaemon {
             return Err(Error::ExpectedRequest);
         };
         let request = request.payloads.into_head();
+        let parked_authorizations = self.parked_authorizations_for_request(&request);
         let reply = self
             .runtime
-            .block_on(self.state.ask(ApplyRequest { request }).send())
+            .block_on(
+                self.state
+                    .ask(ApplyRequest {
+                        request,
+                        parked_authorizations,
+                    })
+                    .send(),
+            )
             .map_err(|error| Error::ActorCall(error.to_string()))?
             .into_reply();
         let frame = MentciFrame::new(MentciFrameBody::Reply {
@@ -111,6 +125,19 @@ impl BoundDaemon {
             reply: Reply::committed(NonEmpty::single(SubReply::Ok(reply))),
         });
         self.codec.write_mentci_frame(stream, &frame)
+    }
+
+    fn parked_authorizations_for_request(
+        &self,
+        request: &MentciRequest,
+    ) -> Vec<signal_criome::ParkedAuthorization> {
+        if !matches!(request, MentciRequest::ObserveInterfaceState(_)) {
+            return Vec::new();
+        }
+        self.criome_bridge
+            .parked_authorizations()
+            .map(|snapshot| snapshot.into_parked())
+            .unwrap_or_default()
     }
 }
 
@@ -140,6 +167,8 @@ impl Message<ApplyRequest> for StateOwner {
         message: ApplyRequest,
         _context: &mut Context<Self, Self::Reply>,
     ) -> Self::Reply {
+        self.state
+            .absorb_criome_parked_authorizations(message.parked_authorizations);
         ApplyReply {
             reply: self.state.apply(message.request),
         }
