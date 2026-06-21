@@ -88,6 +88,45 @@ fn observe_returns_subscription_token_and_current_projection() {
 }
 
 #[test]
+fn full_projection_mirrors_criome_access_mode_from_context() {
+    let mut state = State::default();
+
+    let write_reply = state
+        .apply_with_context(
+            MentciRequest::ObserveInterfaceState(InterfaceStateObservation {
+                subscriber: SubscriberName::new("status-bar"),
+                interest: InterfaceInterest::FullInterfaceState,
+            }),
+            StateApplicationContext::write_enabled(),
+        )
+        .into_reply();
+    let MentciReply::InterfaceObservationOpened(write_opened) = write_reply else {
+        panic!("expected write opened observation");
+    };
+    assert_eq!(
+        write_opened.state.criome_access(),
+        Some(signal_mentci::CriomeAccess::ReadWrite)
+    );
+
+    let read_reply = state
+        .apply_with_context(
+            MentciRequest::ObserveInterfaceState(InterfaceStateObservation {
+                subscriber: SubscriberName::new("status-bar"),
+                interest: InterfaceInterest::FullInterfaceState,
+            }),
+            StateApplicationContext::read_only(),
+        )
+        .into_reply();
+    let MentciReply::InterfaceObservationOpened(read_opened) = read_reply else {
+        panic!("expected read-only opened observation");
+    };
+    assert_eq!(
+        read_opened.state.criome_access(),
+        Some(signal_mentci::CriomeAccess::ReadOnly)
+    );
+}
+
+#[test]
 fn defer_keeps_question_open_for_later_answer_proposal() {
     let mut state = State::default();
     state.apply(MentciRequest::PresentQuestion(question_proposal()));

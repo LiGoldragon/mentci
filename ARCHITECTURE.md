@@ -58,6 +58,9 @@ crates, not local path dependencies:
 - `CriomeApprovalBridge` is daemon-owned. It lists criome's parked
   authorizations and submits closed decisions by `AuthorizationRequestSlot`;
   it never resubmits an `AuthorizationEvaluation` by value.
+- `InterfaceState` full projections include `CriomeAccess`: `ReadWrite` when
+  `MetaCriome` is configured and the daemon has the write bridge, `ReadOnly`
+  otherwise. Thin clients mirror this mode and gate answer controls from it.
 - `ObserveInterfaceState` checks the configured local criome meta socket for
   parked ClientApproval authorizations before projecting interface state, so a
   newly connected client sees criome-queued requests without a separate CLI

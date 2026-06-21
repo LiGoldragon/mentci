@@ -4,12 +4,13 @@ use mentci_lib::CriomeVerdict;
 use signal_criome::ParkedAuthorization;
 use signal_mentci::{
     AnswerProposal, AnswerProposalAdmitted, AnswerText, ApprovalDecision, ApprovalQuestion,
-    ApprovalSource, ApprovalVerdict, ContextBody, ContextLabel, ExplanationText, InterfaceInterest,
-    InterfaceMutation, InterfaceObservationOpened, InterfaceProjection, InterfaceState,
-    InterfaceStateObservation, MentciReply, MentciRequest, NotificationText, PaneContent,
-    PendingQuestionsView, ProjectedInterfaceState, PromptText, ProposalDigest, ProposalIdentifier,
-    QuestionContext, QuestionIdentifier, QuestionPresented, Rejection, RejectionReason,
-    RevisionCounter, StatusText, SubscriptionToken, TimestampNanos, UpdateAccepted,
+    ApprovalSource, ApprovalVerdict, ContextBody, ContextLabel, CriomeAccess, ExplanationText,
+    InterfaceInterest, InterfaceMutation, InterfaceObservationOpened, InterfaceProjection,
+    InterfaceState, InterfaceStateObservation, MentciReply, MentciRequest, NotificationText,
+    PaneContent, PendingQuestionsView, ProjectedInterfaceState, PromptText, ProposalDigest,
+    ProposalIdentifier, QuestionContext, QuestionIdentifier, QuestionPresented, Rejection,
+    RejectionReason, RevisionCounter, StatusText, SubscriptionToken, TimestampNanos,
+    UpdateAccepted,
 };
 
 #[derive(Debug, Clone)]
@@ -99,7 +100,7 @@ impl State {
                 }))
             }
             MentciRequest::ObserveInterfaceState(observation) => {
-                StateApplication::reply(self.observe(observation))
+                StateApplication::reply(self.observe(observation, context))
             }
             MentciRequest::AnswerQuestion(verdict) => self.answer(verdict, context),
             MentciRequest::ProposeEditedAnswer(proposal) => {
@@ -111,13 +112,14 @@ impl State {
         }
     }
 
-    pub fn full_state(&self) -> InterfaceState {
+    pub fn full_state(&self, context: StateApplicationContext) -> InterfaceState {
         InterfaceState::new(
             self.current_revision(),
             self.status.clone(),
             self.notification.clone(),
             self.panes.clone(),
             self.pending_questions.clone(),
+            context.criome_access(),
         )
     }
 
@@ -174,13 +176,17 @@ impl State {
         self.bump_revision();
     }
 
-    fn observe(&mut self, observation: InterfaceStateObservation) -> MentciReply {
+    fn observe(
+        &mut self,
+        observation: InterfaceStateObservation,
+        context: StateApplicationContext,
+    ) -> MentciReply {
         let token = self.mint_subscription_token();
         self.subscriptions
             .insert(token.as_str().to_owned(), observation.interest);
         MentciReply::InterfaceObservationOpened(InterfaceObservationOpened {
             token,
-            state: self.project(observation.interest),
+            state: self.project(observation.interest, context),
         })
     }
 
@@ -287,10 +293,14 @@ impl State {
         }
     }
 
-    fn project(&self, interest: InterfaceInterest) -> ProjectedInterfaceState {
+    fn project(
+        &self,
+        interest: InterfaceInterest,
+        context: StateApplicationContext,
+    ) -> ProjectedInterfaceState {
         let projection = match interest {
             InterfaceInterest::FullInterfaceState => {
-                InterfaceProjection::FullProjection(self.full_state())
+                InterfaceProjection::FullProjection(self.full_state(context))
             }
             InterfaceInterest::StatusOnly => {
                 InterfaceProjection::StatusProjection(self.status.clone())
@@ -355,6 +365,14 @@ impl StateApplicationContext {
 
     pub fn criome_write_available(&self) -> bool {
         self.criome_write_available
+    }
+
+    pub fn criome_access(&self) -> CriomeAccess {
+        if self.criome_write_available {
+            CriomeAccess::ReadWrite
+        } else {
+            CriomeAccess::ReadOnly
+        }
     }
 }
 

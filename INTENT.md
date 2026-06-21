@@ -44,6 +44,9 @@ subscribe to projected state and send typed responses.
   criome-facing approver when configured with a `MetaCriome` socket. A daemon
   without `MetaCriome` still serves ordinary/read-only mentci observations
   and does not submit criome approval verdicts.
+- Full interface projections carry the daemon's criome access mode as
+  `CriomeAccess`. `ReadWrite` means the daemon has a criome write bridge and
+  can route answers to criome; `ReadOnly` means clients observe only.
 - The SEMA state is the canonical UI state. A client render exists only after
   a SEMA revision changed and the daemon published a projected state delivery.
 - Local UI revision is a plain monotonic counter for the single-machine
