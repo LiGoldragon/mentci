@@ -53,6 +53,12 @@ pub enum Error {
     #[error("unexpected criome meta reply")]
     UnexpectedCriomeMetaReply,
 
+    #[error("shared observation model did not produce a mentci request")]
+    ClientObservationCommandUnavailable,
+
+    #[error("unexpected mentci reply: {0}")]
+    UnexpectedMentciReply(String),
+
     #[error("signal-mentci frame error: {0}")]
     SignalMentci(#[from] signal_mentci::SignalFrameError),
 

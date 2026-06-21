@@ -382,6 +382,7 @@ source = "git+https://github.com/LiGoldragon/mentci-lib?branch=main#0731c374f9c0
 dependencies = [
  "meta-signal-criome",
  "meta-signal-mentci",
+ "nota-next",
  "signal-criome",
  "signal-frame",
  "signal-mentci",
@@ -393,6 +394,7 @@ name = "meta-signal-criome"
 version = "0.2.0"
 source = "git+https://github.com/LiGoldragon/meta-signal-criome?branch=main#4940e4b13c573b72bb0492ae53510244f92d7653"
 dependencies = [
+ "nota-next",
  "rkyv",
  "schema-rust-next",
  "signal-criome",
@@ -405,6 +407,7 @@ name = "meta-signal-mentci"
 version = "0.1.0"
 source = "git+https://github.com/LiGoldragon/meta-signal-mentci?branch=main#42222f306e71e189f80619ff194429f1bb21aff1"
 dependencies = [
+ "nota-next",
  "rkyv",
  "schema-rust-next",
  "signal-frame",
@@ -723,6 +726,7 @@ source = "git+https://github.com/LiGoldragon/signal-criome?branch=main#ff9ac192b
 dependencies = [
  "blake3",
  "blst",
+ "nota-next",
  "rkyv",
  "schema-rust-next",
  "signal-frame",

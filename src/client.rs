@@ -2,10 +2,19 @@ use std::io::{self, Write};
 use std::os::unix::net::UnixStream;
 use std::path::{Path, PathBuf};
 
+use mentci_lib::{
+    Cmd, ComponentSocketKind, EngineEvent, ObservationModel, ObservationView, RenderNota,
+    RenderOrigin, RenderedObject, SocketLiveness, UserEvent,
+};
 use meta_signal_criome::AuthorizationApprovalDecision;
 use signal_criome::AuthorizationRequestSlot;
-use signal_frame::{ExchangeIdentifier, ExchangeLane, LaneSequence, RequestPayload, SessionEpoch};
-use signal_mentci::{MentciFrame, MentciFrameBody, MentciRequest, NotaSource};
+use signal_frame::{
+    ExchangeIdentifier, ExchangeLane, LaneSequence, Reply, RequestPayload, SessionEpoch, SubReply,
+};
+use signal_mentci::{
+    InterfaceInterest, MentciFrame, MentciFrameBody, MentciReply, MentciRequest, NotaSource,
+    SubscriberName,
+};
 
 use crate::criome_bridge::CriomeApprovalBridge;
 use crate::frame_codec::FrameCodec;
@@ -29,6 +38,23 @@ enum CriomeCommandAction {
         decision: AuthorizationApprovalDecision,
         request_slot: AuthorizationRequestSlot,
     },
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ClientObservationCommand {
+    interest: InterfaceInterest,
+}
+
+#[derive(Clone, Debug)]
+pub struct ClientObservationSession {
+    model: ObservationModel,
+    interest: InterfaceInterest,
+}
+
+#[derive(Clone, Debug)]
+pub struct ClientObservationRender {
+    view: ObservationView,
+    reply: RenderedObject,
 }
 
 impl ClientCommand {
@@ -64,8 +90,16 @@ impl ClientCommand {
     }
 
     pub fn run(&self) -> Result<()> {
+        let mut stdout = io::stdout().lock();
+        self.run_with_writer(&mut stdout)
+    }
+
+    pub fn run_with_writer(&self, writer: &mut impl Write) -> Result<()> {
+        if let Some(command) = self.observation_command()? {
+            return command.run(&self.socket_path, writer);
+        }
         if let Some(command) = self.criome_command()? {
-            return command.run(Self::default_criome_meta_socket_path());
+            return command.run(Self::default_criome_meta_socket_path(), writer);
         }
         let frame = self.request_frame()?;
         let codec = FrameCodec::new();
@@ -73,7 +107,7 @@ impl ClientCommand {
         codec.write_mentci_frame(&mut stream, &frame)?;
         let reply = codec.read_mentci_frame(&mut stream)?;
         let bytes = reply.encode_length_prefixed()?;
-        io::stdout().lock().write_all(&bytes)?;
+        writer.write_all(&bytes)?;
         Ok(())
     }
 
@@ -87,6 +121,11 @@ impl ClientCommand {
     pub fn criome_command(&self) -> Result<Option<CriomeCommand>> {
         let argument = self.input_argument()?;
         CriomeCommand::from_argument(argument)
+    }
+
+    pub fn observation_command(&self) -> Result<Option<ClientObservationCommand>> {
+        let argument = self.input_argument()?;
+        Ok(ClientObservationCommand::from_argument(argument))
     }
 
     fn request_frame_from_path(&self, path: &Path) -> Result<MentciFrame> {
@@ -160,14 +199,13 @@ impl CriomeCommand {
         Ok(None)
     }
 
-    fn run(&self, meta_socket: PathBuf) -> Result<()> {
+    fn run(&self, meta_socket: PathBuf, writer: &mut impl Write) -> Result<()> {
         let bridge = CriomeApprovalBridge::new(meta_socket);
         match &self.action {
             CriomeCommandAction::ListParked => {
                 let snapshot = bridge.parked_authorizations()?;
-                let mut stdout = io::stdout().lock();
                 for parked in snapshot.parked() {
-                    writeln!(stdout, "{}", parked.request_slot.payload())?;
+                    writeln!(writer, "{}", parked.request_slot.payload())?;
                 }
             }
             CriomeCommandAction::Decide {
@@ -179,13 +217,143 @@ impl CriomeCommand {
                 else {
                     return Err(Error::UnexpectedCriomeMetaReply);
                 };
-                writeln!(
-                    io::stdout().lock(),
-                    "{decision:?} {}",
-                    recorded.request_slot.payload()
-                )?;
+                writeln!(writer, "{decision:?} {}", recorded.request_slot.payload())?;
             }
         }
+        Ok(())
+    }
+}
+
+impl ClientObservationCommand {
+    pub fn from_argument(argument: &str) -> Option<Self> {
+        let interest = match argument {
+            "observe" | "observe:full" => InterfaceInterest::FullInterfaceState,
+            "observe:pending" => InterfaceInterest::PendingQuestions,
+            "observe:status" => InterfaceInterest::StatusOnly,
+            "observe:notifications" => InterfaceInterest::Notifications,
+            _ => return None,
+        };
+        Some(Self { interest })
+    }
+
+    fn run(&self, socket_path: &Path, writer: &mut impl Write) -> Result<()> {
+        let mut session = ClientObservationSession::new(self.interest);
+        let frame = session.request_frame()?;
+        let codec = FrameCodec::new();
+        let mut stream = UnixStream::connect(socket_path)?;
+        codec.write_mentci_frame(&mut stream, &frame)?;
+        let reply = codec.read_mentci_frame(&mut stream)?;
+        let rendered = session.absorb_frame(reply)?;
+        rendered.write_to(writer)
+    }
+}
+
+impl ClientObservationSession {
+    pub fn new(interest: InterfaceInterest) -> Self {
+        Self {
+            model: ObservationModel::new(SubscriberName::new("mentci-cli")),
+            interest,
+        }
+    }
+
+    pub fn request_frame(&mut self) -> Result<MentciFrame> {
+        let commands = self.model.on_user_event(UserEvent::Observe {
+            socket: ComponentSocketKind::Mentci,
+            interest: self.interest,
+        });
+        let Some(Cmd::SendRequest { request, .. }) = commands.into_iter().next() else {
+            return Err(Error::ClientObservationCommandUnavailable);
+        };
+        Ok(MentciFrame::new(MentciFrameBody::Request {
+            exchange: Self::exchange(),
+            request: request.into_request(),
+        }))
+    }
+
+    pub fn absorb_frame(&mut self, frame: MentciFrame) -> Result<ClientObservationRender> {
+        let reply = Self::reply_output(frame)?;
+        let rendered = reply.render_nota(RenderOrigin::Reply);
+        match &reply {
+            MentciReply::InterfaceObservationOpened(opened) => {
+                self.model.on_engine_event(EngineEvent::ObservationOpened {
+                    socket: ComponentSocketKind::Mentci,
+                    opened: opened.clone(),
+                });
+            }
+            MentciReply::Rejection(rejection) => {
+                self.model.on_engine_event(EngineEvent::Rejected {
+                    socket: ComponentSocketKind::Mentci,
+                    rejection: rejection.clone(),
+                });
+            }
+            _ => {
+                self.model.on_engine_event(EngineEvent::ConnectionChanged {
+                    socket: ComponentSocketKind::Mentci,
+                    liveness: SocketLiveness::Connected,
+                });
+            }
+        }
+        Ok(ClientObservationRender {
+            view: self.model.view(),
+            reply: rendered,
+        })
+    }
+
+    fn reply_output(frame: MentciFrame) -> Result<MentciReply> {
+        match frame.into_body() {
+            MentciFrameBody::Reply { reply, .. } => match reply {
+                Reply::Accepted { per_operation, .. } => match per_operation.into_head() {
+                    SubReply::Ok(output) => Ok(output),
+                    other => Err(Error::UnexpectedMentciReply(format!("{other:?}"))),
+                },
+                Reply::Rejected { reason } => Err(Error::UnexpectedMentciReply(format!(
+                    "rejected: {reason:?}"
+                ))),
+            },
+            other => Err(Error::UnexpectedMentciReply(format!("{other:?}"))),
+        }
+    }
+
+    fn exchange() -> ExchangeIdentifier {
+        ExchangeIdentifier::new(
+            SessionEpoch::new(0),
+            ExchangeLane::Connector,
+            LaneSequence::first(),
+        )
+    }
+}
+
+impl ClientObservationRender {
+    pub fn view(&self) -> &ObservationView {
+        &self.view
+    }
+
+    pub fn reply(&self) -> &RenderedObject {
+        &self.reply
+    }
+
+    pub fn write_to(&self, writer: &mut impl Write) -> Result<()> {
+        for socket in &self.view.sockets {
+            write!(writer, "socket {}", socket.socket.as_str())?;
+            write!(writer, " {:?}", socket.liveness)?;
+            if let Some(revision) = &socket.revision {
+                write!(writer, " rev {}", revision.value())?;
+            }
+            writeln!(writer)?;
+        }
+        writeln!(
+            writer,
+            "approval pending {} answered {} subscriptions {}",
+            self.view.approval.pending_count,
+            self.view.approval.answered_count,
+            self.view.approval.subscription_count
+        )?;
+        writeln!(
+            writer,
+            "{} {}",
+            self.reply.origin().label(),
+            self.reply.body()
+        )?;
         Ok(())
     }
 }

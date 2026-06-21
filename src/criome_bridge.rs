@@ -1,8 +1,8 @@
 use std::path::PathBuf;
 
 use criome::transport::CriomeMetaClient;
-use meta_signal_criome::{AuthorizationApproval, AuthorizationApprovalDecision};
 use mentci_lib::CriomeVerdict;
+use meta_signal_criome::{AuthorizationApproval, AuthorizationApprovalDecision};
 use signal_criome::{
     AuthorizationRequestSlot, CriomeDaemonConfiguration, ParkedAuthorizationObservation,
     ParkedAuthorizationSnapshot,
@@ -70,5 +70,4 @@ impl CriomeApprovalBridge {
         };
         Ok(snapshot)
     }
-
 }
