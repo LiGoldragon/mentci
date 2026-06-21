@@ -44,6 +44,10 @@ subscribe to projected state and send typed responses.
   criome-facing approver when configured with a `MetaCriome` socket. A daemon
   without `MetaCriome` still serves ordinary/read-only mentci observations
   and does not submit criome approval verdicts.
+- The CLI is the complete typed text edge for mentci. GUI-visible and
+  agent-facing paths should also be reachable through one-shot CLI atoms or
+  typed NOTA requests; multi-step flows return identifiers that later CLI calls
+  can reference.
 - Full interface projections carry the daemon's criome access mode as
   `CriomeAccess`. `ReadWrite` means the daemon has a criome write bridge and
   can route answers to criome; `ReadOnly` means clients observe only.

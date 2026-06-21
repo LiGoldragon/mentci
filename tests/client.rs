@@ -9,12 +9,12 @@ use signal_frame::{
     ExchangeIdentifier, ExchangeLane, LaneSequence, NonEmpty, Reply, SessionEpoch, SubReply,
 };
 use signal_mentci::{
-    AnswerText, ApprovalQuestion, ApprovalSource, ContextBody, ContextLabel, ExplanationText,
-    InterfaceInterest, InterfaceMutation, InterfaceObservationOpened, InterfaceProjection,
-    InterfaceStateObservation, InterfaceUpdate, MentciFrame, MentciFrameBody, MentciReply,
-    MentciRequest, NotaEncode, PendingQuestionsView, ProjectedInterfaceState, PromptText,
-    QuestionContext, QuestionIdentifier, QuestionProposal, RevisionCounter, StatusText,
-    SubscriberName, SubscriptionToken, UpdateIdentifier,
+    AnswerText, ApprovalDecision, ApprovalQuestion, ApprovalSource, ApprovalVerdict, ContextBody,
+    ContextLabel, ExplanationText, InterfaceInterest, InterfaceMutation,
+    InterfaceObservationOpened, InterfaceProjection, InterfaceStateObservation, InterfaceUpdate,
+    MentciFrame, MentciFrameBody, MentciReply, MentciRequest, NotaEncode, PendingQuestionsView,
+    ProjectedInterfaceState, PromptText, QuestionContext, QuestionIdentifier, QuestionProposal,
+    RevisionCounter, StatusText, SubscriberName, SubscriptionToken, UpdateIdentifier,
 };
 
 fn update_request() -> MentciRequest {
@@ -90,6 +90,32 @@ fn client_recognizes_observation_command_atom() {
             .expect("observation command")
             .is_some()
     );
+}
+
+#[test]
+fn client_recognizes_answer_command_atom() {
+    let command =
+        ClientCommand::from_arguments(["answer:approve:question-1"], "/tmp/unused-mentci.socket");
+
+    let answer = command
+        .answer_command()
+        .expect("answer command")
+        .expect("recognized answer command");
+    let frame = answer.request_frame();
+
+    match frame.into_body() {
+        MentciFrameBody::Request { request, .. } => {
+            assert_eq!(
+                request.payloads().head(),
+                &MentciRequest::AnswerQuestion(ApprovalVerdict {
+                    question: QuestionIdentifier::new("question-1"),
+                    decision: ApprovalDecision::ApproveSuggestedAnswer,
+                    answered_by: SubscriberName::new("mentci-cli"),
+                })
+            );
+        }
+        other => panic!("expected request frame, got {other:?}"),
+    }
 }
 
 #[test]
@@ -194,6 +220,59 @@ fn client_observe_command_reads_live_daemon_through_shared_model() {
     assert!(text.contains("socket Mentci Connected rev 0"));
     assert!(text.contains("approval pending 0 answered 0 subscriptions 0"));
     assert!(text.contains("reply (InterfaceObservationOpened"));
+
+    bound.shutdown().expect("shutdown daemon");
+}
+
+#[test]
+fn client_answer_command_answers_live_daemon_question() {
+    let directory = tempfile::tempdir().expect("tempdir");
+    let socket = directory.path().join("mentci.socket");
+    let criome = directory.path().join("criome-meta.socket");
+    let daemon = Daemon::from_configuration(daemon_configuration(
+        socket.to_str().expect("socket utf8"),
+        criome.to_str().expect("criome utf8"),
+    ))
+    .expect("daemon");
+    let bound = daemon.bind().expect("bound daemon");
+    let present = ClientCommand::from_arguments(
+        [MentciRequest::PresentQuestion(question_proposal()).to_nota()],
+        socket.clone(),
+    );
+    let answer = ClientCommand::from_arguments(["answer:approve:question-1"], socket.clone());
+    let observe = ClientCommand::from_arguments(["observe:pending"], socket.clone());
+    let mut present_output = Vec::new();
+    let mut answer_output = Vec::new();
+    let mut observe_output = Vec::new();
+
+    std::thread::scope(|scope| {
+        let server = scope.spawn(|| bound.serve_next().expect("serve present"));
+        present
+            .run_with_writer(&mut present_output)
+            .expect("run present client");
+        server.join().expect("join present server");
+
+        let server = scope.spawn(|| bound.serve_next().expect("serve answer"));
+        answer
+            .run_with_writer(&mut answer_output)
+            .expect("run answer client");
+        server.join().expect("join answer server");
+
+        let server = scope.spawn(|| bound.serve_next().expect("serve observe"));
+        observe
+            .run_with_writer(&mut observe_output)
+            .expect("run observe client");
+        server.join().expect("join observe server");
+    });
+
+    let answer_text = String::from_utf8(answer_output).expect("utf8 answer output");
+    assert!(answer_text.contains("reply (VerdictAccepted"));
+    assert!(answer_text.contains("question-1"));
+    assert!(answer_text.contains("ApproveSuggestedAnswer"));
+
+    let observe_text = String::from_utf8(observe_output).expect("utf8 observe output");
+    assert!(observe_text.contains("approval pending 0 answered 0 subscriptions 0"));
+    assert!(observe_text.contains("PendingQuestionsProjection []"));
 
     bound.shutdown().expect("shutdown daemon");
 }

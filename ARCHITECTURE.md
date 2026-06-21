@@ -53,6 +53,11 @@ crates, not local path dependencies:
   `observe:notifications`. These commands still talk only to the mentci daemon
   and render the reply through `mentci-lib`'s shared `ObservationModel` and
   `RenderNota`.
+- The CLI also accepts answer atoms:
+  `answer:approve:<question>`, `answer:reject:<question>`, and
+  `answer:defer:<question>`. These lower to `AnswerQuestion` on the mentci
+  socket and render the typed daemon reply as NOTA text; they do not open a
+  criome socket directly.
 - The daemon speaks `signal-mentci` over Unix sockets with the shared
   `signal-frame` envelope and generated rkyv/NOTA nouns.
 - `CriomeApprovalBridge` is daemon-owned. It lists criome's parked

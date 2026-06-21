@@ -10,8 +10,8 @@ use signal_frame::{
     ExchangeIdentifier, ExchangeLane, LaneSequence, Reply, RequestPayload, SessionEpoch, SubReply,
 };
 use signal_mentci::{
-    InterfaceInterest, MentciFrame, MentciFrameBody, MentciReply, MentciRequest, NotaSource,
-    SubscriberName,
+    ApprovalDecision, ApprovalVerdict, InterfaceInterest, MentciFrame, MentciFrameBody,
+    MentciReply, MentciRequest, NotaSource, QuestionIdentifier, SubscriberName,
 };
 
 use crate::frame_codec::FrameCodec;
@@ -28,6 +28,11 @@ pub struct ClientObservationCommand {
     interest: InterfaceInterest,
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ClientAnswerCommand {
+    verdict: ApprovalVerdict,
+}
+
 #[derive(Clone, Debug)]
 pub struct ClientObservationSession {
     model: ObservationModel,
@@ -37,6 +42,11 @@ pub struct ClientObservationSession {
 #[derive(Clone, Debug)]
 pub struct ClientObservationRender {
     view: ObservationView,
+    reply: RenderedObject,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ClientReplyRender {
     reply: RenderedObject,
 }
 
@@ -81,6 +91,9 @@ impl ClientCommand {
         if let Some(command) = self.observation_command()? {
             return command.run(&self.socket_path, writer);
         }
+        if let Some(command) = self.answer_command()? {
+            return command.run(&self.socket_path, writer);
+        }
         let frame = self.request_frame()?;
         let codec = FrameCodec::new();
         let mut stream = UnixStream::connect(&self.socket_path)?;
@@ -101,6 +114,11 @@ impl ClientCommand {
     pub fn observation_command(&self) -> Result<Option<ClientObservationCommand>> {
         let argument = self.input_argument()?;
         Ok(ClientObservationCommand::from_argument(argument))
+    }
+
+    pub fn answer_command(&self) -> Result<Option<ClientAnswerCommand>> {
+        let argument = self.input_argument()?;
+        Ok(ClientAnswerCommand::from_argument(argument))
     }
 
     fn request_frame_from_path(&self, path: &Path) -> Result<MentciFrame> {
@@ -164,6 +182,50 @@ impl ClientObservationCommand {
         let reply = codec.read_mentci_frame(&mut stream)?;
         let rendered = session.absorb_frame(reply)?;
         rendered.write_to(writer)
+    }
+}
+
+impl ClientAnswerCommand {
+    pub fn from_argument(argument: &str) -> Option<Self> {
+        if let Some(question) = argument.strip_prefix("answer:approve:") {
+            return Some(Self::new(
+                question,
+                ApprovalDecision::ApproveSuggestedAnswer,
+            ));
+        }
+        if let Some(question) = argument.strip_prefix("answer:reject:") {
+            return Some(Self::new(question, ApprovalDecision::Reject));
+        }
+        if let Some(question) = argument.strip_prefix("answer:defer:") {
+            return Some(Self::new(question, ApprovalDecision::Defer));
+        }
+        None
+    }
+
+    pub fn request_frame(&self) -> MentciFrame {
+        MentciFrame::new(MentciFrameBody::Request {
+            exchange: ClientObservationSession::exchange(),
+            request: MentciRequest::AnswerQuestion(self.verdict.clone()).into_request(),
+        })
+    }
+
+    fn new(question: &str, decision: ApprovalDecision) -> Self {
+        Self {
+            verdict: ApprovalVerdict {
+                question: QuestionIdentifier::new(question),
+                decision,
+                answered_by: SubscriberName::new("mentci-cli"),
+            },
+        }
+    }
+
+    fn run(&self, socket_path: &Path, writer: &mut impl Write) -> Result<()> {
+        let frame = self.request_frame();
+        let codec = FrameCodec::new();
+        let mut stream = UnixStream::connect(socket_path)?;
+        codec.write_mentci_frame(&mut stream, &frame)?;
+        let reply = codec.read_mentci_frame(&mut stream)?;
+        ClientReplyRender::from_frame(reply)?.write_to(writer)
     }
 }
 
@@ -239,6 +301,29 @@ impl ClientObservationSession {
             ExchangeLane::Connector,
             LaneSequence::first(),
         )
+    }
+}
+
+impl ClientReplyRender {
+    pub fn from_frame(frame: MentciFrame) -> Result<Self> {
+        let reply = ClientObservationSession::reply_output(frame)?;
+        Ok(Self {
+            reply: reply.render_nota(RenderOrigin::Reply),
+        })
+    }
+
+    pub fn reply(&self) -> &RenderedObject {
+        &self.reply
+    }
+
+    pub fn write_to(&self, writer: &mut impl Write) -> Result<()> {
+        writeln!(
+            writer,
+            "{} {}",
+            self.reply.origin().label(),
+            self.reply.body()
+        )?;
+        Ok(())
     }
 }
 
