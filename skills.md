@@ -16,3 +16,5 @@ path dependencies to sibling signal repos.
 Criome client-approval integration uses criome's parked authorization queue.
 List parked requests through criome meta, then approve, reject, or defer by
 `AuthorizationRequestSlot`. Do not resubmit `AuthorizationEvaluation` by value.
+Thin clients do not open criome sockets; route approvals through the mentci
+daemon.

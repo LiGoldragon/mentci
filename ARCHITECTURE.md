@@ -40,22 +40,24 @@ crates, not local path dependencies:
   `Configure(MentciDaemonConfiguration)`.
 - Startup configuration carries typed component socket endpoints. The daemon
   binds the `Mentci` socket and uses the `MetaCriome` socket for criome parked
-  authorization pickup; socket paths are not interpreted as generic
-  ordinary/meta positions.
+  authorization pickup and approval submission when that socket is configured.
+  Without `MetaCriome`, the daemon still binds and serves ordinary/read-only
+  mentci observations but has no criome write bridge. Socket paths are not
+  interpreted as generic ordinary/meta positions.
 - `mentci` is the thin CLI client. It takes exactly one request input: a
   length-prefixed binary `signal-mentci` frame file, a `.nota` request file, or
   inline NOTA text. It connects to the local daemon socket and writes the binary
   reply frame to stdout.
-- The same one-argument CLI also accepts criome approval atoms:
-  `criome:parked`, `criome:approve:<slot>`, `criome:reject:<slot>`, and
-  `criome:defer:<slot>`. These commands use `MENTCI_CRIOME_META_SOCKET` or
-  `/tmp/criome-meta.socket` and talk to criome's meta socket without changing
-  `signal-mentci`.
+- The same one-argument CLI also accepts observation atoms:
+  `observe`, `observe:full`, `observe:pending`, `observe:status`, and
+  `observe:notifications`. These commands still talk only to the mentci daemon
+  and render the reply through `mentci-lib`'s shared `ObservationModel` and
+  `RenderNota`.
 - The daemon speaks `signal-mentci` over Unix sockets with the shared
   `signal-frame` envelope and generated rkyv/NOTA nouns.
-- `CriomeApprovalBridge` lists criome's parked authorizations and submits
-  closed decisions by `AuthorizationRequestSlot`; it never resubmits an
-  `AuthorizationEvaluation` by value.
+- `CriomeApprovalBridge` is daemon-owned. It lists criome's parked
+  authorizations and submits closed decisions by `AuthorizationRequestSlot`;
+  it never resubmits an `AuthorizationEvaluation` by value.
 - `ObserveInterfaceState` checks the configured local criome meta socket for
   parked ClientApproval authorizations before projecting interface state, so a
   newly connected client sees criome-queued requests without a separate CLI

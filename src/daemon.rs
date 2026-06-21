@@ -13,7 +13,7 @@ use signal_mentci::{MentciFrame, MentciFrameBody, MentciReply, MentciRequest};
 use crate::configuration::DaemonConfiguration;
 use crate::criome_bridge::CriomeApprovalBridge;
 use crate::frame_codec::FrameCodec;
-use crate::state::{State, StateApplication};
+use crate::state::{State, StateApplication, StateApplicationContext};
 use crate::{Error, Result};
 
 #[derive(Debug)]
@@ -26,7 +26,7 @@ pub struct BoundDaemon {
     listener: UnixListener,
     runtime: tokio::runtime::Runtime,
     state: ActorRef<StateOwner>,
-    criome_bridge: CriomeApprovalBridge,
+    criome_bridge: Option<CriomeApprovalBridge>,
     codec: FrameCodec,
 }
 
@@ -39,6 +39,7 @@ pub struct StateOwner {
 pub struct ApplyRequest {
     request: MentciRequest,
     parked_authorizations: Vec<signal_criome::ParkedAuthorization>,
+    context: StateApplicationContext,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, kameo::Reply)]
@@ -60,8 +61,11 @@ impl Daemon {
         let listener = UnixListener::bind(&socket_path)?;
         fs::set_permissions(&socket_path, fs::Permissions::from_mode(0o600))?;
         let runtime = tokio::runtime::Runtime::new()?;
-        let criome_bridge =
-            CriomeApprovalBridge::new(self.configuration.criome_meta_socket_path()?);
+        let criome_bridge = self
+            .configuration
+            .criome_meta_socket_path()
+            .ok()
+            .map(CriomeApprovalBridge::new);
         let state =
             runtime.block_on(async { StateOwner::spawn(StateOwner::new(State::default())) });
         let codec = FrameCodec::new();
@@ -109,6 +113,7 @@ impl BoundDaemon {
         };
         let request = request.payloads.into_head();
         let parked_authorizations = self.parked_authorizations_for_request(&request);
+        let context = self.application_context();
         let applied = self
             .runtime
             .block_on(
@@ -116,6 +121,7 @@ impl BoundDaemon {
                     .ask(ApplyRequest {
                         request,
                         parked_authorizations,
+                        context,
                     })
                     .send(),
             )
@@ -123,7 +129,12 @@ impl BoundDaemon {
             .into_application();
         let (reply, criome_verdict) = applied.into_parts();
         if let Some(verdict) = criome_verdict {
-            let _ = self.criome_bridge.submit_criome_verdict(&verdict)?;
+            let Some(bridge) = &self.criome_bridge else {
+                return Err(Error::MissingComponentSocket {
+                    kind: meta_signal_mentci::ComponentSocketKind::MetaCriome,
+                });
+            };
+            let _ = bridge.submit_criome_verdict(&verdict)?;
         }
         let frame = MentciFrame::new(MentciFrameBody::Reply {
             exchange,
@@ -139,10 +150,21 @@ impl BoundDaemon {
         if !matches!(request, MentciRequest::ObserveInterfaceState(_)) {
             return Vec::new();
         }
-        self.criome_bridge
+        let Some(bridge) = &self.criome_bridge else {
+            return Vec::new();
+        };
+        bridge
             .parked_authorizations()
             .map(|snapshot| snapshot.into_parked())
             .unwrap_or_default()
+    }
+
+    fn application_context(&self) -> StateApplicationContext {
+        if self.criome_bridge.is_some() {
+            StateApplicationContext::write_enabled()
+        } else {
+            StateApplicationContext::read_only()
+        }
     }
 }
 
@@ -174,7 +196,10 @@ impl Message<ApplyRequest> for StateOwner {
     ) -> Self::Reply {
         self.state
             .absorb_criome_parked_authorizations(message.parked_authorizations);
-        ApplyReply::from_application(self.state.apply_with_effects(message.request))
+        ApplyReply::from_application(
+            self.state
+                .apply_with_context(message.request, message.context),
+        )
     }
 }
 
@@ -231,6 +256,21 @@ mod tests {
         ))
     }
 
+    fn read_only_configuration() -> DaemonConfiguration {
+        DaemonConfiguration::new(MentciDaemonConfiguration::new(
+            vec![ComponentSocket::new(
+                ComponentSocketKind::Mentci,
+                StandardSocket::unix("/tmp/mentci-read-only-test.socket"),
+            )],
+            PersonaIdentity::new(
+                PersonaName::new("psyche"),
+                ComponentKind::Persona,
+                PersonaKeyLabel::new("home-verdict"),
+            ),
+            vec![NotificationClient::StatusBar],
+        ))
+    }
+
     fn exchange() -> ExchangeIdentifier {
         ExchangeIdentifier::new(
             SessionEpoch::new(1),
@@ -272,6 +312,16 @@ mod tests {
             },
             other => panic!("expected reply frame, got {other:?}"),
         }
+        bound.shutdown().expect("shutdown daemon");
+    }
+
+    #[test]
+    fn daemon_binds_without_criome_meta_socket_for_read_only_mode() {
+        let daemon = Daemon::from_configuration(read_only_configuration()).expect("daemon");
+        let bound = daemon.bind().expect("bound read-only daemon");
+
+        assert!(bound.criome_bridge.is_none());
+
         bound.shutdown().expect("shutdown daemon");
     }
 }

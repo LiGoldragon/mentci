@@ -37,8 +37,13 @@ subscribe to projected state and send typed responses.
 - criome owns the pending-approval queue. When the local criome runs in
   client approval mode it parks every submission; mentci lists and observes
   criome's parked submissions over the meta socket and approves each by its
-  `ParkedAuthorizationId`, rather than re-supplying the full evaluation by
-  value. Per Spirit t00s.
+  `AuthorizationRequestSlot`, rather than re-supplying the full evaluation
+  by value. Per Spirit t00s.
+- Thin clients do not talk to criome directly. They submit ordinary
+  `signal-mentci` answers to the mentci daemon; the daemon is the sole
+  criome-facing approver when configured with a `MetaCriome` socket. A daemon
+  without `MetaCriome` still serves ordinary/read-only mentci observations
+  and does not submit criome approval verdicts.
 - The SEMA state is the canonical UI state. A client render exists only after
   a SEMA revision changed and the daemon published a projected state delivery.
 - Local UI revision is a plain monotonic counter for the single-machine

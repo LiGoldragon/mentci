@@ -378,7 +378,7 @@ dependencies = [
 [[package]]
 name = "mentci-lib"
 version = "0.1.0"
-source = "git+https://github.com/LiGoldragon/mentci-lib?branch=main#f628b371e6860fa88a25de873f6415e98f125909"
+source = "git+https://github.com/LiGoldragon/mentci-lib?branch=main#a13115b1ff907420d18df7b8cd77b44398a763bf"
 dependencies = [
  "meta-signal-criome",
  "meta-signal-mentci",

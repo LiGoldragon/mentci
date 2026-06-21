@@ -47,6 +47,11 @@ pub struct StateApplication {
     criome_verdict: Option<CriomeVerdict>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct StateApplicationContext {
+    criome_write_available: bool,
+}
+
 impl Default for State {
     fn default() -> Self {
         Self {
@@ -73,6 +78,14 @@ impl State {
     }
 
     pub fn apply_with_effects(&mut self, request: MentciRequest) -> StateApplication {
+        self.apply_with_context(request, StateApplicationContext::write_enabled())
+    }
+
+    pub fn apply_with_context(
+        &mut self,
+        request: MentciRequest,
+        context: StateApplicationContext,
+    ) -> StateApplication {
         match request {
             MentciRequest::PresentQuestion(proposal) => {
                 StateApplication::reply(self.present_question(proposal))
@@ -88,7 +101,7 @@ impl State {
             MentciRequest::ObserveInterfaceState(observation) => {
                 StateApplication::reply(self.observe(observation))
             }
-            MentciRequest::AnswerQuestion(verdict) => self.answer(verdict),
+            MentciRequest::AnswerQuestion(verdict) => self.answer(verdict, context),
             MentciRequest::ProposeEditedAnswer(proposal) => {
                 StateApplication::reply(self.propose_answer(proposal))
             }
@@ -171,7 +184,11 @@ impl State {
         })
     }
 
-    fn answer(&mut self, verdict: ApprovalVerdict) -> StateApplication {
+    fn answer(
+        &mut self,
+        verdict: ApprovalVerdict,
+        context: StateApplicationContext,
+    ) -> StateApplication {
         if matches!(verdict.decision, ApprovalDecision::Defer) {
             return StateApplication::reply(MentciReply::VerdictAccepted(
                 signal_mentci::VerdictAccepted {
@@ -190,6 +207,17 @@ impl State {
                 RejectionReason::UnknownQuestion,
             )));
         };
+        if self.pending_questions[index]
+            .proposal
+            .source
+            .criome_slot()
+            .is_some()
+            && !context.criome_write_available()
+        {
+            return StateApplication::reply(MentciReply::Rejection(Rejection::new(
+                RejectionReason::UnauthorizedProjection,
+            )));
+        }
         let answered = self.pending_questions.remove(index);
         let criome_verdict = answered
             .proposal
@@ -309,6 +337,24 @@ impl State {
         let token = SubscriptionToken::new(format!("subscription-{}", self.next_subscription));
         self.next_subscription += 1;
         token
+    }
+}
+
+impl StateApplicationContext {
+    pub fn write_enabled() -> Self {
+        Self {
+            criome_write_available: true,
+        }
+    }
+
+    pub fn read_only() -> Self {
+        Self {
+            criome_write_available: false,
+        }
+    }
+
+    pub fn criome_write_available(&self) -> bool {
+        self.criome_write_available
     }
 }
 

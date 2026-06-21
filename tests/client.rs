@@ -81,23 +81,6 @@ fn observation_reply_frame(reply: MentciReply) -> MentciFrame {
 }
 
 #[test]
-fn client_recognizes_criome_parked_command_atom() {
-    let command = ClientCommand::from_arguments(["criome:parked"], "/tmp/unused-mentci.socket");
-
-    assert!(command.criome_command().expect("criome command").is_some());
-}
-
-#[test]
-fn client_recognizes_criome_approval_command_atom() {
-    let command = ClientCommand::from_arguments(
-        ["criome:approve:authorization-request-1"],
-        "/tmp/unused-mentci.socket",
-    );
-
-    assert!(command.criome_command().expect("criome command").is_some());
-}
-
-#[test]
 fn client_recognizes_observation_command_atom() {
     let command = ClientCommand::from_arguments(["observe:pending"], "/tmp/unused-mentci.socket");
 

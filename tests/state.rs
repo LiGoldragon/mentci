@@ -1,4 +1,5 @@
-use mentci::state::State;
+use mentci::state::{State, StateApplicationContext};
+use signal_criome::AuthorizationRequestSlot;
 use signal_mentci::{
     AnswerProposal, AnswerProposalAdmitted, AnswerText, ApprovalDecision, ApprovalQuestion,
     ApprovalSource, ApprovalVerdict, ContextBody, ContextLabel, ExplanationText, InterfaceInterest,
@@ -17,6 +18,19 @@ fn question_proposal() -> QuestionProposal {
         vec![QuestionContext {
             label: ContextLabel::new("record"),
             body: ContextBody::new("content-addressed-preimage"),
+        }],
+    )
+}
+
+fn criome_question_proposal() -> QuestionProposal {
+    QuestionProposal::new(
+        ApprovalSource::CriomeEscalation(AuthorizationRequestSlot::new("authorization-slot-1")),
+        signal_mentci::PromptText::new("approve-criome-request"),
+        Some(AnswerText::new("approve")),
+        ExplanationText::new("criome-parked-authorization"),
+        vec![QuestionContext {
+            label: ContextLabel::new("slot"),
+            body: ContextBody::new("authorization-slot-1"),
         }],
     )
 }
@@ -127,4 +141,39 @@ fn approving_question_closes_it_against_later_edits() {
         proposal_reply,
         MentciReply::Rejection(Rejection::new(RejectionReason::UnknownQuestion))
     );
+}
+
+#[test]
+fn read_only_context_rejects_criome_write_without_closing_question() {
+    let mut state = State::default();
+    state.apply(MentciRequest::PresentQuestion(criome_question_proposal()));
+
+    let application = state.apply_with_context(
+        MentciRequest::AnswerQuestion(ApprovalVerdict {
+            question: question_identifier(),
+            decision: ApprovalDecision::ApproveSuggestedAnswer,
+            answered_by: psyche(),
+        }),
+        StateApplicationContext::read_only(),
+    );
+
+    assert_eq!(
+        application.into_reply(),
+        MentciReply::Rejection(Rejection::new(RejectionReason::UnauthorizedProjection))
+    );
+
+    let reply = state.apply(MentciRequest::ObserveInterfaceState(
+        InterfaceStateObservation {
+            subscriber: SubscriberName::new("status-bar"),
+            interest: InterfaceInterest::PendingQuestions,
+        },
+    ));
+
+    let MentciReply::InterfaceObservationOpened(opened) = reply else {
+        panic!("expected opened observation");
+    };
+    let InterfaceProjection::PendingQuestionsProjection(pending) = opened.state.projection else {
+        panic!("expected pending projection");
+    };
+    assert_eq!(pending.questions().len(), 1);
 }

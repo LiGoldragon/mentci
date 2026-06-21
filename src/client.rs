@@ -6,8 +6,6 @@ use mentci_lib::{
     Cmd, ComponentSocketKind, EngineEvent, ObservationModel, ObservationView, RenderNota,
     RenderOrigin, RenderedObject, SocketLiveness, UserEvent,
 };
-use meta_signal_criome::AuthorizationApprovalDecision;
-use signal_criome::AuthorizationRequestSlot;
 use signal_frame::{
     ExchangeIdentifier, ExchangeLane, LaneSequence, Reply, RequestPayload, SessionEpoch, SubReply,
 };
@@ -16,7 +14,6 @@ use signal_mentci::{
     SubscriberName,
 };
 
-use crate::criome_bridge::CriomeApprovalBridge;
 use crate::frame_codec::FrameCodec;
 use crate::{Error, Result};
 
@@ -24,20 +21,6 @@ use crate::{Error, Result};
 pub struct ClientCommand {
     arguments: Vec<String>,
     socket_path: PathBuf,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct CriomeCommand {
-    action: CriomeCommandAction,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-enum CriomeCommandAction {
-    ListParked,
-    Decide {
-        decision: AuthorizationApprovalDecision,
-        request_slot: AuthorizationRequestSlot,
-    },
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -98,9 +81,6 @@ impl ClientCommand {
         if let Some(command) = self.observation_command()? {
             return command.run(&self.socket_path, writer);
         }
-        if let Some(command) = self.criome_command()? {
-            return command.run(Self::default_criome_meta_socket_path(), writer);
-        }
         let frame = self.request_frame()?;
         let codec = FrameCodec::new();
         let mut stream = UnixStream::connect(&self.socket_path)?;
@@ -116,11 +96,6 @@ impl ClientCommand {
             [argument] => Ok(argument.as_str()),
             _ => Err(Error::ClientArgumentCount),
         }
-    }
-
-    pub fn criome_command(&self) -> Result<Option<CriomeCommand>> {
-        let argument = self.input_argument()?;
-        CriomeCommand::from_argument(argument)
     }
 
     pub fn observation_command(&self) -> Result<Option<ClientObservationCommand>> {
@@ -165,62 +140,6 @@ impl ClientCommand {
                 None => PathBuf::from("/tmp/mentci.socket"),
             },
         }
-    }
-
-    fn default_criome_meta_socket_path() -> PathBuf {
-        match std::env::var_os("MENTCI_CRIOME_META_SOCKET") {
-            Some(path) => PathBuf::from(path),
-            None => PathBuf::from("/tmp/criome-meta.socket"),
-        }
-    }
-}
-
-impl CriomeCommand {
-    pub fn from_argument(argument: &str) -> Result<Option<Self>> {
-        if argument == "criome:parked" {
-            return Ok(Some(Self {
-                action: CriomeCommandAction::ListParked,
-            }));
-        }
-        for (prefix, decision) in [
-            ("criome:approve:", AuthorizationApprovalDecision::Approve),
-            ("criome:reject:", AuthorizationApprovalDecision::Reject),
-            ("criome:defer:", AuthorizationApprovalDecision::Defer),
-        ] {
-            if let Some(slot) = argument.strip_prefix(prefix) {
-                return Ok(Some(Self {
-                    action: CriomeCommandAction::Decide {
-                        decision,
-                        request_slot: AuthorizationRequestSlot::new(slot),
-                    },
-                }));
-            }
-        }
-        Ok(None)
-    }
-
-    fn run(&self, meta_socket: PathBuf, writer: &mut impl Write) -> Result<()> {
-        let bridge = CriomeApprovalBridge::new(meta_socket);
-        match &self.action {
-            CriomeCommandAction::ListParked => {
-                let snapshot = bridge.parked_authorizations()?;
-                for parked in snapshot.parked() {
-                    writeln!(writer, "{}", parked.request_slot.payload())?;
-                }
-            }
-            CriomeCommandAction::Decide {
-                decision,
-                request_slot,
-            } => {
-                let reply = bridge.submit_decision(request_slot.clone(), *decision)?;
-                let meta_signal_criome::Output::AuthorizationApprovalRecorded(recorded) = reply
-                else {
-                    return Err(Error::UnexpectedCriomeMetaReply);
-                };
-                writeln!(writer, "{decision:?} {}", recorded.request_slot.payload())?;
-            }
-        }
-        Ok(())
     }
 }
 
