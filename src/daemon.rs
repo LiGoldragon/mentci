@@ -8,7 +8,9 @@ use kameo::actor::{ActorRef, Spawn};
 use kameo::error::Infallible;
 use kameo::message::{Context, Message};
 use signal_frame::{NonEmpty, Reply, SubReply};
-use signal_mentci::{MentciFrame, MentciFrameBody, MentciReply, MentciRequest};
+use signal_mentci::{
+    MentciFrame, MentciFrameBody, MentciReply, MentciRequest, Rejection, RejectionReason,
+};
 
 use crate::configuration::DaemonConfiguration;
 use crate::criome_bridge::CriomeApprovalBridge;
@@ -127,14 +129,18 @@ impl BoundDaemon {
             )
             .map_err(|error| Error::ActorCall(error.to_string()))?
             .into_application();
-        let (reply, criome_verdict) = applied.into_parts();
+        let (mut reply, criome_verdict) = applied.into_parts();
         if let Some(verdict) = criome_verdict {
             let Some(bridge) = &self.criome_bridge else {
                 return Err(Error::MissingComponentSocket {
                     kind: meta_signal_mentci::ComponentSocketKind::MetaCriome,
                 });
             };
-            let _ = bridge.submit_criome_verdict(&verdict)?;
+            let submission = bridge.submit_criome_verdict(&verdict)?;
+            if !submission.is_recorded() {
+                reply =
+                    MentciReply::Rejection(Rejection::new(RejectionReason::UnauthorizedProjection));
+            }
         }
         let frame = MentciFrame::new(MentciFrameBody::Reply {
             exchange,

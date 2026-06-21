@@ -7,13 +7,18 @@ use signal_criome::{
     AuthorizationRequestSlot, CriomeDaemonConfiguration, ParkedAuthorizationObservation,
     ParkedAuthorizationSnapshot,
 };
-use signal_mentci::ApprovalVerdict;
 
 use crate::Result;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CriomeApprovalBridge {
     meta_socket: PathBuf,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CriomeApprovalSubmission {
+    verdict: CriomeVerdict,
+    output: meta_signal_criome::Output,
 }
 
 impl CriomeApprovalBridge {
@@ -32,23 +37,18 @@ impl CriomeApprovalBridge {
             .map_err(Into::into)
     }
 
-    pub fn submit_verdict(
-        &self,
-        request_slot: AuthorizationRequestSlot,
-        verdict: &ApprovalVerdict,
-    ) -> Result<meta_signal_criome::Output> {
-        let criome_verdict = CriomeVerdict::from_decision(request_slot, verdict.decision);
-        self.submit_criome_verdict(&criome_verdict)
-    }
-
     pub fn submit_criome_verdict(
         &self,
         criome_verdict: &CriomeVerdict,
-    ) -> Result<meta_signal_criome::Output> {
-        self.submit_decision(
+    ) -> Result<CriomeApprovalSubmission> {
+        let output = self.submit_decision(
             criome_verdict.request_slot().clone(),
             criome_verdict.decision(),
-        )
+        )?;
+        Ok(CriomeApprovalSubmission::new(
+            criome_verdict.clone(),
+            output,
+        ))
     }
 
     pub fn submit_decision(
@@ -76,5 +76,24 @@ impl CriomeApprovalBridge {
             return Err(crate::Error::UnexpectedCriomeMetaReply);
         };
         Ok(snapshot)
+    }
+}
+
+impl CriomeApprovalSubmission {
+    pub fn new(verdict: CriomeVerdict, output: meta_signal_criome::Output) -> Self {
+        Self { verdict, output }
+    }
+
+    pub fn is_recorded(&self) -> bool {
+        let meta_signal_criome::Output::AuthorizationApprovalRecorded(recorded) = &self.output
+        else {
+            return false;
+        };
+        recorded.request_slot == *self.verdict.request_slot()
+            && recorded.decision == self.verdict.decision()
+    }
+
+    pub fn output(&self) -> &meta_signal_criome::Output {
+        &self.output
     }
 }

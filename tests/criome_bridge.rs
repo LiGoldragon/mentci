@@ -6,9 +6,10 @@ use criome::daemon::{CriomeDaemon, CriomeDaemonConfiguration};
 use criome::tables::StoreLocation;
 use criome::transport::CriomeClient;
 use mentci::configuration::DaemonConfiguration;
-use mentci::criome_bridge::CriomeApprovalBridge;
+use mentci::criome_bridge::{CriomeApprovalBridge, CriomeApprovalSubmission};
 use mentci::daemon::Daemon;
 use mentci::frame_codec::FrameCodec;
+use mentci_lib::CriomeVerdict;
 use meta_signal_mentci::{
     ComponentKind as MentciComponentKind, ComponentSocket, ComponentSocketKind,
     MentciDaemonConfiguration, NotificationClient, PersonaIdentity, PersonaKeyLabel, PersonaName,
@@ -16,18 +17,19 @@ use meta_signal_mentci::{
 };
 use signal_criome::{
     AttestedMoment, AttestedMomentProposition, AuthorizationEvaluation, AuthorizationMode,
-    AuthorizedObjectInterest, AuthorizedObjectKind, AuthorizedObjectObservation, ComponentKind,
-    CriomeReply, CriomeRequest, EvaluationDecision, Evidence, Identity, OperationDigest,
-    ParkedAuthorization, RequiredSignatureThreshold, TimeWindow, TimestampNanos,
+    AuthorizationRequestSlot, AuthorizedObjectInterest, AuthorizedObjectKind,
+    AuthorizedObjectObservation, ComponentKind, CriomeReply, CriomeRequest, EvaluationDecision,
+    Evidence, Identity, OperationDigest, ParkedAuthorization, RequiredSignatureThreshold,
+    TimeWindow, TimestampNanos,
 };
 use signal_frame::{
     ExchangeIdentifier, ExchangeLane, LaneSequence, Reply, RequestPayload, SessionEpoch, SubReply,
 };
 use signal_mentci::{
-    ApprovalDecision, ApprovalQuestion, ApprovalVerdict, InterfaceInterest,
+    ApprovalDecision, ApprovalQuestion, ApprovalSource, ApprovalVerdict, InterfaceInterest,
     InterfaceObservationOpened, InterfaceProjection, MentciFrame, MentciFrameBody, MentciReply,
-    MentciRequest, PendingQuestionsView, ProjectedInterfaceState, QuestionIdentifier,
-    RevisionCounter, SubscriberName, SubscriptionToken,
+    MentciRequest, PendingQuestionsView, ProjectedInterfaceState, QuestionIdentifier, Rejection,
+    RejectionReason, RevisionCounter, SubscriberName, SubscriptionToken,
 };
 
 fn fixture_path(name: &str) -> std::path::PathBuf {
@@ -125,6 +127,133 @@ fn send_mentci(socket: &Path, request: MentciRequest) -> MentciReply {
         },
         other => panic!("expected Mentci reply frame, got {other:?}"),
     }
+}
+
+fn criome_escalation_question(slot: AuthorizationRequestSlot) -> signal_mentci::QuestionProposal {
+    signal_mentci::QuestionProposal::new(
+        ApprovalSource::CriomeEscalation(slot.clone()),
+        signal_mentci::PromptText::new("approve-criome-request"),
+        Some(signal_mentci::AnswerText::new("approve")),
+        signal_mentci::ExplanationText::new("criome escalation"),
+        vec![signal_mentci::QuestionContext {
+            label: signal_mentci::ContextLabel::new("slot"),
+            body: signal_mentci::ContextBody::new(slot.as_str()),
+        }],
+    )
+}
+
+#[test]
+fn criome_submission_requires_recorded_matching_output() {
+    let verdict = CriomeVerdict::from_decision(
+        AuthorizationRequestSlot::new("slot-1"),
+        ApprovalDecision::ApproveSuggestedAnswer,
+    );
+    let recorded = CriomeApprovalSubmission::new(
+        verdict.clone(),
+        meta_signal_criome::Output::AuthorizationApprovalRecorded(
+            meta_signal_criome::AuthorizationApprovalRecorded {
+                request_slot: AuthorizationRequestSlot::new("slot-1"),
+                decision: meta_signal_criome::AuthorizationApprovalDecision::Approve,
+            },
+        ),
+    );
+    assert!(recorded.is_recorded());
+
+    let wrong_slot = CriomeApprovalSubmission::new(
+        verdict.clone(),
+        meta_signal_criome::Output::AuthorizationApprovalRecorded(
+            meta_signal_criome::AuthorizationApprovalRecorded {
+                request_slot: AuthorizationRequestSlot::new("slot-2"),
+                decision: meta_signal_criome::AuthorizationApprovalDecision::Approve,
+            },
+        ),
+    );
+    assert!(!wrong_slot.is_recorded());
+
+    let wrong_decision = CriomeApprovalSubmission::new(
+        verdict.clone(),
+        meta_signal_criome::Output::AuthorizationApprovalRecorded(
+            meta_signal_criome::AuthorizationApprovalRecorded {
+                request_slot: AuthorizationRequestSlot::new("slot-1"),
+                decision: meta_signal_criome::AuthorizationApprovalDecision::Reject,
+            },
+        ),
+    );
+    assert!(!wrong_decision.is_recorded());
+
+    let not_recorded = CriomeApprovalSubmission::new(
+        verdict,
+        meta_signal_criome::Output::RequestUnimplemented(
+            meta_signal_criome::RequestUnimplemented {
+                operation: meta_signal_criome::OperationKind::SubmitAuthorizationApproval,
+                reason: meta_signal_criome::UnimplementedReason::DependencyNotReady,
+            },
+        ),
+    );
+    assert!(!not_recorded.is_recorded());
+}
+
+#[test]
+fn mentci_rejects_verdict_when_criome_does_not_record_it() {
+    let workspace = fixture_path("missing-slot");
+    let criome_socket = workspace.join("criome.sock");
+    let criome_meta_socket = workspace.join("criome-meta.sock");
+    let mentci_socket = workspace.join("mentci.sock");
+    let store = StoreLocation::new(workspace.join("criome.sema"));
+    let criome = CriomeDaemon::new(&criome_socket, store)
+        .with_meta_socket(&criome_meta_socket)
+        .bind()
+        .expect("bind criome");
+    let mentci =
+        Daemon::from_configuration(mentci_configuration(&mentci_socket, &criome_meta_socket))
+            .expect("mentci daemon")
+            .bind()
+            .expect("bind mentci");
+    wait_for_socket(&criome_meta_socket);
+    wait_for_socket(&mentci_socket);
+
+    let missing_slot = AuthorizationRequestSlot::new("999");
+    let presented = thread::scope(|scope| {
+        let mentci_server = scope.spawn(|| mentci.serve_next().expect("serve present"));
+        let reply = send_mentci(
+            &mentci_socket,
+            MentciRequest::PresentQuestion(criome_escalation_question(missing_slot)),
+        );
+        mentci_server.join().expect("join present server");
+        reply
+    });
+    assert!(matches!(presented, MentciReply::QuestionPresented(_)));
+
+    let rejected = thread::scope(|scope| {
+        let criome_meta_server =
+            scope.spawn(|| criome.serve_next_meta().expect("serve missing approval"));
+        let mentci_server = scope.spawn(|| mentci.serve_next().expect("serve answer"));
+        let reply = send_mentci(
+            &mentci_socket,
+            MentciRequest::AnswerQuestion(ApprovalVerdict {
+                question: QuestionIdentifier::new("question-1"),
+                decision: ApprovalDecision::ApproveSuggestedAnswer,
+                answered_by: SubscriberName::new("psyche"),
+            }),
+        );
+        let meta_reply = criome_meta_server.join().expect("join missing approval");
+        let submitted = CriomeVerdict::from_decision(
+            AuthorizationRequestSlot::new("999"),
+            ApprovalDecision::ApproveSuggestedAnswer,
+        );
+        let submission = CriomeApprovalSubmission::new(submitted, meta_reply);
+        assert!(!submission.is_recorded());
+        mentci_server.join().expect("join answer server");
+        reply
+    });
+
+    assert_eq!(
+        rejected,
+        MentciReply::Rejection(Rejection::new(RejectionReason::UnauthorizedProjection))
+    );
+
+    mentci.shutdown().expect("shutdown mentci");
+    criome.shutdown().expect("shutdown criome");
 }
 
 #[test]
