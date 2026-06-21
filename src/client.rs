@@ -352,6 +352,10 @@ impl ClientObservationRender {
             self.view.approval.answered_count,
             self.view.approval.subscription_count
         )?;
+        for pane in &self.view.panes {
+            writeln!(writer, "pane {}", pane.pane.as_str())?;
+            writeln!(writer, "{}", pane.body.as_str())?;
+        }
         writeln!(
             writer,
             "{} {}",

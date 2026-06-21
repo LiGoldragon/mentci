@@ -366,10 +366,13 @@ dependencies = [
  "mentci-lib",
  "meta-signal-criome",
  "meta-signal-mentci",
+ "nota-next",
  "rkyv",
  "signal-criome",
  "signal-frame",
+ "signal-introspect",
  "signal-mentci",
+ "signal-persona",
  "tempfile",
  "thiserror",
  "tokio",
@@ -378,7 +381,7 @@ dependencies = [
 [[package]]
 name = "mentci-lib"
 version = "0.1.0"
-source = "git+https://github.com/LiGoldragon/mentci-lib?branch=main#a53bce0e8ee20581fa7b9f73421afad4e268746d"
+source = "git+https://github.com/LiGoldragon/mentci-lib?branch=main#3421ae811ff90ec2d406bba50dc1cc77080b89ea"
 dependencies = [
  "meta-signal-criome",
  "meta-signal-mentci",
@@ -405,7 +408,7 @@ dependencies = [
 [[package]]
 name = "meta-signal-mentci"
 version = "0.1.0"
-source = "git+https://github.com/LiGoldragon/meta-signal-mentci?branch=main#42222f306e71e189f80619ff194429f1bb21aff1"
+source = "git+https://github.com/LiGoldragon/meta-signal-mentci?branch=main#5a22f9fe0b38fc45b13cd58922cee327ad123a0a"
 dependencies = [
  "nota-next",
  "rkyv",
@@ -756,6 +759,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "signal-introspect"
+version = "0.1.0"
+source = "git+https://github.com/LiGoldragon/signal-introspect.git?branch=main#47a4f76c4c0f55bfaad103f9d354b285c2961efa"
+dependencies = [
+ "nota-next",
+ "rkyv",
+ "signal-frame",
+ "signal-message",
+ "signal-persona",
+ "thiserror",
+]
+
+[[package]]
 name = "signal-mentci"
 version = "0.1.0"
 source = "git+https://github.com/LiGoldragon/signal-mentci?branch=main#951c9c2a517dcad78f9cc52d44f9f3a0a9f71b73"
@@ -766,6 +782,29 @@ dependencies = [
  "signal-criome",
  "signal-frame",
  "thiserror",
+]
+
+[[package]]
+name = "signal-message"
+version = "0.3.0"
+source = "git+https://github.com/LiGoldragon/signal-message.git?branch=main#3c8fa132eafa7e5972c9c7e5a49a287035928f04"
+dependencies = [
+ "nota-next",
+ "rkyv",
+ "schema-rust-next",
+ "signal-frame",
+ "thiserror",
+]
+
+[[package]]
+name = "signal-persona"
+version = "0.2.0"
+source = "git+https://github.com/LiGoldragon/signal-persona.git?branch=main#c785b9b1c72ae8766304f6bade30bd999f437d93"
+dependencies = [
+ "nota-next",
+ "rkyv",
+ "schema-rust-next",
+ "signal-frame",
 ]
 
 [[package]]

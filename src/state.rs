@@ -137,6 +137,12 @@ impl State {
         }
     }
 
+    pub fn refresh_pane(&mut self, content: PaneContent) {
+        if self.set_pane(content) {
+            self.bump_revision();
+        }
+    }
+
     fn present_question(&mut self, proposal: signal_mentci::QuestionProposal) -> MentciReply {
         let question = self.mint_question_identifier();
         self.pending_questions.push(ApprovalQuestion {
@@ -157,7 +163,9 @@ impl State {
             InterfaceMutation::PostNotification(notification) => {
                 self.notification = Some(notification);
             }
-            InterfaceMutation::SetPaneContent(content) => self.set_pane(content),
+            InterfaceMutation::SetPaneContent(content) => {
+                let _ = self.set_pane(content);
+            }
             InterfaceMutation::ClearPane(pane) => {
                 self.panes.retain(|content| content.pane != pane);
             }
@@ -280,16 +288,23 @@ impl State {
         }
     }
 
-    fn set_pane(&mut self, content: PaneContent) {
+    fn set_pane(&mut self, content: PaneContent) -> bool {
         match self
             .panes
             .iter_mut()
             .find(|existing| existing.pane == content.pane)
         {
             Some(existing) => {
+                if *existing == content {
+                    return false;
+                }
                 existing.body = content.body;
+                true
             }
-            None => self.panes.push(content),
+            None => {
+                self.panes.push(content);
+                true
+            }
         }
     }
 

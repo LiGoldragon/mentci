@@ -1,5 +1,6 @@
 use std::io::{Read, Write};
 
+use signal_introspect::IntrospectionFrame;
 use signal_mentci::MentciFrame;
 
 use crate::Result;
@@ -26,6 +27,49 @@ impl FrameCodec {
     where
         Reader: Read,
     {
+        let bytes = self.read_length_prefixed_bytes(reader)?;
+        Ok(MentciFrame::decode_length_prefixed(&bytes)?)
+    }
+
+    pub fn write_mentci_frame<Writer>(&self, writer: &mut Writer, frame: &MentciFrame) -> Result<()>
+    where
+        Writer: Write,
+    {
+        let bytes = frame.encode_length_prefixed()?;
+        writer.write_all(&bytes)?;
+        writer.flush()?;
+        Ok(())
+    }
+
+    pub fn read_introspection_frame<Reader>(
+        &self,
+        reader: &mut Reader,
+    ) -> Result<IntrospectionFrame>
+    where
+        Reader: Read,
+    {
+        let bytes = self.read_length_prefixed_bytes(reader)?;
+        Ok(IntrospectionFrame::decode_length_prefixed(&bytes)?)
+    }
+
+    pub fn write_introspection_frame<Writer>(
+        &self,
+        writer: &mut Writer,
+        frame: &IntrospectionFrame,
+    ) -> Result<()>
+    where
+        Writer: Write,
+    {
+        let bytes = frame.encode_length_prefixed()?;
+        writer.write_all(&bytes)?;
+        writer.flush()?;
+        Ok(())
+    }
+
+    fn read_length_prefixed_bytes<Reader>(&self, reader: &mut Reader) -> Result<Vec<u8>>
+    where
+        Reader: Read,
+    {
         let mut length_bytes = [0_u8; 4];
         reader.read_exact(&mut length_bytes)?;
         let length = u32::from_be_bytes(length_bytes) as usize;
@@ -41,16 +85,6 @@ impl FrameCodec {
         let start = bytes.len();
         bytes.resize(start + length, 0);
         reader.read_exact(&mut bytes[start..])?;
-        Ok(MentciFrame::decode_length_prefixed(&bytes)?)
-    }
-
-    pub fn write_mentci_frame<Writer>(&self, writer: &mut Writer, frame: &MentciFrame) -> Result<()>
-    where
-        Writer: Write,
-    {
-        let bytes = frame.encode_length_prefixed()?;
-        writer.write_all(&bytes)?;
-        writer.flush()?;
-        Ok(())
+        Ok(bytes)
     }
 }

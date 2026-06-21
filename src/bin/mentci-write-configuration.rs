@@ -18,36 +18,45 @@ use meta_signal_mentci::{
 struct ConfigurationEncoding {
     socket: String,
     criome: String,
+    introspect: Option<String>,
     output: PathBuf,
 }
 
 impl ConfigurationEncoding {
     fn from_arguments() -> Self {
         let mut arguments = std::env::args().skip(1);
-        let usage =
-            "usage: mentci-write-configuration <socket-path> <criome-meta-socket> <output-rkyv>";
+        let usage = "usage: mentci-write-configuration <socket-path> <criome-meta-socket> <output-rkyv> [introspect-socket]";
         let socket = arguments.next().expect(usage);
         let criome = arguments.next().expect(usage);
         let output = arguments.next().expect(usage);
+        let introspect = arguments.next();
         Self {
             socket,
             criome,
+            introspect,
             output: PathBuf::from(output),
         }
     }
 
     fn run(self) {
+        let mut component_sockets = vec![
+            ComponentSocket::new(
+                ComponentSocketKind::Mentci,
+                StandardSocket::unix(self.socket),
+            ),
+            ComponentSocket::new(
+                ComponentSocketKind::MetaCriome,
+                StandardSocket::unix(self.criome),
+            ),
+        ];
+        if let Some(introspect) = self.introspect {
+            component_sockets.push(ComponentSocket::new(
+                ComponentSocketKind::Introspect,
+                StandardSocket::unix(introspect),
+            ));
+        }
         let configuration = MentciDaemonConfiguration::new(
-            vec![
-                ComponentSocket::new(
-                    ComponentSocketKind::Mentci,
-                    StandardSocket::unix(self.socket),
-                ),
-                ComponentSocket::new(
-                    ComponentSocketKind::MetaCriome,
-                    StandardSocket::unix(self.criome),
-                ),
-            ],
+            component_sockets,
             PersonaIdentity::new(
                 PersonaName::new("psyche"),
                 ComponentKind::Persona,

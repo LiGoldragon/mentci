@@ -57,6 +57,10 @@ impl DaemonConfiguration {
         self.component_socket_path(ComponentSocketKind::MetaCriome)
     }
 
+    pub fn introspect_socket_path(&self) -> Result<&Path> {
+        self.component_socket_path(ComponentSocketKind::Introspect)
+    }
+
     pub fn into_inner(self) -> MentciDaemonConfiguration {
         self.inner
     }

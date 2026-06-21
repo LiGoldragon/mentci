@@ -53,6 +53,9 @@ pub enum Error {
     #[error("unexpected criome meta reply")]
     UnexpectedCriomeMetaReply,
 
+    #[error("unexpected introspection reply: {0}")]
+    UnexpectedIntrospectionReply(String),
+
     #[error("shared observation model did not produce a mentci request")]
     ClientObservationCommandUnavailable,
 
