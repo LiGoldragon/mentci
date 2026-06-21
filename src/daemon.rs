@@ -13,7 +13,7 @@ use signal_mentci::{MentciFrame, MentciFrameBody, MentciReply, MentciRequest};
 use crate::configuration::DaemonConfiguration;
 use crate::criome_bridge::CriomeApprovalBridge;
 use crate::frame_codec::FrameCodec;
-use crate::state::State;
+use crate::state::{State, StateApplication};
 use crate::{Error, Result};
 
 #[derive(Debug)]
@@ -44,6 +44,7 @@ pub struct ApplyRequest {
 #[derive(Debug, Clone, PartialEq, Eq, kameo::Reply)]
 pub struct ApplyReply {
     reply: MentciReply,
+    criome_verdict: Option<mentci_lib::CriomeVerdict>,
 }
 
 impl Daemon {
@@ -108,7 +109,7 @@ impl BoundDaemon {
         };
         let request = request.payloads.into_head();
         let parked_authorizations = self.parked_authorizations_for_request(&request);
-        let reply = self
+        let applied = self
             .runtime
             .block_on(
                 self.state
@@ -119,7 +120,11 @@ impl BoundDaemon {
                     .send(),
             )
             .map_err(|error| Error::ActorCall(error.to_string()))?
-            .into_reply();
+            .into_application();
+        let (reply, criome_verdict) = applied.into_parts();
+        if let Some(verdict) = criome_verdict {
+            let _ = self.criome_bridge.submit_criome_verdict(&verdict)?;
+        }
         let frame = MentciFrame::new(MentciFrameBody::Reply {
             exchange,
             reply: Reply::committed(NonEmpty::single(SubReply::Ok(reply))),
@@ -169,15 +174,21 @@ impl Message<ApplyRequest> for StateOwner {
     ) -> Self::Reply {
         self.state
             .absorb_criome_parked_authorizations(message.parked_authorizations);
-        ApplyReply {
-            reply: self.state.apply(message.request),
-        }
+        ApplyReply::from_application(self.state.apply_with_effects(message.request))
     }
 }
 
 impl ApplyReply {
-    pub fn into_reply(self) -> MentciReply {
-        self.reply
+    pub fn from_application(application: StateApplication) -> Self {
+        let (reply, criome_verdict) = application.into_parts();
+        Self {
+            reply,
+            criome_verdict,
+        }
+    }
+
+    pub fn into_application(self) -> StateApplication {
+        StateApplication::with_criome_verdict(self.reply, self.criome_verdict)
     }
 }
 

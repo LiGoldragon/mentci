@@ -38,6 +38,13 @@ impl CriomeApprovalBridge {
         verdict: &ApprovalVerdict,
     ) -> Result<meta_signal_criome::Output> {
         let criome_verdict = CriomeVerdict::from_decision(request_slot, verdict.decision);
+        self.submit_criome_verdict(&criome_verdict)
+    }
+
+    pub fn submit_criome_verdict(
+        &self,
+        criome_verdict: &CriomeVerdict,
+    ) -> Result<meta_signal_criome::Output> {
         self.submit_decision(
             criome_verdict.request_slot().clone(),
             criome_verdict.decision(),

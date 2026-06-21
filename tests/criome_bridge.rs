@@ -24,11 +24,10 @@ use signal_frame::{
     ExchangeIdentifier, ExchangeLane, LaneSequence, Reply, RequestPayload, SessionEpoch, SubReply,
 };
 use signal_mentci::{
-    AnswerText, ApprovalDecision, ApprovalQuestion, ApprovalSource, ApprovalVerdict, ContextBody,
-    ContextLabel, ExplanationText, InterfaceInterest, InterfaceObservationOpened,
-    InterfaceProjection, MentciFrame, MentciFrameBody, MentciReply, MentciRequest,
-    PendingQuestionsView, ProjectedInterfaceState, PromptText, QuestionContext, QuestionIdentifier,
-    QuestionProposal, RevisionCounter, SubscriberName, SubscriptionToken,
+    ApprovalDecision, ApprovalQuestion, ApprovalVerdict, InterfaceInterest,
+    InterfaceObservationOpened, InterfaceProjection, MentciFrame, MentciFrameBody, MentciReply,
+    MentciRequest, PendingQuestionsView, ProjectedInterfaceState, QuestionIdentifier,
+    RevisionCounter, SubscriberName, SubscriptionToken,
 };
 
 fn fixture_path(name: &str) -> std::path::PathBuf {
@@ -126,19 +125,6 @@ fn send_mentci(socket: &Path, request: MentciRequest) -> MentciReply {
         },
         other => panic!("expected Mentci reply frame, got {other:?}"),
     }
-}
-
-fn question_proposal() -> QuestionProposal {
-    QuestionProposal::new(
-        ApprovalSource::CriomeEscalation,
-        PromptText::new("authorize-spirit-head"),
-        Some(AnswerText::new("approve")),
-        ExplanationText::new("criome-escalated-policy"),
-        vec![QuestionContext {
-            label: ContextLabel::new("object"),
-            body: ContextBody::new("authorized-head-reference"),
-        }],
-    )
 }
 
 #[test]
@@ -412,45 +398,54 @@ fn mentci_closed_verdict_approves_criome_escalation_over_meta_socket() {
     assert_eq!(parked.parked()[0].request_slot, pending.request_slot);
     println!("PROOF (b) mentci bridge listed the parked criome request by slot");
 
-    let question = thread::scope(|scope| {
-        let server = scope.spawn(|| mentci.serve_next().expect("serve question"));
+    let observed = thread::scope(|scope| {
+        let criome_meta_server =
+            scope.spawn(|| criome.serve_next_meta().expect("serve parked list"));
+        let mentci_server = scope.spawn(|| mentci.serve_next().expect("serve observe"));
         let reply = send_mentci(
             &mentci_socket,
-            MentciRequest::PresentQuestion(question_proposal()),
+            MentciRequest::ObserveInterfaceState(signal_mentci::InterfaceStateObservation {
+                subscriber: SubscriberName::new("mentci-egui"),
+                interest: InterfaceInterest::PendingQuestions,
+            }),
         );
-        server.join().expect("join question server");
+        assert!(matches!(
+            criome_meta_server.join().expect("join parked list"),
+            meta_signal_criome::Output::ParkedAuthorizationSnapshot(_)
+        ));
+        mentci_server.join().expect("join observe server");
         reply
     });
-    let MentciReply::QuestionPresented(presented) = question else {
-        panic!("expected QuestionPresented, got {question:?}");
+    let MentciReply::InterfaceObservationOpened(opened) = observed else {
+        panic!("expected InterfaceObservationOpened, got {observed:?}");
     };
+    let questions = opened.state.pending_questions();
+    assert_eq!(questions.len(), 1);
+    assert_eq!(
+        questions[0].proposal.source.criome_slot(),
+        Some(&pending.request_slot)
+    );
     println!(
-        "PROOF (c) mentci daemon presented question {:?}",
-        presented.question
+        "PROOF (c) mentci daemon observed criome question {:?} carrying slot {:?}",
+        questions[0].identifier, pending.request_slot
     );
     let verdict = ApprovalVerdict {
-        question: presented.question,
+        question: questions[0].identifier.clone(),
         decision: ApprovalDecision::ApproveSuggestedAnswer,
         answered_by: SubscriberName::new("psyche"),
     };
-    thread::scope(|scope| {
-        let server = scope.spawn(|| mentci.serve_next().expect("serve verdict"));
+    let approved = thread::scope(|scope| {
+        let criome_meta_server =
+            scope.spawn(|| criome.serve_next_meta().expect("serve meta approval"));
+        let mentci_server = scope.spawn(|| mentci.serve_next().expect("serve verdict"));
         let reply = send_mentci(
             &mentci_socket,
             MentciRequest::AnswerQuestion(verdict.clone()),
         );
-        server.join().expect("join verdict server");
+        let meta_reply = criome_meta_server.join().expect("join meta server");
+        mentci_server.join().expect("join verdict server");
         assert!(matches!(reply, MentciReply::VerdictAccepted(_)));
-        println!("PROOF (d) mentci daemon accepted closed approve verdict");
-    });
-
-    let approved = thread::scope(|scope| {
-        let server = scope.spawn(|| criome.serve_next_meta().expect("serve meta approval"));
-        let reply = bridge
-            .submit_verdict(pending.request_slot.clone(), &verdict)
-            .expect("submit criome approval");
-        assert_eq!(server.join().expect("join meta server"), reply);
-        reply
+        meta_reply
     });
     let meta_signal_criome::Output::AuthorizationApprovalRecorded(approved) = approved else {
         panic!("expected AuthorizationApprovalRecorded, got {approved:?}");
@@ -460,7 +455,7 @@ fn mentci_closed_verdict_approves_criome_escalation_over_meta_socket() {
         approved.decision,
         meta_signal_criome::AuthorizationApprovalDecision::Approve
     );
-    println!("PROOF (e) mentci bridge submitted approval to criome meta socket by slot");
+    println!("PROOF (d) mentci daemon submitted approval to criome meta socket by slot");
 
     let snapshot = thread::scope(|scope| {
         let server = scope.spawn(|| criome.serve_next().expect("serve authorized observation"));

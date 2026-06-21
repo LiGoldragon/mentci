@@ -1,5 +1,6 @@
 use std::collections::{BTreeMap, BTreeSet};
 
+use mentci_lib::CriomeVerdict;
 use signal_criome::ParkedAuthorization;
 use signal_mentci::{
     AnswerProposal, AnswerProposalAdmitted, AnswerText, ApprovalDecision, ApprovalQuestion,
@@ -40,6 +41,12 @@ pub struct CriomeParkedApproval {
     parked: ParkedAuthorization,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct StateApplication {
+    reply: MentciReply,
+    criome_verdict: Option<CriomeVerdict>,
+}
+
 impl Default for State {
     fn default() -> Self {
         Self {
@@ -62,20 +69,32 @@ impl Default for State {
 
 impl State {
     pub fn apply(&mut self, request: MentciRequest) -> MentciReply {
+        self.apply_with_effects(request).into_reply()
+    }
+
+    pub fn apply_with_effects(&mut self, request: MentciRequest) -> StateApplication {
         match request {
-            MentciRequest::PresentQuestion(proposal) => self.present_question(proposal),
+            MentciRequest::PresentQuestion(proposal) => {
+                StateApplication::reply(self.present_question(proposal))
+            }
             MentciRequest::PushUpdate(update) => {
                 let identifier = update.identifier.clone();
                 self.apply_mutation(update.mutation);
-                MentciReply::UpdateAccepted(UpdateAccepted {
+                StateApplication::reply(MentciReply::UpdateAccepted(UpdateAccepted {
                     identifier,
                     revision: self.current_revision(),
-                })
+                }))
             }
-            MentciRequest::ObserveInterfaceState(observation) => self.observe(observation),
+            MentciRequest::ObserveInterfaceState(observation) => {
+                StateApplication::reply(self.observe(observation))
+            }
             MentciRequest::AnswerQuestion(verdict) => self.answer(verdict),
-            MentciRequest::ProposeEditedAnswer(proposal) => self.propose_answer(proposal),
-            MentciRequest::RetractInterfaceObservation(token) => self.retract(token),
+            MentciRequest::ProposeEditedAnswer(proposal) => {
+                StateApplication::reply(self.propose_answer(proposal))
+            }
+            MentciRequest::RetractInterfaceObservation(token) => {
+                StateApplication::reply(self.retract(token))
+            }
         }
     }
 
@@ -152,29 +171,41 @@ impl State {
         })
     }
 
-    fn answer(&mut self, verdict: ApprovalVerdict) -> MentciReply {
+    fn answer(&mut self, verdict: ApprovalVerdict) -> StateApplication {
         if matches!(verdict.decision, ApprovalDecision::Defer) {
-            return MentciReply::VerdictAccepted(signal_mentci::VerdictAccepted {
-                question: verdict.question,
-                decision: verdict.decision,
-                accepted_at: self.current_time(),
-            });
+            return StateApplication::reply(MentciReply::VerdictAccepted(
+                signal_mentci::VerdictAccepted {
+                    question: verdict.question,
+                    decision: verdict.decision,
+                    accepted_at: self.current_time(),
+                },
+            ));
         }
         let Some(index) = self
             .pending_questions
             .iter()
             .position(|question| question.identifier == verdict.question)
         else {
-            return MentciReply::Rejection(Rejection::new(RejectionReason::UnknownQuestion));
+            return StateApplication::reply(MentciReply::Rejection(Rejection::new(
+                RejectionReason::UnknownQuestion,
+            )));
         };
-        self.pending_questions.remove(index);
+        let answered = self.pending_questions.remove(index);
+        let criome_verdict = answered
+            .proposal
+            .source
+            .criome_slot()
+            .map(|slot| CriomeVerdict::from_decision(slot.clone(), verdict.decision));
         self.decisions.push(verdict.clone());
         self.bump_revision();
-        MentciReply::VerdictAccepted(signal_mentci::VerdictAccepted {
-            question: verdict.question,
-            decision: verdict.decision,
-            accepted_at: self.current_time(),
-        })
+        StateApplication::with_criome_verdict(
+            MentciReply::VerdictAccepted(signal_mentci::VerdictAccepted {
+                question: verdict.question,
+                decision: verdict.decision,
+                accepted_at: self.current_time(),
+            }),
+            criome_verdict,
+        )
     }
 
     fn propose_answer(&mut self, proposal: AnswerProposal) -> MentciReply {
@@ -281,6 +312,34 @@ impl State {
     }
 }
 
+impl StateApplication {
+    pub fn reply(reply: MentciReply) -> Self {
+        Self {
+            reply,
+            criome_verdict: None,
+        }
+    }
+
+    pub fn with_criome_verdict(reply: MentciReply, criome_verdict: Option<CriomeVerdict>) -> Self {
+        Self {
+            reply,
+            criome_verdict,
+        }
+    }
+
+    pub fn criome_verdict(&self) -> Option<&CriomeVerdict> {
+        self.criome_verdict.as_ref()
+    }
+
+    pub fn into_reply(self) -> MentciReply {
+        self.reply
+    }
+
+    pub fn into_parts(self) -> (MentciReply, Option<CriomeVerdict>) {
+        (self.reply, self.criome_verdict)
+    }
+}
+
 impl CriomeParkedApproval {
     pub fn new(parked: ParkedAuthorization) -> Self {
         Self { parked }
@@ -295,7 +354,7 @@ impl CriomeParkedApproval {
         let contract = format!("{:?}", self.parked.evaluation.contract);
         let object = &self.parked.evaluation.object;
         signal_mentci::QuestionProposal::new(
-            ApprovalSource::CriomeEscalation,
+            ApprovalSource::CriomeEscalation(self.parked.request_slot.clone()),
             PromptText::new(format!("Authorize criome request {slot}")),
             Some(AnswerText::new("approve")),
             ExplanationText::new("criome parked an authorization request in ClientApproval mode"),

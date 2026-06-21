@@ -10,7 +10,7 @@ use signal_mentci::{
 
 fn question_proposal() -> QuestionProposal {
     QuestionProposal::new(
-        ApprovalSource::CriomeEscalation,
+        ApprovalSource::AgentQuestion,
         signal_mentci::PromptText::new("approve-record"),
         Some(AnswerText::new("approve")),
         ExplanationText::new("agent-suggested-answer"),

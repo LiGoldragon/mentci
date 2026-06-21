@@ -378,7 +378,7 @@ dependencies = [
 [[package]]
 name = "mentci-lib"
 version = "0.1.0"
-source = "git+https://github.com/LiGoldragon/mentci-lib?branch=main#0731c374f9c03a70f564b22ce9e90d2cef3461c0"
+source = "git+https://github.com/LiGoldragon/mentci-lib?branch=main#f628b371e6860fa88a25de873f6415e98f125909"
 dependencies = [
  "meta-signal-criome",
  "meta-signal-mentci",
@@ -447,8 +447,8 @@ dependencies = [
 
 [[package]]
 name = "nota-next"
-version = "0.5.0"
-source = "git+https://github.com/LiGoldragon/nota-next.git?branch=main#c43d04a159e90314a0094b61ace66053371cc247"
+version = "0.5.1"
+source = "git+https://github.com/LiGoldragon/nota-next.git?branch=main#f94b5462a4456b3651a93c40dc7c19a287426213"
 dependencies = [
  "nota-next-derive",
  "rkyv",
@@ -457,7 +457,7 @@ dependencies = [
 [[package]]
 name = "nota-next-derive"
 version = "0.3.0"
-source = "git+https://github.com/LiGoldragon/nota-next.git?branch=main#c43d04a159e90314a0094b61ace66053371cc247"
+source = "git+https://github.com/LiGoldragon/nota-next.git?branch=main#f94b5462a4456b3651a93c40dc7c19a287426213"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -758,11 +758,12 @@ dependencies = [
 [[package]]
 name = "signal-mentci"
 version = "0.1.0"
-source = "git+https://github.com/LiGoldragon/signal-mentci?branch=main#58dd5a26d9b2e64a98fb64d30ac44ba0d3febe8e"
+source = "git+https://github.com/LiGoldragon/signal-mentci?branch=main#eab23054f42e897c48bc1e597adbc31519a3b87e"
 dependencies = [
  "nota-next",
  "rkyv",
  "schema-rust-next",
+ "signal-criome",
  "signal-frame",
  "thiserror",
 ]

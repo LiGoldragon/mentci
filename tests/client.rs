@@ -55,7 +55,7 @@ fn exchange() -> ExchangeIdentifier {
 
 fn question_proposal() -> QuestionProposal {
     QuestionProposal::new(
-        ApprovalSource::CriomeEscalation,
+        ApprovalSource::AgentQuestion,
         PromptText::new("approve-spirit-record"),
         Some(AnswerText::new("approve")),
         ExplanationText::new("agent-proposed-answer"),
