@@ -39,6 +39,10 @@ subscribe to projected state and send typed responses.
   criome's parked submissions over the meta socket and approves each by its
   `AuthorizationRequestSlot`, rather than re-supplying the full evaluation
   by value. Per Spirit t00s.
+- Spirit's non-blocking criome authorization emits are tracing scaffold, not a
+  separate production-watch channel. Mentci observes those criome requests as
+  part of the component tracing/observability story and can later use them as
+  the input surface for mentci-mediated acceptance gating.
 - Thin clients do not talk to criome directly. They submit ordinary
   `signal-mentci` answers to the mentci daemon; the daemon is the sole
   criome-facing approver when configured with a `MetaCriome` socket. A daemon
