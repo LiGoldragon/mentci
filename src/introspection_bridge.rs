@@ -6,9 +6,10 @@ use signal_frame::{
     ExchangeIdentifier, ExchangeLane, LaneSequence, Reply, RequestPayload, SessionEpoch, SubReply,
 };
 use signal_introspect::{
-    ComponentSnapshot, DeliveryTrace, EngineSnapshot, IntrospectionDenied, IntrospectionFrame,
-    IntrospectionFrameBody, IntrospectionReply, IntrospectionRequest, IntrospectionUnimplemented,
-    PrototypeWitness, PrototypeWitnessQuery,
+    ComponentSnapshot, ComponentTrace, ComponentTraceQuery, DeliveryTrace, EngineSnapshot,
+    IntrospectionDenied, IntrospectionFrame, IntrospectionFrameBody, IntrospectionReply,
+    IntrospectionRequest, IntrospectionTarget, IntrospectionUnimplemented, PrototypeWitness,
+    PrototypeWitnessQuery,
 };
 use signal_mentci::{ContextBody, PaneContent, PaneLabel};
 use signal_persona::EngineIdentifier;
@@ -42,9 +43,12 @@ impl IntrospectionBridge {
         }
     }
 
-    pub fn prototype_witness_pane(&self) -> Result<IntrospectionPane> {
-        self.submit(IntrospectionObservation::prototype_witness())
-            .map(IntrospectionPane::from)
+    pub fn prototype_overview_pane(&self) -> Result<IntrospectionPane> {
+        let replies = vec![
+            self.submit(IntrospectionObservation::prototype_witness())?,
+            self.submit(IntrospectionObservation::prototype_signal_trace())?,
+        ];
+        Ok(IntrospectionPane::from_replies(replies))
     }
 
     fn submit(&self, observation: IntrospectionObservation) -> Result<IntrospectionReply> {
@@ -73,6 +77,16 @@ impl IntrospectionObservation {
             request: IntrospectionRequest::PrototypeWitness(PrototypeWitnessQuery {
                 engine: EngineIdentifier::new("prototype"),
             }),
+        }
+    }
+
+    fn prototype_signal_trace() -> Self {
+        Self {
+            request: IntrospectionRequest::ComponentTrace(ComponentTraceQuery::new(
+                EngineIdentifier::new("prototype"),
+                IntrospectionTarget::Signal,
+                None,
+            )),
         }
     }
 
@@ -110,6 +124,16 @@ impl IntrospectionPane {
         }
     }
 
+    fn from_replies(replies: Vec<IntrospectionReply>) -> Self {
+        let rendered = replies
+            .into_iter()
+            .map(IntrospectionReplyRendering::from)
+            .map(IntrospectionReplyRendering::into_body)
+            .collect::<Vec<_>>()
+            .join(" ");
+        Self::new(format!("(IntrospectOverview {rendered})"))
+    }
+
     fn wrap(head: &str, payload: String) -> String {
         format!("({head} {payload})")
     }
@@ -117,14 +141,33 @@ impl IntrospectionPane {
 
 impl From<IntrospectionReply> for IntrospectionPane {
     fn from(reply: IntrospectionReply) -> Self {
-        Self::new(match reply {
+        Self::new(IntrospectionReplyRendering::from(reply).into_body())
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct IntrospectionReplyRendering {
+    body: String,
+}
+
+impl IntrospectionReplyRendering {
+    fn into_body(self) -> String {
+        self.body
+    }
+}
+
+impl From<IntrospectionReply> for IntrospectionReplyRendering {
+    fn from(reply: IntrospectionReply) -> Self {
+        let body = match reply {
             IntrospectionReply::EngineSnapshot(snapshot) => snapshot.render_payload(),
             IntrospectionReply::ComponentSnapshot(snapshot) => snapshot.render_payload(),
             IntrospectionReply::DeliveryTrace(trace) => trace.render_payload(),
+            IntrospectionReply::ComponentTrace(trace) => trace.render_payload(),
             IntrospectionReply::PrototypeWitness(witness) => witness.render_payload(),
             IntrospectionReply::Unimplemented(unimplemented) => unimplemented.render_payload(),
             IntrospectionReply::Denied(denied) => denied.render_payload(),
-        })
+        };
+        Self { body }
     }
 }
 
@@ -147,6 +190,12 @@ impl IntrospectionPanePayload for ComponentSnapshot {
 impl IntrospectionPanePayload for DeliveryTrace {
     fn render_payload(&self) -> String {
         IntrospectionPane::wrap("DeliveryTrace", self.to_nota())
+    }
+}
+
+impl IntrospectionPanePayload for ComponentTrace {
+    fn render_payload(&self) -> String {
+        IntrospectionPane::wrap("ComponentTrace", self.to_nota())
     }
 }
 

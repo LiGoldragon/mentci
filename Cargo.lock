@@ -761,7 +761,7 @@ dependencies = [
 [[package]]
 name = "signal-introspect"
 version = "0.1.0"
-source = "git+https://github.com/LiGoldragon/signal-introspect.git?branch=main#47a4f76c4c0f55bfaad103f9d354b285c2961efa"
+source = "git+https://github.com/LiGoldragon/signal-introspect.git?branch=main#a9269952936840c0333a3f30e290ef454c79303a"
 dependencies = [
  "nota-next",
  "rkyv",
@@ -769,6 +769,7 @@ dependencies = [
  "signal-message",
  "signal-persona",
  "thiserror",
+ "triad-runtime",
 ]
 
 [[package]]

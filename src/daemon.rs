@@ -185,7 +185,7 @@ impl BoundDaemon {
         }
         self.introspection_bridge
             .as_ref()
-            .map(|bridge| match bridge.prototype_witness_pane() {
+            .map(|bridge| match bridge.prototype_overview_pane() {
                 Ok(pane) => pane,
                 Err(error) => IntrospectionPane::from_error(&error),
             })
@@ -267,8 +267,9 @@ mod tests {
         ExchangeIdentifier, ExchangeLane, LaneSequence, RequestPayload, SessionEpoch,
     };
     use signal_introspect::{
-        IntrospectionFrame, IntrospectionFrameBody, IntrospectionReply, IntrospectionRequest,
-        PrototypeWitness, PrototypeWitnessQuery,
+        ComponentTrace, ComponentTraceQuery, IntrospectionFrame, IntrospectionFrameBody,
+        IntrospectionReply, IntrospectionRequest, IntrospectionTarget, PrototypeWitness,
+        PrototypeWitnessQuery,
     };
     use signal_mentci::{
         InterfaceInterest, InterfaceMutation, InterfaceObservationOpened, InterfaceProjection,
@@ -381,40 +382,64 @@ mod tests {
     }
 
     #[test]
-    fn observe_projects_introspection_witness_into_daemon_pane() {
+    fn observe_projects_introspection_overview_into_daemon_pane() {
         let directory = tempfile::tempdir().expect("tempdir");
         let introspect_socket = directory.path().join("introspect.socket");
         let listener = std::os::unix::net::UnixListener::bind(&introspect_socket)
             .expect("bind fake introspect");
         let server = thread::spawn(move || {
-            let (mut stream, _address) = listener.accept().expect("accept introspect");
-            let codec = FrameCodec::new();
-            let frame = codec
-                .read_introspection_frame(&mut stream)
-                .expect("read introspect request");
-            match frame.into_body() {
-                IntrospectionFrameBody::Request { request, exchange } => {
-                    assert!(matches!(
-                        request.payloads.into_head(),
-                        IntrospectionRequest::PrototypeWitness(PrototypeWitnessQuery { .. })
-                    ));
-                    let reply = IntrospectionFrame::new(IntrospectionFrameBody::Reply {
-                        exchange,
-                        reply: Reply::committed(NonEmpty::single(SubReply::Ok(
-                            IntrospectionReply::PrototypeWitness(PrototypeWitness {
+            for expected_request in 0..2 {
+                let (mut stream, _address) = listener.accept().expect("accept introspect");
+                let codec = FrameCodec::new();
+                let frame = codec
+                    .read_introspection_frame(&mut stream)
+                    .expect("read introspect request");
+                match frame.into_body() {
+                    IntrospectionFrameBody::Request { request, exchange } => {
+                        let reply = match (expected_request, request.payloads.into_head()) {
+                            (
+                                0,
+                                IntrospectionRequest::PrototypeWitness(PrototypeWitnessQuery {
+                                    ..
+                                }),
+                            ) => IntrospectionReply::PrototypeWitness(PrototypeWitness {
                                 engine: EngineIdentifier::new("prototype"),
                                 manager_seen: None,
                                 router_seen: None,
                                 terminal_seen: None,
                                 delivery_status: None,
                             }),
-                        ))),
-                    });
-                    codec
-                        .write_introspection_frame(&mut stream, &reply)
-                        .expect("write introspect reply");
+                            (
+                                1,
+                                IntrospectionRequest::ComponentTrace(ComponentTraceQuery {
+                                    engine,
+                                    component,
+                                    event_name,
+                                }),
+                            ) => {
+                                assert_eq!(engine, EngineIdentifier::new("prototype"));
+                                assert_eq!(component, IntrospectionTarget::Signal);
+                                assert_eq!(event_name, None);
+                                IntrospectionReply::ComponentTrace(ComponentTrace::new(
+                                    EngineIdentifier::new("prototype"),
+                                    IntrospectionTarget::Signal,
+                                    Vec::new(),
+                                ))
+                            }
+                            (index, other) => {
+                                panic!("unexpected introspect request {index}: {other:?}")
+                            }
+                        };
+                        let reply = IntrospectionFrame::new(IntrospectionFrameBody::Reply {
+                            exchange,
+                            reply: Reply::committed(NonEmpty::single(SubReply::Ok(reply))),
+                        });
+                        codec
+                            .write_introspection_frame(&mut stream, &reply)
+                            .expect("write introspect reply");
+                    }
+                    other => panic!("expected introspect request, got {other:?}"),
                 }
-                other => panic!("expected introspect request, got {other:?}"),
             }
         });
         let daemon = Daemon::from_configuration(introspect_configuration(
@@ -455,6 +480,7 @@ mod tests {
                             assert_eq!(full.panes().len(), 1);
                             assert_eq!(full.panes()[0].pane.as_str(), "introspect");
                             assert!(full.panes()[0].body.as_str().contains("PrototypeWitness"));
+                            assert!(full.panes()[0].body.as_str().contains("ComponentTrace"));
                         }
                         other => panic!("expected full projection, got {other:?}"),
                     },
