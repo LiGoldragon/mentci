@@ -17,10 +17,11 @@ use meta_signal_mentci::{
 };
 use signal_criome::{
     AttestedMoment, AttestedMomentProposition, AuthorizationEvaluation, AuthorizationMode,
-    AuthorizationRequestSlot, AuthorizedObjectInterest, AuthorizedObjectKind,
-    AuthorizedObjectObservation, ComponentKind, CriomeReply, CriomeRequest, EvaluationDecision,
-    Evidence, Identity, OperationDigest, ParkedAuthorization, RequiredSignatureThreshold,
-    TimeWindow, TimestampNanos,
+    AuthorizationRequestSlot, AuthorizationScope, AuthorizationStatus, AuthorizedObjectInterest,
+    AuthorizedObjectKind, AuthorizedObjectObservation, ComponentKind, ContractName,
+    ContractOperationHead, CriomeReply, CriomeRequest, EvaluationDecision, Evidence, Identity,
+    ObjectDigest, OperationDigest, ParkedAuthorization, ReplayNonce, RequiredSignatureThreshold,
+    SignalCallAuthorization, SignatureScheme, TimeWindow, TimestampNanos,
 };
 use signal_frame::{
     ExchangeIdentifier, ExchangeLane, LaneSequence, Reply, RequestPayload, SessionEpoch, SubReply,
@@ -80,6 +81,18 @@ fn unproven_evidence(seed: &[u8]) -> Evidence {
         ),
         Vec::new(),
         Vec::new(),
+    )
+}
+
+fn spirit_signal_authorization(seed: &[u8], nonce: &str) -> SignalCallAuthorization {
+    SignalCallAuthorization::new(
+        ObjectDigest::from_bytes(seed),
+        ContractName::new("spirit-local-head"),
+        ContractOperationHead::new("AuthorizeHead"),
+        AuthorizationScope::new("spirit-head-fanout"),
+        Identity::host("spirit".to_string()),
+        ReplayNonce::new(nonce),
+        None,
     )
 }
 
@@ -437,6 +450,178 @@ fn mentci_observe_picks_up_parked_criome_client_approval_request() {
             },
         })
     );
+
+    mentci.shutdown().expect("shutdown mentci");
+    criome.shutdown().expect("shutdown criome");
+}
+
+#[test]
+fn mentci_observes_spirit_signal_authorization_bypassing_guardian() {
+    let workspace = fixture_path("spirit-signal-authorization");
+    let criome_socket = workspace.join("criome.sock");
+    let criome_meta_socket = workspace.join("criome-meta.sock");
+    let mentci_socket = workspace.join("mentci.sock");
+    let store = StoreLocation::new(workspace.join("criome.sema"));
+    let criome = CriomeDaemon::new(&criome_socket, store.clone())
+        .with_meta_socket(&criome_meta_socket)
+        .bind()
+        .expect("bind criome");
+    let mentci =
+        Daemon::from_configuration(mentci_configuration(&mentci_socket, &criome_meta_socket))
+            .expect("mentci daemon")
+            .bind()
+            .expect("bind mentci");
+    wait_for_socket(&criome_socket);
+    wait_for_socket(&criome_meta_socket);
+    wait_for_socket(&mentci_socket);
+
+    let bridge = CriomeApprovalBridge::new(&criome_meta_socket);
+    thread::scope(|scope| {
+        let server = scope.spawn(|| {
+            criome
+                .serve_next_meta()
+                .expect("serve client approval mode")
+        });
+        let configuration = CriomeDaemonConfiguration::new(
+            criome_socket.display().to_string(),
+            store.as_path().display().to_string(),
+        )
+        .with_meta_socket_path(criome_meta_socket.display().to_string())
+        .with_authorization_mode(AuthorizationMode::ClientApproval);
+        let reply = bridge.configure(configuration).expect("configure criome");
+        assert_eq!(server.join().expect("join meta configure server"), reply);
+    });
+
+    let authorization =
+        spirit_signal_authorization(b"spirit-record-head-through-criome", "spirit-nonce-1");
+    let request_digest = authorization.request_digest.clone();
+    let pending = thread::scope(|scope| {
+        let server = scope.spawn(|| criome.serve_next().expect("serve spirit signal park"));
+        let reply = CriomeClient::new(&criome_socket)
+            .send(CriomeRequest::AuthorizeSignalCall(authorization.clone()))
+            .expect("submit spirit signal authorization");
+        assert_eq!(server.join().expect("join spirit signal park"), reply);
+        reply
+    });
+    let CriomeReply::AuthorizationPending(pending) = pending else {
+        panic!("expected AuthorizationPending, got {pending:?}");
+    };
+    assert_eq!(pending.request_digest, request_digest);
+    println!(
+        "PROOF (a) a spirit-shaped AuthorizeSignalCall bypasses the guardian and parks in criome"
+    );
+
+    let observed = thread::scope(|scope| {
+        let criome_meta_server =
+            scope.spawn(|| criome.serve_next_meta().expect("serve parked list"));
+        let mentci_server = scope.spawn(|| mentci.serve_next().expect("serve observe"));
+        let reply = send_mentci(
+            &mentci_socket,
+            MentciRequest::ObserveInterfaceState(signal_mentci::InterfaceStateObservation {
+                subscriber: SubscriberName::new("mentci-egui"),
+                interest: InterfaceInterest::PendingQuestions,
+            }),
+        );
+        assert!(matches!(
+            criome_meta_server.join().expect("join parked list"),
+            meta_signal_criome::Output::ParkedAuthorizationSnapshot(_)
+        ));
+        mentci_server.join().expect("join observe server");
+        reply
+    });
+    let MentciReply::InterfaceObservationOpened(opened) = observed else {
+        panic!("expected InterfaceObservationOpened, got {observed:?}");
+    };
+    let questions = opened.state.pending_questions();
+    assert_eq!(questions.len(), 1);
+    let question = &questions[0];
+    assert_eq!(
+        question.proposal.source.criome_slot(),
+        Some(&pending.request_slot)
+    );
+    assert!(
+        question
+            .proposal
+            .context()
+            .iter()
+            .any(|context| context.body.as_str() == "signal-call-authorization")
+    );
+    assert!(
+        question
+            .proposal
+            .context()
+            .iter()
+            .any(|context| context.body.as_str() == "AuthorizeHead")
+    );
+    println!(
+        "PROOF (b) mentci observes the parked spirit request as question {:?} carrying slot {:?}",
+        question.identifier, pending.request_slot
+    );
+
+    let verdict = ApprovalVerdict {
+        question: question.identifier.clone(),
+        decision: ApprovalDecision::ApproveSuggestedAnswer,
+        answered_by: SubscriberName::new("psyche"),
+    };
+    let approved = thread::scope(|scope| {
+        let criome_meta_server =
+            scope.spawn(|| criome.serve_next_meta().expect("serve meta approval"));
+        let mentci_server = scope.spawn(|| mentci.serve_next().expect("serve verdict"));
+        let reply = send_mentci(&mentci_socket, MentciRequest::AnswerQuestion(verdict));
+        let meta_reply = criome_meta_server.join().expect("join meta approval");
+        mentci_server.join().expect("join verdict server");
+        assert!(matches!(reply, MentciReply::VerdictAccepted(_)));
+        meta_reply
+    });
+    let meta_signal_criome::Output::AuthorizationApprovalRecorded(approved) = approved else {
+        panic!("expected AuthorizationApprovalRecorded, got {approved:?}");
+    };
+    assert_eq!(approved.request_slot, pending.request_slot);
+    assert_eq!(
+        approved.decision,
+        meta_signal_criome::AuthorizationApprovalDecision::Approve
+    );
+    println!("PROOF (c) mentci answers through the daemon, and criome records approval by slot");
+
+    let snapshot = thread::scope(|scope| {
+        let server = scope.spawn(|| {
+            criome
+                .serve_next()
+                .expect("serve authorization observation")
+        });
+        let reply = CriomeClient::new(&criome_socket)
+            .send(CriomeRequest::ObserveAuthorization(
+                signal_criome::AuthorizationObservation::new(pending.request_slot.clone()),
+            ))
+            .expect("observe authorization");
+        assert_eq!(
+            server.join().expect("join authorization observation"),
+            reply
+        );
+        reply
+    });
+    let CriomeReply::AuthorizationObservationSnapshot(snapshot) = snapshot else {
+        panic!("expected AuthorizationObservationSnapshot, got {snapshot:?}");
+    };
+    let states = snapshot.into_states();
+    assert_eq!(states.len(), 1);
+    let state = &states[0];
+    assert_eq!(state.status, AuthorizationStatus::Granted);
+    assert_eq!(state.signal_authorization(), Some(&authorization));
+    let grant = state.grant().expect("criome approval stores signed grant");
+    assert_eq!(grant.request_slot, pending.request_slot);
+    assert_eq!(grant.authorized_object_digest, request_digest);
+    assert_eq!(grant.issued_by, Identity::host("criome".to_string()));
+    assert_eq!(grant.signatures().len(), 1);
+    assert_eq!(
+        grant.signatures()[0].envelope.scheme,
+        SignatureScheme::Bls12_381MinPk
+    );
+    assert!(
+        !grant.signatures()[0].envelope.signature.as_str().is_empty(),
+        "criome approval signs the grant"
+    );
+    println!("PROOF (d) criome signs a real AuthorizationGrant after mentci approval");
 
     mentci.shutdown().expect("shutdown mentci");
     criome.shutdown().expect("shutdown criome");
