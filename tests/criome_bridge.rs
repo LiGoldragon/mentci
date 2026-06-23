@@ -420,10 +420,7 @@ fn mentci_observe_picks_up_parked_criome_client_approval_request() {
         reply
     });
 
-    let parked = ParkedAuthorization {
-        request_slot: pending.request_slot,
-        evaluation,
-    };
+    let parked = ParkedAuthorization::from_evaluation(pending.request_slot, evaluation);
     let expected_question = ApprovalQuestion {
         identifier: QuestionIdentifier::new("question-1"),
         proposal: mentci::state::CriomeParkedApproval::new(parked).into_question_proposal(),

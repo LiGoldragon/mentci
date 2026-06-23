@@ -430,30 +430,77 @@ impl CriomeParkedApproval {
 
     pub fn into_question_proposal(self) -> signal_mentci::QuestionProposal {
         let slot = self.parked.request_slot.payload().clone();
-        let contract = format!("{:?}", self.parked.evaluation.contract);
-        let object = &self.parked.evaluation.object;
+        let mut context = vec![QuestionContext {
+            label: ContextLabel::new("criome-request-slot"),
+            body: ContextBody::new(slot.clone()),
+        }];
+        let explanation = self.explanation_with_context(&mut context);
         signal_mentci::QuestionProposal::new(
             ApprovalSource::CriomeEscalation(self.parked.request_slot.clone()),
             PromptText::new(format!("Authorize criome request {slot}")),
             Some(AnswerText::new("approve")),
-            ExplanationText::new("criome parked an authorization request in ClientApproval mode"),
-            vec![
+            explanation,
+            context,
+        )
+    }
+
+    fn explanation_with_context(&self, context: &mut Vec<QuestionContext>) -> ExplanationText {
+        if let Some(evaluation) = self.parked.evaluation() {
+            let object = &evaluation.object;
+            context.extend([
                 QuestionContext {
-                    label: ContextLabel::new("criome-request-slot"),
-                    body: ContextBody::new(slot),
+                    label: ContextLabel::new("criome-kind"),
+                    body: ContextBody::new("authorization-evaluation"),
                 },
                 QuestionContext {
                     label: ContextLabel::new("contract"),
-                    body: ContextBody::new(contract),
+                    body: ContextBody::new(evaluation.contract.as_str()),
                 },
                 QuestionContext {
                     label: ContextLabel::new("object"),
                     body: ContextBody::new(format!(
-                        "{:?}:{:?}:{:?}",
-                        object.component, object.kind, object.digest
+                        "{:?}:{:?}:{}",
+                        object.component,
+                        object.kind,
+                        object.digest.as_str()
                     )),
                 },
-            ],
-        )
+            ]);
+            return ExplanationText::new(
+                "criome parked an authorization evaluation in ClientApproval mode",
+            );
+        }
+        if let Some(authorization) = self.parked.signal_authorization() {
+            context.extend([
+                QuestionContext {
+                    label: ContextLabel::new("criome-kind"),
+                    body: ContextBody::new("signal-call-authorization"),
+                },
+                QuestionContext {
+                    label: ContextLabel::new("request-digest"),
+                    body: ContextBody::new(authorization.request_digest.as_str()),
+                },
+                QuestionContext {
+                    label: ContextLabel::new("contract"),
+                    body: ContextBody::new(authorization.contract.as_str()),
+                },
+                QuestionContext {
+                    label: ContextLabel::new("operation"),
+                    body: ContextBody::new(authorization.operation.as_str()),
+                },
+                QuestionContext {
+                    label: ContextLabel::new("scope"),
+                    body: ContextBody::new(authorization.scope.as_str()),
+                },
+                QuestionContext {
+                    label: ContextLabel::new("requester"),
+                    body: ContextBody::new(format!("{:?}", authorization.requester)),
+                },
+            ]);
+            return ExplanationText::new(
+                "criome parked a signal-call authorization in ClientApproval mode",
+            );
+        }
+        ExplanationText::new("criome parked an authorization request without a projected payload")
     }
 }

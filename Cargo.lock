@@ -115,7 +115,7 @@ dependencies = [
 [[package]]
 name = "criome"
 version = "0.2.0"
-source = "git+https://github.com/LiGoldragon/criome?branch=main#245f044188b1f765b268ec6e24c6b0e69b1c4db0"
+source = "git+https://github.com/LiGoldragon/criome?branch=main#86dec2fb4a6a8dcbd5371f0f912227f15f41b82a"
 dependencies = [
  "blake3",
  "blst",
@@ -395,7 +395,7 @@ dependencies = [
 [[package]]
 name = "meta-signal-criome"
 version = "0.2.0"
-source = "git+https://github.com/LiGoldragon/meta-signal-criome?branch=main#4940e4b13c573b72bb0492ae53510244f92d7653"
+source = "git+https://github.com/LiGoldragon/meta-signal-criome?branch=main#306c9a3d4a21c8128bbee6ae160b17b1f6689a82"
 dependencies = [
  "nota-next",
  "rkyv",
@@ -725,7 +725,7 @@ checksum = "f8fadd59c855ef2080decdef8ff161eb6661b86933c9d82e5ba29dc602a55aba"
 [[package]]
 name = "signal-criome"
 version = "0.2.0"
-source = "git+https://github.com/LiGoldragon/signal-criome?branch=main#ff9ac192b21cc47a37a2722075bf7d76406943fe"
+source = "git+https://github.com/LiGoldragon/signal-criome?branch=main#2d06010bf5f299ca1ddcac5d4a90ad3929586f96"
 dependencies = [
  "blake3",
  "blst",

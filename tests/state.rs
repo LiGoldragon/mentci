@@ -1,5 +1,8 @@
 use mentci::state::{State, StateApplicationContext};
-use signal_criome::AuthorizationRequestSlot;
+use signal_criome::{
+    AuthorizationRequestSlot, AuthorizationScope, ContractName, ContractOperationHead, Identity,
+    ObjectDigest, ParkedAuthorization, ReplayNonce, SignalCallAuthorization,
+};
 use signal_mentci::{
     AnswerProposal, AnswerProposalAdmitted, AnswerText, ApprovalDecision, ApprovalQuestion,
     ApprovalSource, ApprovalVerdict, ContextBody, ContextLabel, ExplanationText, InterfaceInterest,
@@ -41,6 +44,18 @@ fn question_identifier() -> QuestionIdentifier {
 
 fn psyche() -> SubscriberName {
     SubscriberName::new("psyche")
+}
+
+fn signal_call_authorization() -> SignalCallAuthorization {
+    SignalCallAuthorization::new(
+        ObjectDigest::from_bytes(b"spirit-record-request"),
+        ContractName::new("signal-spirit"),
+        ContractOperationHead::new("Record"),
+        AuthorizationScope::new("spirit-record"),
+        Identity::developer("operator".to_string()),
+        ReplayNonce::new("signal-call-nonce-1"),
+        None,
+    )
 }
 
 #[test]
@@ -124,6 +139,50 @@ fn full_projection_mirrors_criome_access_mode_from_context() {
         read_opened.state.criome_access(),
         Some(signal_mentci::CriomeAccess::ReadOnly)
     );
+}
+
+#[test]
+fn absorbing_signal_call_parked_authorization_projects_question_context() {
+    let mut state = State::default();
+    state.absorb_criome_parked_authorizations(vec![
+        ParkedAuthorization::from_signal_authorization(
+            AuthorizationRequestSlot::new("authorization-slot-1"),
+            signal_call_authorization(),
+        ),
+    ]);
+
+    let reply = state.apply(MentciRequest::ObserveInterfaceState(
+        InterfaceStateObservation {
+            subscriber: SubscriberName::new("status-bar"),
+            interest: InterfaceInterest::PendingQuestions,
+        },
+    ));
+
+    let MentciReply::InterfaceObservationOpened(opened) = reply else {
+        panic!("expected opened observation");
+    };
+    let InterfaceProjection::PendingQuestionsProjection(pending) = opened.state.projection else {
+        panic!("expected pending projection");
+    };
+    let questions = pending.questions();
+    assert_eq!(questions.len(), 1);
+    let question = &questions[0];
+    assert_eq!(
+        question.proposal.source.criome_slot(),
+        Some(&AuthorizationRequestSlot::new("authorization-slot-1"))
+    );
+    assert_eq!(
+        question.proposal.explanation,
+        ExplanationText::new("criome parked a signal-call authorization in ClientApproval mode")
+    );
+    assert!(question.proposal.context().iter().any(|context| {
+        context.label == ContextLabel::new("criome-kind")
+            && context.body == ContextBody::new("signal-call-authorization")
+    }));
+    assert!(question.proposal.context().iter().any(|context| {
+        context.label == ContextLabel::new("contract")
+            && context.body == ContextBody::new("signal-spirit")
+    }));
 }
 
 #[test]
