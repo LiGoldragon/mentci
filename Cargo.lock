@@ -395,7 +395,7 @@ dependencies = [
 [[package]]
 name = "meta-signal-criome"
 version = "0.2.0"
-source = "git+https://github.com/LiGoldragon/meta-signal-criome?branch=main#306c9a3d4a21c8128bbee6ae160b17b1f6689a82"
+source = "git+https://github.com/LiGoldragon/meta-signal-criome?branch=main#47a27e84cc3f4ac08569ac476ac40d97054280f8"
 dependencies = [
  "nota-next",
  "rkyv",
@@ -408,7 +408,7 @@ dependencies = [
 [[package]]
 name = "meta-signal-mentci"
 version = "0.1.0"
-source = "git+https://github.com/LiGoldragon/meta-signal-mentci?branch=main#5a22f9fe0b38fc45b13cd58922cee327ad123a0a"
+source = "git+https://github.com/LiGoldragon/meta-signal-mentci?branch=main#3bdfbe2a08c98052c781eb3dc5b3f8b5b7db9f45"
 dependencies = [
  "nota-next",
  "rkyv",
@@ -451,7 +451,7 @@ dependencies = [
 [[package]]
 name = "nota-next"
 version = "0.5.1"
-source = "git+https://github.com/LiGoldragon/nota-next.git?branch=main#f94b5462a4456b3651a93c40dc7c19a287426213"
+source = "git+https://github.com/LiGoldragon/nota-next.git?branch=main#4642807e40306a382acbcdcb7c61b5802c7e22f5"
 dependencies = [
  "nota-next-derive",
  "rkyv",
@@ -460,7 +460,7 @@ dependencies = [
 [[package]]
 name = "nota-next-derive"
 version = "0.3.0"
-source = "git+https://github.com/LiGoldragon/nota-next.git?branch=main#f94b5462a4456b3651a93c40dc7c19a287426213"
+source = "git+https://github.com/LiGoldragon/nota-next.git?branch=main#4642807e40306a382acbcdcb7c61b5802c7e22f5"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -628,7 +628,7 @@ checksum = "b39cdef0fa800fc44525c84ccb54a029961a8215f9619753635a9c0d2538d46d"
 [[package]]
 name = "schema-cc"
 version = "0.1.0"
-source = "git+https://github.com/LiGoldragon/schema-next.git?branch=main#4b7e830a7001708737a617bd8eedac8002cc1fc6"
+source = "git+https://github.com/LiGoldragon/schema-next.git?branch=main#0fc7970aaeb1a031f78d1a7ef3201f2004b6c0c3"
 dependencies = [
  "nota-next",
  "prettyplease",
@@ -641,7 +641,7 @@ dependencies = [
 [[package]]
 name = "schema-next"
 version = "0.2.0"
-source = "git+https://github.com/LiGoldragon/schema-next.git?branch=main#4b7e830a7001708737a617bd8eedac8002cc1fc6"
+source = "git+https://github.com/LiGoldragon/schema-next.git?branch=main#0fc7970aaeb1a031f78d1a7ef3201f2004b6c0c3"
 dependencies = [
  "blake3",
  "nota-next",
@@ -653,7 +653,7 @@ dependencies = [
 [[package]]
 name = "schema-rust-next"
 version = "0.5.3"
-source = "git+https://github.com/LiGoldragon/schema-rust-next.git?branch=main#90d853c33ade57cfafca5942dd0790a3302a605f"
+source = "git+https://github.com/LiGoldragon/schema-rust-next.git?branch=main#e4ac3baf37121b8d7516bc5cdc6bdf026aa5b282"
 dependencies = [
  "prettyplease",
  "proc-macro2",
@@ -725,7 +725,7 @@ checksum = "f8fadd59c855ef2080decdef8ff161eb6661b86933c9d82e5ba29dc602a55aba"
 [[package]]
 name = "signal-criome"
 version = "0.2.0"
-source = "git+https://github.com/LiGoldragon/signal-criome?branch=main#2d06010bf5f299ca1ddcac5d4a90ad3929586f96"
+source = "git+https://github.com/LiGoldragon/signal-criome?branch=main#e08b07b7a572779d6cdbd9fd4eb0b8a2aeaf3526"
 dependencies = [
  "blake3",
  "blst",
@@ -775,7 +775,7 @@ dependencies = [
 [[package]]
 name = "signal-mentci"
 version = "0.1.0"
-source = "git+https://github.com/LiGoldragon/signal-mentci?branch=main#951c9c2a517dcad78f9cc52d44f9f3a0a9f71b73"
+source = "git+https://github.com/LiGoldragon/signal-mentci?branch=main#1c855471e653f888ce1b3838144ccde8232d0dfa"
 dependencies = [
  "nota-next",
  "rkyv",
@@ -788,7 +788,7 @@ dependencies = [
 [[package]]
 name = "signal-message"
 version = "0.3.0"
-source = "git+https://github.com/LiGoldragon/signal-message.git?branch=main#3c8fa132eafa7e5972c9c7e5a49a287035928f04"
+source = "git+https://github.com/LiGoldragon/signal-message.git?branch=main#1da152936e184d92c9e0c5535bd1ab8bb9aa3e09"
 dependencies = [
  "nota-next",
  "rkyv",
@@ -800,7 +800,7 @@ dependencies = [
 [[package]]
 name = "signal-persona"
 version = "0.2.0"
-source = "git+https://github.com/LiGoldragon/signal-persona.git?branch=main#c785b9b1c72ae8766304f6bade30bd999f437d93"
+source = "git+https://github.com/LiGoldragon/signal-persona.git?branch=main#ca98a9208dfdb8f6cd6c84172120f922fcfeb4e3"
 dependencies = [
  "nota-next",
  "rkyv",
