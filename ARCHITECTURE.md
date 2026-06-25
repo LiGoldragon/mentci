@@ -114,3 +114,51 @@ The proof value is the working slice and the failure modes it exposes; no
 rigorous savings metric is required for the first pass. Scaffold identities are
 versioned in the first schema, while reuse and caching mechanics stay deferred
 until the thin slice exists.
+
+### First-Slice Acceptance Contract
+
+This contract is the acceptance gate for the thin routing slice. It names the
+observable behavior that must hold before implementation beads may treat the
+prompt-to-harness path as proven.
+
+- A prompt enters Mentci through a single explicit request path. The request
+  preserves the prompt text, the requested work surface, and any hard
+  constraints, including the requirement that the first jj proof is sandboxed
+  and never runs against primary.
+- The first pass is an API preflight. It analyzes the prompt and builds the
+  harness launch prompt and scaffold; it is not a deterministic rule router.
+- The preflight output is valid NOTA against a fixed schema. The schema carries
+  a versioned scaffold identity, the skill names to load, minimal source
+  locators or files to mount, the persistent session request, two model knobs,
+  and explicit constraints. The model knobs are semantic slots only: one
+  cheap/contained preflight model and one separate cheap harness-session model.
+  Concrete provider model identifiers are outside this contract.
+- The scaffold is minimal. It includes `skills/skills.nota` as the expansion
+  index and enough local context for the harness agent to start; the agent is
+  responsible for loading further skills and repo context from the index rather
+  than receiving a broad pre-read bundle.
+- Session creation is persistent, named, and addressable. A successful launch
+  registers a lane name, lane metadata, an addressable session handle, and a
+  lookup path owned by `orchestrate` lanes.
+- The terminal-cell driver owns liveness for every harness session: process
+  handle, send/read loop, idle timeout, close signal, and stalled-output
+  detection. Mentci can feed additional input to the named session and read
+  later output after the launch request returns.
+- Harnesses are pluggable adapters over the same terminal-cell driver. The
+  generic contract names harness kind and adapter identity, but acceptance of
+  the routing slice cannot depend on provider-specific transcript wording or
+  Claude-, Codex-, pi-, or open-ended-harness behavior outside the adapter.
+- The first proof runs against a sandboxed jj task. Acceptance requires an
+  end-to-end witness that routes prompt input through preflight output, minimal
+  scaffold creation, persistent named session launch, at least one feed/read
+  exchange, and close or idle handling without touching `/home/li/primary` as a
+  jj working copy.
+- Failure-mode capture is part of the slice. The witness records, at minimum,
+  failures for invalid preflight NOTA, missing required skills, sandbox
+  violation, harness process start failure, idle timeout, stalled output, close
+  failure, and adapter-level launch/read/write errors.
+
+Deferred from this first slice: rigorous savings metrics, scaffold
+reuse/caching mechanics, full adapter parity, concrete model identifier
+selection, and the downstream implementation of the preflight engine,
+terminal-cell driver, adapters, or proof run.
