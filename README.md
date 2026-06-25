@@ -21,3 +21,7 @@ runtime slice:
 
 The runtime depends only on canonical remote contract crates. It does not use
 local path dependencies for the signal contracts.
+
+Prompt-to-work routing and the generic harness adapter contract are documented
+in `ARCHITECTURE.md` under "Possible Future Design - Prompt-To-Bead-Weave
+Harness Sessions".
