@@ -20,6 +20,8 @@ use mentci::harness_sessions::{
 use mentci::preflight::{MentciPreflightLaunch, SessionHandle};
 
 const EPHEMERAL_SANDBOX_MARKER: &str = ".mentci-ephemeral-jj-sandbox";
+const PRIMARY_WORKSPACE: &str = "/home/li/primary";
+const EPHEMERAL_SANDBOX_PREFIX: &str = "mentci-jj-proof-";
 
 #[derive(Clone)]
 struct FakeLauncher {
@@ -130,6 +132,41 @@ fn sandbox_directory(parent: &Path) -> EphemeralJjRepository {
     EphemeralJjRepository::from_existing_ephemeral(path).expect("ephemeral sandbox")
 }
 
+fn proof_directory_names(parent: &Path) -> Vec<String> {
+    let mut names = fs::read_dir(parent)
+        .expect("read primary guard directory")
+        .filter_map(|entry| {
+            let name = entry.expect("directory entry").file_name();
+            let name = name.to_string_lossy();
+            name.starts_with(EPHEMERAL_SANDBOX_PREFIX)
+                .then(|| name.into_owned())
+        })
+        .collect::<Vec<_>>();
+    names.sort();
+    names
+}
+
+fn assert_create_in_rejects_primary_scope_without_creating_sandbox(parent: &Path) {
+    let before = proof_directory_names(parent);
+
+    let error = EphemeralJjRepository::create_in(parent).expect_err("primary scope rejected");
+
+    assert!(matches!(
+        error,
+        AdapterError::SandboxViolation { reason, .. }
+            if reason.contains("primary workspace")
+    ));
+    assert_eq!(
+        proof_directory_names(parent),
+        before,
+        "primary rejection created a mentci jj proof sandbox under {parent:?}"
+    );
+    assert!(
+        !parent.join(EPHEMERAL_SANDBOX_MARKER).exists(),
+        "primary rejection wrote an ephemeral marker at {parent:?}"
+    );
+}
+
 fn launch_request(parent: &Path) -> ClaudeCodeLaunchRequest {
     ClaudeCodeLaunchRequest::new(
         launch_packet(),
@@ -221,6 +258,18 @@ fn claude_code_adapter_rejects_unverified_harness_model_instead_of_guessing() {
 }
 
 #[test]
+fn claude_code_adapter_close_request_renders_exit_terminal_input() {
+    let adapter = ClaudeCodeAdapter::new();
+
+    let close_request = adapter.close_request();
+
+    let CloseRequest::TerminalInput(feed) = close_request else {
+        panic!("Claude adapter should close by terminal input");
+    };
+    assert_eq!(feed.bytes(), b"/exit\r");
+}
+
+#[test]
 fn sandbox_validation_rejects_primary_and_requires_ephemeral_jj_repository() {
     let directory = tempfile::tempdir().expect("tempdir");
     let missing_repository = EphemeralJjRepository::from_existing_ephemeral(directory.path());
@@ -246,6 +295,28 @@ fn sandbox_validation_rejects_primary_and_requires_ephemeral_jj_repository() {
         Err(AdapterError::SandboxViolation { reason, .. })
             if reason.contains("ephemeral marker")
     ));
+}
+
+#[test]
+fn create_in_rejects_primary_and_descendants_before_creating_a_sandbox() {
+    assert_create_in_rejects_primary_scope_without_creating_sandbox(Path::new(PRIMARY_WORKSPACE));
+    assert_create_in_rejects_primary_scope_without_creating_sandbox(Path::new(
+        "/home/li/primary/skills",
+    ));
+}
+
+#[test]
+fn create_in_fails_closed_when_parent_is_missing() {
+    let directory = tempfile::tempdir().expect("tempdir");
+    let missing_parent = directory.path().join("missing-parent");
+
+    let error = EphemeralJjRepository::create_in(&missing_parent).expect_err("missing parent");
+
+    assert!(matches!(
+        error,
+        AdapterError::SandboxIo { path, .. } if path == missing_parent
+    ));
+    assert!(!missing_parent.exists());
 }
 
 #[test]

@@ -244,29 +244,19 @@ pub struct EphemeralJjRepository {
 
 impl EphemeralJjRepository {
     pub fn create_in(parent_directory: impl AsRef<Path>) -> Result<Self, AdapterError> {
-        let working_directory = EphemeralRepositoryName::new().path_under(parent_directory);
-        std::fs::create_dir_all(&working_directory).map_err(|source| AdapterError::SandboxIo {
-            path: working_directory.clone(),
-            message: source.to_string(),
-        })?;
-        let status = Command::new("jj")
-            .arg("git")
-            .arg("init")
-            .arg("--colocate")
-            .current_dir(&working_directory)
-            .status()
-            .map_err(|source| AdapterError::SandboxIo {
-                path: working_directory.clone(),
-                message: source.to_string(),
-            })?;
-        if !status.success() {
-            return Err(AdapterError::SandboxInitialization {
-                path: working_directory,
-                status: status.to_string(),
-            });
-        }
-        Self::write_marker(&working_directory)?;
-        Self::from_existing_ephemeral(working_directory)
+        let parent = parent_directory.as_ref();
+        let canonical_parent = Self::canonical_path(parent)?;
+        let canonical_primary = Self::canonical_primary_workspace()?;
+        Self::reject_primary_workspace(&canonical_parent, &canonical_primary)?;
+
+        let working_directory = EphemeralRepositoryName::new().path_under(&canonical_parent);
+        let created_directory = CreatedEphemeralDirectory::create(working_directory)?;
+        let canonical_working_directory = created_directory.canonical_path()?;
+        Self::reject_primary_workspace(&canonical_working_directory, &canonical_primary)?;
+
+        created_directory.initialize_jj()?;
+        created_directory.write_marker()?;
+        created_directory.into_repository()
     }
 
     pub fn from_existing_ephemeral(path: impl Into<PathBuf>) -> Result<Self, AdapterError> {
@@ -283,13 +273,8 @@ impl EphemeralJjRepository {
 
     fn validate(&self) -> Result<(), AdapterError> {
         let canonical = self.canonical_working_directory()?;
-        let primary = Path::new(PRIMARY_WORKSPACE);
-        if canonical == primary || canonical.starts_with(primary) {
-            return Err(AdapterError::SandboxViolation {
-                path: canonical,
-                reason: "primary workspace cannot be a jj proof working copy".to_owned(),
-            });
-        }
+        let canonical_primary = Self::canonical_primary_workspace()?;
+        Self::reject_primary_workspace(&canonical, &canonical_primary)?;
         if !canonical.join(".jj").is_dir() {
             return Err(AdapterError::SandboxViolation {
                 path: canonical,
@@ -306,22 +291,96 @@ impl EphemeralJjRepository {
     }
 
     fn canonical_working_directory(&self) -> Result<PathBuf, AdapterError> {
-        self.working_directory
-            .canonicalize()
+        Self::canonical_path(&self.working_directory)
+    }
+
+    fn canonical_primary_workspace() -> Result<PathBuf, AdapterError> {
+        Self::canonical_path(Path::new(PRIMARY_WORKSPACE))
+    }
+
+    fn canonical_path(path: &Path) -> Result<PathBuf, AdapterError> {
+        path.canonicalize()
             .map_err(|source| AdapterError::SandboxIo {
-                path: self.working_directory.clone(),
+                path: path.to_path_buf(),
                 message: source.to_string(),
             })
     }
 
-    fn write_marker(working_directory: &Path) -> Result<(), AdapterError> {
-        let marker = working_directory.join(EPHEMERAL_SANDBOX_MARKER);
+    fn reject_primary_workspace(path: &Path, primary: &Path) -> Result<(), AdapterError> {
+        if path == primary || path.starts_with(primary) {
+            return Err(AdapterError::SandboxViolation {
+                path: path.to_path_buf(),
+                reason: "primary workspace cannot be a jj proof working copy".to_owned(),
+            });
+        }
+        Ok(())
+    }
+}
+
+#[derive(Debug)]
+struct CreatedEphemeralDirectory {
+    path: PathBuf,
+    preserved: bool,
+}
+
+impl CreatedEphemeralDirectory {
+    fn create(path: PathBuf) -> Result<Self, AdapterError> {
+        std::fs::create_dir(&path).map_err(|source| AdapterError::SandboxIo {
+            path: path.clone(),
+            message: source.to_string(),
+        })?;
+        Ok(Self {
+            path,
+            preserved: false,
+        })
+    }
+
+    fn canonical_path(&self) -> Result<PathBuf, AdapterError> {
+        EphemeralJjRepository::canonical_path(&self.path)
+    }
+
+    fn initialize_jj(&self) -> Result<(), AdapterError> {
+        let status = Command::new("jj")
+            .arg("git")
+            .arg("init")
+            .arg("--colocate")
+            .current_dir(&self.path)
+            .status()
+            .map_err(|source| AdapterError::SandboxIo {
+                path: self.path.clone(),
+                message: source.to_string(),
+            })?;
+        if !status.success() {
+            return Err(AdapterError::SandboxInitialization {
+                path: self.path.clone(),
+                status: status.to_string(),
+            });
+        }
+        Ok(())
+    }
+
+    fn write_marker(&self) -> Result<(), AdapterError> {
+        let marker = self.path.join(EPHEMERAL_SANDBOX_MARKER);
         std::fs::write(&marker, "mentci ephemeral jj sandbox\n").map_err(|source| {
             AdapterError::SandboxIo {
                 path: marker,
                 message: source.to_string(),
             }
         })
+    }
+
+    fn into_repository(mut self) -> Result<EphemeralJjRepository, AdapterError> {
+        let repository = EphemeralJjRepository::from_existing_ephemeral(self.path.clone())?;
+        self.preserved = true;
+        Ok(repository)
+    }
+}
+
+impl Drop for CreatedEphemeralDirectory {
+    fn drop(&mut self) {
+        if !self.preserved {
+            let _ = std::fs::remove_dir_all(&self.path);
+        }
     }
 }
 
