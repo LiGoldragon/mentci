@@ -724,14 +724,20 @@ mod terminal_cell_runtime {
 
     impl TerminalCellSurface {
         pub fn from_launch(launch: TerminalLaunch) -> Result<Self, DriverError> {
-            let session = TerminalCell::spawn_session(launch.into_terminal_cell_launch());
-            let actor = session.actor();
             let runtime = tokio::runtime::Runtime::new()
                 .map_err(|error| DriverError::TerminalRead(error.to_string()))?;
+            let session = runtime.block_on(async {
+                TerminalCell::spawn_session(launch.into_terminal_cell_launch())
+            });
+            let actor = session.actor();
             let subscription = runtime
-                .block_on(actor.ask(TranscriptSubscriptionRequest::from_beginning()))
-                .map_err(|error| DriverError::TerminalRead(error.to_string()))?
-                .map_err(|error| DriverError::TerminalRead(format!("{error:?}")))?;
+                .block_on(async {
+                    actor
+                        .ask(TranscriptSubscriptionRequest::from_beginning())
+                        .send()
+                        .await
+                })
+                .map_err(|error| DriverError::TerminalRead(error.to_string()))?;
             let transcript_replay = subscription.replay().iter().cloned().collect();
             Ok(Self {
                 session,
@@ -743,11 +749,11 @@ mod terminal_cell_runtime {
         }
 
         fn terminal_exit(&self) -> Result<Option<TerminalExitReport>, DriverError> {
-            self.runtime
-                .block_on(self.actor.ask(TerminalExitRequest))
-                .map_err(|error| DriverError::TerminalRead(error.to_string()))?
-                .map(|exit| exit.map(|exit| TerminalExitReport::new(exit.status())))
-                .map_err(|error| DriverError::TerminalRead(format!("{error:?}")))
+            let exit = self
+                .runtime
+                .block_on(async { self.actor.ask(TerminalExitRequest).send().await })
+                .map_err(|error| DriverError::TerminalRead(error.to_string()))?;
+            Ok(exit.map(|exit| TerminalExitReport::new(exit.status())))
         }
 
         fn next_transcript_delta(
@@ -758,10 +764,9 @@ mod terminal_cell_runtime {
                 return Ok(Some(delta));
             }
 
-            match self.runtime.block_on(tokio::time::timeout(
-                timeout,
-                self.transcript_subscription.next_live_delta(),
-            )) {
+            match self.runtime.block_on(async {
+                tokio::time::timeout(timeout, self.transcript_subscription.next_live_delta()).await
+            }) {
                 Ok(delta) => Ok(delta),
                 Err(_) => Ok(None),
             }
@@ -801,9 +806,8 @@ mod terminal_cell_runtime {
         fn transcript(&mut self) -> Result<TranscriptCapture, DriverError> {
             let snapshot = self
                 .runtime
-                .block_on(self.actor.ask(TranscriptSnapshotRequest))
-                .map_err(|error| DriverError::TerminalRead(error.to_string()))?
-                .map_err(|error| DriverError::TerminalRead(format!("{error:?}")))?;
+                .block_on(async { self.actor.ask(TranscriptSnapshotRequest).send().await })
+                .map_err(|error| DriverError::TerminalRead(error.to_string()))?;
             Ok(TranscriptCapture::from_bytes(snapshot.bytes().to_vec()))
         }
 

@@ -479,7 +479,7 @@ dependencies = [
 
 [[package]]
 name = "mentci"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "criome",
  "kameo",
@@ -1151,8 +1151,8 @@ dependencies = [
 
 [[package]]
 name = "signal-terminal"
-version = "0.2.1"
-source = "git+https://github.com/LiGoldragon/signal-terminal.git?branch=main#b3ad7a0e08dbe203f600bd146a644b3fe8c3f790"
+version = "0.2.2"
+source = "git+https://github.com/LiGoldragon/signal-terminal.git?branch=main#cf5f4de88402bb6a340af5f18d61ca03ae1da33a"
 dependencies = [
  "nota-next",
  "rkyv",
