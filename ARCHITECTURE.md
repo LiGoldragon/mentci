@@ -77,3 +77,40 @@ The remaining production gaps are durable SEMA storage, notification fan-out
 events beyond request/reply, and turning observe-triggered parked-authorization
 pickup into a continuous subscription/push loop. Those are integration gaps
 around the runtime slice, not blockers to the contract-shaped daemon boot.
+
+## Possible Future Design — Prompt-To-Bead-Weave Harness Sessions
+
+This section is target architecture for the next thin slice, not current daemon
+behavior. Mentci becomes the entry surface for aligned prompts that should turn
+into a weave of BEADS jobs and a running agent harness session.
+
+The slice stays harness-agnostic. A prompt enters Mentci, a cheap contained API
+preflight model analyzes the prompt, and the preflight emits fixed-schema NOTA
+that names the scaffold identity, skills to load, minimal files/context to
+mount, model knobs, and the persistent harness session request. The preflight
+is the routing and prompt-building engine; it is not a deterministic rule
+router. Thinness is intentional: the scaffold includes only the minimal support
+plus `skills/skills.nota`, and the session agent expands its own context from
+there.
+
+```nota
+;; Target preflight output. Pseudo-NOTA for documentation, not the wire schema.
+(MentciPreflight <scaffold> <skills> <session> <model-selection> <constraints>)
+;;   scaffold        : (Scaffold <identity> <version> <minimal-files>)
+;;   skills          : [SkillName]
+;;   session         : (HarnessSession <lane-name> <harness-kind> <adapter> <driver>)
+;;   model-selection : (ModelSelection <preflight-model> <harness-session-model>)
+;;   constraints     : [ConstraintText]
+```
+
+The session is persistent, named, and addressable. `orchestrate` lanes own the
+lane name, lane metadata, addressing, and session lookup. The terminal-cell
+driver owns process liveness: process handle, send/read loop, idle timeout,
+close signal, and stalled-output detection. Harness adapters plug into that one
+driver for Claude Code, Codex, pi, and open-ended harnesses.
+
+The first proof domain is a sandboxed jj task. It must not run against primary.
+The proof value is the working slice and the failure modes it exposes; no
+rigorous savings metric is required for the first pass. Scaffold identities are
+versioned in the first schema, while reuse and caching mechanics stay deferred
+until the thin slice exists.

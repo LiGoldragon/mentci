@@ -12,6 +12,13 @@ escalations. It keeps pending questions, decisions, subscriptions, and the UI
 revision as durable daemon state. Clients do not own approval logic; they
 subscribe to projected state and send typed responses.
 
+Mentci also grows toward prompt-to-work routing for aligned agent work:
+*"build a thin Mentci slice where a prompt enters Mentci, a first-pass API
+preflight analyzes it and builds a minimal scaffold, and Mentci opens a
+persistent named harness session through a terminal-cell driver it can keep
+feeding and reading."* The intended first proof is harness-agnostic and runs on
+a sandboxed jj task, not on primary.
+
 ## Component triad
 
 - `mentci` — this daemon/runtime repository. It owns the daemon, thin CLI, and
@@ -60,3 +67,8 @@ subscribe to projected state and send typed responses.
 - Local UI revision is a plain monotonic counter for the single-machine
   daemon. Attested moments are reserved for a future cross-machine subscriber
   scope.
+- Prompt-to-work routing stays thin at first: API preflight is the
+  routing/prompt-building engine, emits fixed-schema NOTA, loads the right
+  skills, and creates only a minimal scaffold plus `skills/skills.nota`.
+  Persistent named sessions are core; terminal-cell owns liveness while
+  orchestrate lanes own naming, addressing, lane metadata, and session lookup.
