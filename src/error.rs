@@ -76,6 +76,22 @@ pub enum Error {
 
     #[error("frame body is not a request")]
     ExpectedRequest,
+
+    #[error("preflight NOTA does not match MentciPreflightLaunch: {0}")]
+    PreflightNota(nota_next::NotaDecodeError),
+
+    #[error("preflight API failed: {0}")]
+    PreflightApi(String),
+
+    #[error("unverified model for {slot}: profile {profile} requires {required_identifier}")]
+    UnverifiedModel {
+        slot: &'static str,
+        profile: String,
+        required_identifier: String,
+    },
+
+    #[error("preflight launch rejected: {0}")]
+    PreflightLaunch(String),
 }
 
 pub type Result<T> = std::result::Result<T, Error>;
