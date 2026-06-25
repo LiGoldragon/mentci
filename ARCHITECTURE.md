@@ -87,20 +87,22 @@ into a weave of BEADS jobs and a running agent harness session.
 The slice stays harness-agnostic. A prompt enters Mentci, a cheap contained API
 preflight model analyzes the prompt, and the preflight emits fixed-schema NOTA
 that names the scaffold identity, skills to load, minimal files/context to
-mount, model knobs, and the persistent harness session request. The preflight
-is the routing and prompt-building engine; it is not a deterministic rule
-router. Thinness is intentional: the scaffold includes only the minimal support
-plus `skills/skills.nota`, and the session agent expands its own context from
-there.
+mount, session identity, persistent harness session request, model knobs,
+sandbox/privacy flags, and typed stop conditions. The preflight is the routing
+and prompt-building engine; it is not a deterministic rule router. Thinness is
+intentional: the scaffold includes only the minimal support plus
+`skills/skills.nota`, and the session agent expands its own context from there.
 
 ```nota
 ;; Target preflight output. Pseudo-NOTA for documentation, not the wire schema.
-(MentciPreflight <scaffold> <skills> <session> <model-selection> <constraints>)
-;;   scaffold        : (Scaffold <identity> <version> <minimal-files>)
-;;   skills          : [SkillName]
-;;   session         : (HarnessSession <lane-name> <harness-kind> <adapter> <driver>)
-;;   model-selection : (ModelSelection <preflight-model> <harness-session-model>)
-;;   constraints     : [ConstraintText]
+(MentciPreflight <scaffold> <skills> <session-identity> <persistent-session> <model-selection> <sandbox-privacy> <stop-conditions>)
+;;   scaffold          : (Scaffold <identity> <version> <minimal-files>)
+;;   skills            : [SkillName]
+;;   session-identity  : (SessionIdentity <lane-name> <lane-metadata> <addressable-handle> <lookup-path>)
+;;   persistent-session: (PersistentSession <requested> <harness-kind> <adapter> <driver>)
+;;   model-selection   : (ModelSelection <preflight-model> <harness-session-model>)
+;;   sandbox-privacy   : (SandboxPrivacy <jj-sandboxed> <primary-forbidden> <private-scope-closed>)
+;;   stop-conditions   : [(IdleTimeout <duration>) | (TurnCap <turns>) | CompletionSignal]
 ```
 
 The session is persistent, named, and addressable. `orchestrate` lanes own the
@@ -129,8 +131,12 @@ prompt-to-harness path as proven.
   harness launch prompt and scaffold; it is not a deterministic rule router.
 - The preflight output is valid NOTA against a fixed schema. The schema carries
   a versioned scaffold identity, the skill names to load, minimal source
-  locators or files to mount, the persistent session request, two model knobs,
-  and explicit constraints. The model knobs are semantic slots only: one
+  locators or files to mount, a session identity, a separate persistent-session
+  request, two model knobs, dedicated sandbox/privacy flags, and typed stop
+  conditions. The session identity is distinct from the persistent-session
+  request/boolean: lane naming, metadata, handle, and lookup are address fields,
+  not generic constraints. The stop conditions include idle timeout, turn cap,
+  and completion signal variants. The model knobs are semantic slots only: one
   cheap/contained preflight model and one separate cheap harness-session model.
   Concrete provider model identifiers are outside this contract.
 - The scaffold is minimal. It includes `skills/skills.nota` as the expansion
