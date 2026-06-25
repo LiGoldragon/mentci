@@ -11,6 +11,7 @@ pub mod criome_bridge;
 pub mod daemon;
 pub mod error;
 pub mod frame_codec;
+pub mod harness_adapters;
 pub mod harness_liveness;
 pub mod harness_sessions;
 pub mod introspection_bridge;

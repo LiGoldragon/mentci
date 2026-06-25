@@ -1,3 +1,4 @@
+use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
 use thiserror::Error;
@@ -49,11 +50,21 @@ impl TerminalSize {
 pub struct TerminalLaunch {
     command: TerminalCommand,
     size: TerminalSize,
+    working_directory: Option<TerminalWorkingDirectory>,
 }
 
 impl TerminalLaunch {
     pub fn new(command: TerminalCommand, size: TerminalSize) -> Self {
-        Self { command, size }
+        Self {
+            command,
+            size,
+            working_directory: None,
+        }
+    }
+
+    pub fn with_working_directory(mut self, working_directory: TerminalWorkingDirectory) -> Self {
+        self.working_directory = Some(working_directory);
+        self
     }
 
     pub fn command(&self) -> &TerminalCommand {
@@ -62,6 +73,25 @@ impl TerminalLaunch {
 
     pub const fn size(&self) -> TerminalSize {
         self.size
+    }
+
+    pub fn working_directory(&self) -> Option<&TerminalWorkingDirectory> {
+        self.working_directory.as_ref()
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TerminalWorkingDirectory {
+    path: PathBuf,
+}
+
+impl TerminalWorkingDirectory {
+    pub fn new(path: impl Into<PathBuf>) -> Self {
+        Self { path: path.into() }
+    }
+
+    pub fn as_path(&self) -> &Path {
+        self.path.as_path()
     }
 }
 
@@ -700,7 +730,8 @@ mod terminal_cell_runtime {
     use crate::harness_liveness::{
         CloseReport, CloseRequest, CloseSignal, DriverError, LaunchRequest, TerminalCommand,
         TerminalExitReport, TerminalFeed, TerminalLaunch, TerminalObservation,
-        TerminalSessionLauncher, TerminalSessionSurface, TerminalSize, TranscriptCapture,
+        TerminalSessionLauncher, TerminalSessionSurface, TerminalSize, TerminalWorkingDirectory,
+        TranscriptCapture,
     };
 
     #[derive(Debug, Clone, Copy, Default)]
@@ -829,14 +860,27 @@ mod terminal_cell_runtime {
 
     impl TerminalLaunch {
         fn into_terminal_cell_launch(self) -> terminal_cell::TerminalLaunch {
+            let command = match self.working_directory {
+                Some(working_directory) => self.command.with_working_directory(working_directory),
+                None => self.command,
+            };
             terminal_cell::TerminalLaunch::new(
-                self.command.into_terminal_cell_command(),
+                command.into_terminal_cell_command(),
                 self.size.into_terminal_cell_size(),
             )
         }
     }
 
     impl TerminalCommand {
+        fn with_working_directory(self, working_directory: TerminalWorkingDirectory) -> Self {
+            let mut arguments = Vec::with_capacity(self.arguments.len() + 3);
+            arguments.push("-C".to_owned());
+            arguments.push(working_directory.as_path().to_string_lossy().into_owned());
+            arguments.push(self.program);
+            arguments.extend(self.arguments);
+            Self::new("env", arguments)
+        }
+
         fn into_terminal_cell_command(self) -> terminal_cell::TerminalCommand {
             terminal_cell::TerminalCommand::new(self.program, self.arguments)
         }

@@ -1,0 +1,362 @@
+use std::cell::RefCell;
+use std::collections::VecDeque;
+use std::fs;
+use std::path::Path;
+use std::rc::Rc;
+use std::time::Duration;
+
+use mentci::harness_adapters::{
+    AdapterError, ClaudeCodeAdapter, ClaudeCodeLaunchRequest, EphemeralJjRepository, HarnessFeed,
+    HarnessPrompt,
+};
+use mentci::harness_liveness::{
+    CloseReport, CloseRequest, CloseSignal, DriverError, StopReason, TerminalCellDriver,
+    TerminalFeed, TerminalObservation, TerminalSessionLauncher, TerminalSessionSurface,
+    TranscriptCapture,
+};
+use mentci::harness_sessions::{
+    InMemoryHarnessSessionDirectory, NamedHarnessSessions, SessionAddress,
+};
+use mentci::preflight::{MentciPreflightLaunch, SessionHandle};
+
+const EPHEMERAL_SANDBOX_MARKER: &str = ".mentci-ephemeral-jj-sandbox";
+
+#[derive(Clone)]
+struct FakeLauncher {
+    events: Rc<RefCell<VecDeque<TerminalObservation>>>,
+    feed_responses: Rc<RefCell<VecDeque<Vec<u8>>>>,
+    sent: Rc<RefCell<Vec<Vec<u8>>>>,
+}
+
+impl FakeLauncher {
+    fn new(responses: impl Into<VecDeque<Vec<u8>>>) -> Self {
+        Self {
+            events: Rc::new(RefCell::new(VecDeque::new())),
+            feed_responses: Rc::new(RefCell::new(responses.into())),
+            sent: Rc::new(RefCell::new(Vec::new())),
+        }
+    }
+
+    fn sent(&self) -> Vec<Vec<u8>> {
+        self.sent.borrow().clone()
+    }
+}
+
+impl TerminalSessionLauncher for FakeLauncher {
+    type Session = FakeTerminal;
+
+    fn launch(
+        &self,
+        _request: mentci::harness_liveness::LaunchRequest,
+    ) -> Result<Self::Session, DriverError> {
+        Ok(FakeTerminal {
+            events: self.events.clone(),
+            feed_responses: self.feed_responses.clone(),
+            sent: self.sent.clone(),
+            transcript: Vec::new(),
+        })
+    }
+}
+
+struct FakeTerminal {
+    events: Rc<RefCell<VecDeque<TerminalObservation>>>,
+    feed_responses: Rc<RefCell<VecDeque<Vec<u8>>>>,
+    sent: Rc<RefCell<Vec<Vec<u8>>>>,
+    transcript: Vec<u8>,
+}
+
+impl TerminalSessionSurface for FakeTerminal {
+    fn send(&mut self, feed: TerminalFeed) -> Result<(), DriverError> {
+        self.sent.borrow_mut().push(feed.bytes().to_vec());
+        if let Some(response) = self.feed_responses.borrow_mut().pop_front() {
+            self.events
+                .borrow_mut()
+                .push_back(TerminalObservation::Transcript(response));
+        }
+        Ok(())
+    }
+
+    fn read_event(
+        &mut self,
+        _timeout: Duration,
+    ) -> Result<Option<TerminalObservation>, DriverError> {
+        let event = self.events.borrow_mut().pop_front();
+        if let Some(TerminalObservation::Transcript(bytes)) = &event {
+            self.transcript.extend_from_slice(bytes);
+        }
+        Ok(event)
+    }
+
+    fn transcript(&mut self) -> Result<TranscriptCapture, DriverError> {
+        Ok(TranscriptCapture::from_bytes(self.transcript.clone()))
+    }
+
+    fn close(&mut self, request: CloseRequest) -> Result<CloseReport, DriverError> {
+        if let CloseRequest::TerminalInput(feed) = request {
+            self.send(feed)?;
+        }
+        Ok(CloseReport::new(CloseSignal::TerminalInput))
+    }
+}
+
+fn valid_claude_launch_nota() -> &'static str {
+    r#"(MentciPreflightLaunch
+  (mentci-prompt-scaffold 1 [skills/skills.nota] [ARCHITECTURE.md] skills/skills.nota ReuseDeferred)
+  ([(beads skills/beads.md [claim and update the bead])
+    (rust-discipline skills/rust-discipline.md [implement the adapter])]
+   (cheap-contained-preflight claude-haiku-4-5-20251001)
+   (ClaudeCode claude-code-terminal-adapter terminal-cell-v1)
+   [Prompt requires a sandboxed jj task and a persistent named harness session])
+  (mentci-primary-edm1 [(Bead primary-edm1) (WorkSurface sandboxed-jj-task) (HarnessLabel mentci-harness)] primary-edm1-session orchestrate/lanes/primary-edm1)
+  Persistent
+  (SandboxedJjTask PrimaryForbidden PrivateScopeClosed)
+  [(IdleTimeout 1) (TurnCap 8) CompletionSignal]
+  [(WorkSurface sandboxed-jj-task) (ForbiddenPath /home/li/primary)])"#
+}
+
+fn launch_packet() -> MentciPreflightLaunch {
+    MentciPreflightLaunch::validated_from_nota(valid_claude_launch_nota())
+        .expect("valid claude launch")
+}
+
+fn sandbox_directory(parent: &Path) -> EphemeralJjRepository {
+    let path = parent.join("sandbox");
+    fs::create_dir_all(path.join(".jj")).expect("jj directory");
+    fs::write(
+        path.join(EPHEMERAL_SANDBOX_MARKER),
+        "mentci ephemeral jj sandbox\n",
+    )
+    .expect("sandbox marker");
+    EphemeralJjRepository::from_existing_ephemeral(path).expect("ephemeral sandbox")
+}
+
+fn launch_request(parent: &Path) -> ClaudeCodeLaunchRequest {
+    ClaudeCodeLaunchRequest::new(
+        launch_packet(),
+        parent.join("scaffold"),
+        sandbox_directory(parent),
+        HarnessPrompt::new("show jj status and wait for the next turn"),
+    )
+}
+
+fn address() -> SessionAddress {
+    SessionAddress::handle(SessionHandle::new("primary-edm1-session"))
+}
+
+#[test]
+fn claude_code_adapter_maps_verified_model_to_terminal_launch_plan() {
+    let directory = tempfile::tempdir().expect("tempdir");
+    let adapter = ClaudeCodeAdapter::new();
+
+    let launch = adapter
+        .launch(launch_request(directory.path()))
+        .expect("adapter launch");
+    let terminal_launch = launch.terminal_launch();
+    let command = terminal_launch.launch().command();
+
+    assert_eq!(command.program(), "claude");
+    assert_eq!(
+        command.arguments(),
+        &[
+            "--bare".to_owned(),
+            "--model".to_owned(),
+            "claude-haiku-4-5-20251001".to_owned(),
+            "--permission-mode".to_owned(),
+            "bypassPermissions".to_owned(),
+            "--add-dir".to_owned(),
+            directory
+                .path()
+                .join("scaffold")
+                .to_string_lossy()
+                .into_owned(),
+            "--name".to_owned(),
+            "mentci-primary-edm1".to_owned(),
+        ]
+    );
+    assert_eq!(
+        terminal_launch
+            .launch()
+            .working_directory()
+            .expect("working directory")
+            .as_path(),
+        directory.path().join("sandbox").as_path()
+    );
+    assert!(
+        terminal_launch
+            .initial_input()
+            .expect("initial input")
+            .bytes()
+            .windows(b"/home/li/primary".len())
+            .any(|window| window == b"/home/li/primary")
+    );
+}
+
+#[test]
+fn claude_code_adapter_rejects_unverified_harness_model_instead_of_guessing() {
+    let directory = tempfile::tempdir().expect("tempdir");
+    let adapter = ClaudeCodeAdapter::new();
+    let launch = MentciPreflightLaunch::validated_from_nota(
+        &valid_claude_launch_nota().replace("claude-haiku-4-5-20251001", "cheap-harness-session"),
+    )
+    .expect("syntactically valid launch");
+
+    let error = adapter
+        .launch(ClaudeCodeLaunchRequest::new(
+            launch,
+            directory.path().join("scaffold"),
+            sandbox_directory(directory.path()),
+            HarnessPrompt::new("task"),
+        ))
+        .expect_err("unverified model rejected");
+
+    assert!(matches!(
+        error,
+        AdapterError::UnverifiedModel {
+            slot: "harness session model",
+            profile,
+            required_identifier,
+        } if profile == "cheap-harness-session"
+            && required_identifier == "claude-haiku-4-5-20251001"
+    ));
+}
+
+#[test]
+fn sandbox_validation_rejects_primary_and_requires_ephemeral_jj_repository() {
+    let directory = tempfile::tempdir().expect("tempdir");
+    let missing_repository = EphemeralJjRepository::from_existing_ephemeral(directory.path());
+    let primary = EphemeralJjRepository::from_existing_ephemeral("/home/li/primary");
+    let unmarked = {
+        let path = directory.path().join("unmarked");
+        fs::create_dir_all(path.join(".jj")).expect("jj directory");
+        EphemeralJjRepository::from_existing_ephemeral(path)
+    };
+
+    assert!(matches!(
+        missing_repository,
+        Err(AdapterError::SandboxViolation { reason, .. })
+            if reason.contains(".jj repository")
+    ));
+    assert!(matches!(
+        primary,
+        Err(AdapterError::SandboxViolation { reason, .. })
+            if reason.contains("primary workspace")
+    ));
+    assert!(matches!(
+        unmarked,
+        Err(AdapterError::SandboxViolation { reason, .. })
+            if reason.contains("ephemeral marker")
+    ));
+}
+
+#[test]
+fn adapter_feed_drives_persistent_session_over_multiple_turns() {
+    let directory = tempfile::tempdir().expect("tempdir");
+    let adapter = ClaudeCodeAdapter::new();
+    let launcher = FakeLauncher::new(VecDeque::from([
+        b"initial adapter prompt\n".to_vec(),
+        b"first adapter turn\n".to_vec(),
+        b"second adapter turn\n".to_vec(),
+    ]));
+    let driver = TerminalCellDriver::new(launcher.clone());
+    let mut sessions = NamedHarnessSessions::new(InMemoryHarnessSessionDirectory::new(), driver);
+    let launch = adapter
+        .launch(launch_request(directory.path()))
+        .expect("adapter launch");
+
+    sessions.launch(launch).expect("session launched");
+    sessions
+        .feed(
+            &address(),
+            adapter.feed(HarnessFeed::new("first")).expect("feed"),
+        )
+        .expect("first feed");
+    let first = sessions.read(&address()).expect("first read");
+    sessions
+        .feed(
+            &address(),
+            adapter.feed(HarnessFeed::new("second")).expect("feed"),
+        )
+        .expect("second feed");
+    let second = sessions.read(&address()).expect("second read");
+
+    assert_eq!(
+        launcher.sent(),
+        vec![
+            b"Mentci sandboxed jj proof session.\nWork only inside the current jj sandbox working copy.\nDo not use /home/li/primary as a jj working copy.\nInitial task:\nshow jj status and wait for the next turn\nPreflight launch:\n(MentciPreflightLaunch (mentci-prompt-scaffold 1 [skills/skills.nota] [ARCHITECTURE.md] skills/skills.nota ReuseDeferred) ([(beads skills/beads.md [claim and update the bead]) (rust-discipline skills/rust-discipline.md [implement the adapter])] (cheap-contained-preflight claude-haiku-4-5-20251001) (ClaudeCode claude-code-terminal-adapter terminal-cell-v1) [Prompt requires a sandboxed jj task and a persistent named harness session]) (mentci-primary-edm1 [(Bead primary-edm1) (WorkSurface sandboxed-jj-task) (HarnessLabel mentci-harness)] primary-edm1-session orchestrate/lanes/primary-edm1) Persistent (SandboxedJjTask PrimaryForbidden PrivateScopeClosed) [(IdleTimeout 1) (TurnCap 8) CompletionSignal] [(WorkSurface sandboxed-jj-task) (ForbiddenPath /home/li/primary)])\n".to_vec(),
+            b"first\r".to_vec(),
+            b"second\r".to_vec(),
+        ]
+    );
+    assert_eq!(first.reason(), &StopReason::IdleTimeout);
+    assert_eq!(
+        first.transcript().bytes(),
+        b"initial adapter prompt\nfirst adapter turn\n"
+    );
+    assert_eq!(second.reason(), &StopReason::IdleTimeout);
+    assert_eq!(
+        second.transcript().bytes(),
+        b"initial adapter prompt\nfirst adapter turn\nsecond adapter turn\n"
+    );
+}
+
+#[test]
+fn claude_specific_behavior_is_not_in_generic_liveness_or_session_layers() {
+    let liveness_source = include_str!("../src/harness_liveness.rs");
+    let session_source = include_str!("../src/harness_sessions.rs");
+
+    for source in [liveness_source, session_source] {
+        assert!(!source.contains("--permission-mode"));
+        assert!(!source.contains("bypassPermissions"));
+        assert!(!source.contains("claude-haiku-4-5-20251001"));
+        assert!(!source.contains("/exit"));
+    }
+}
+
+#[cfg(feature = "terminal-cell-runtime")]
+#[test]
+fn terminal_cell_runtime_accepts_adapter_feed_without_invoking_external_claude_code() {
+    use mentci::harness_liveness::{
+        IdleTimeout, LaunchRequest, LivenessPolicy, StopCondition, StopConditions, TerminalCommand,
+        TerminalLaunch, TerminalSize,
+    };
+
+    let adapter = ClaudeCodeAdapter::new();
+    let driver = TerminalCellDriver::<mentci::harness_liveness::TerminalCellLauncher>::default();
+    let request = LaunchRequest::new(TerminalLaunch::new(
+        TerminalCommand::new(
+            "/bin/sh",
+            vec![
+                "-c".to_owned(),
+                "while IFS= read -r line; do printf 'adapter:%s\\n' \"$line\"; done".to_owned(),
+            ],
+        ),
+        TerminalSize::new(24, 80),
+    ))
+    .with_liveness(LivenessPolicy::new(StopConditions::new([
+        StopCondition::IdleTimeout(IdleTimeout::new(Duration::from_millis(200))),
+    ])));
+    let mut session = driver.launch(request).expect("terminal-cell launched");
+
+    session
+        .send(adapter.feed(HarnessFeed::new("one")).expect("feed"))
+        .expect("first send");
+    let first = session.read_until_stop().expect("first read");
+    session
+        .send(adapter.feed(HarnessFeed::new("two")).expect("feed"))
+        .expect("second send");
+    let second = session.read_until_stop().expect("second read");
+    let _closed = session
+        .close(CloseRequest::Kill)
+        .expect("close local shell process");
+
+    assert_eq!(first.reason(), &StopReason::IdleTimeout);
+    assert_eq!(second.reason(), &StopReason::IdleTimeout);
+    assert!(
+        second
+            .transcript()
+            .to_string_lossy()
+            .contains("adapter:two"),
+        "real terminal-cell transcript did not include second adapter feed: {:?}",
+        second.transcript().to_string_lossy()
+    );
+}
