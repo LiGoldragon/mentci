@@ -6,8 +6,8 @@ use std::rc::Rc;
 use std::time::Duration;
 
 use mentci::harness_adapters::{
-    AdapterError, ClaudeCodeAdapter, ClaudeCodeLaunchRequest, EphemeralJjRepository, HarnessFeed,
-    HarnessPrompt,
+    AdapterError, ClaudeCodeAdapter, ClaudeCodeLaunchRequest, ClaudeCodeTranscriptCursor,
+    EphemeralJjRepository, HarnessFeed, HarnessPrompt,
 };
 use mentci::harness_liveness::{
     CloseReport, CloseRequest, CloseSignal, DriverError, StopReason, TerminalCellDriver,
@@ -22,6 +22,10 @@ use mentci::preflight::{MentciPreflightLaunch, SessionHandle};
 const EPHEMERAL_SANDBOX_MARKER: &str = ".mentci-ephemeral-jj-sandbox";
 const PRIMARY_WORKSPACE: &str = "/home/li/primary";
 const EPHEMERAL_SANDBOX_PREFIX: &str = "mentci-jj-proof-";
+const BRACKETED_PASTE_START: &[u8] = b"\x1b[200~";
+const BRACKETED_PASTE_END: &[u8] = b"\x1b[201~";
+const FORBIDDEN_CLAUDE_SUBSCRIPTION_TUI_ARGUMENTS: &[&str] =
+    &["--bare", "--print", "--model", "--permission-mode"];
 
 #[derive(Clone)]
 struct FakeLauncher {
@@ -106,7 +110,7 @@ fn valid_claude_launch_nota() -> &'static str {
   (mentci-prompt-scaffold 1 [skills/skills.nota] [ARCHITECTURE.md] skills/skills.nota ReuseDeferred)
   ([(beads skills/beads.md [claim and update the bead])
     (rust-discipline skills/rust-discipline.md [implement the adapter])]
-   (cheap-contained-preflight claude-haiku-4-5-20251001)
+   (cheap-contained-preflight subscription-tui-default)
    (ClaudeCode claude-code-terminal-adapter terminal-cell-v1)
    [Prompt requires a sandboxed jj task and a persistent named harness session])
   (mentci-primary-edm1 [(Bead primary-edm1) (WorkSurface sandboxed-jj-task) (HarnessLabel mentci-harness)] primary-edm1-session orchestrate/lanes/primary-edm1)
@@ -180,8 +184,41 @@ fn address() -> SessionAddress {
     SessionAddress::handle(SessionHandle::new("primary-edm1-session"))
 }
 
+fn framed_tui_input(text: impl AsRef<str>) -> Vec<u8> {
+    let text = text.as_ref();
+    let mut bytes = Vec::with_capacity(
+        BRACKETED_PASTE_START.len() + text.len() + BRACKETED_PASTE_END.len() + 1,
+    );
+    bytes.extend_from_slice(BRACKETED_PASTE_START);
+    bytes.extend_from_slice(text.as_bytes());
+    bytes.extend_from_slice(BRACKETED_PASTE_END);
+    bytes.push(b'\r');
+    bytes
+}
+
+fn assert_subscription_tui_arguments(arguments: &[String]) {
+    for forbidden in FORBIDDEN_CLAUDE_SUBSCRIPTION_TUI_ARGUMENTS {
+        assert!(
+            !arguments.iter().any(|argument| argument == forbidden),
+            "subscription TUI launch must not include forbidden argument {forbidden}: {arguments:?}"
+        );
+    }
+    assert!(
+        !arguments
+            .windows(2)
+            .any(|window| window == ["--permission-mode", "bypassPermissions"]),
+        "subscription TUI launch must not bypass permissions: {arguments:?}"
+    );
+    assert!(
+        !arguments.iter().any(|argument| {
+            argument.contains("ANTHROPIC_API_KEY") || argument.contains("apiKeyHelper")
+        }),
+        "subscription TUI launch must not carry API auth assumptions: {arguments:?}"
+    );
+}
+
 #[test]
-fn claude_code_adapter_maps_verified_model_to_terminal_launch_plan() {
+fn claude_code_adapter_builds_subscription_tui_terminal_launch_plan() {
     let directory = tempfile::tempdir().expect("tempdir");
     let adapter = ClaudeCodeAdapter::new();
 
@@ -195,11 +232,6 @@ fn claude_code_adapter_maps_verified_model_to_terminal_launch_plan() {
     assert_eq!(
         command.arguments(),
         &[
-            "--bare".to_owned(),
-            "--model".to_owned(),
-            "claude-haiku-4-5-20251001".to_owned(),
-            "--permission-mode".to_owned(),
-            "bypassPermissions".to_owned(),
             "--add-dir".to_owned(),
             directory
                 .path()
@@ -210,6 +242,7 @@ fn claude_code_adapter_maps_verified_model_to_terminal_launch_plan() {
             "mentci-primary-edm1".to_owned(),
         ]
     );
+    assert_subscription_tui_arguments(command.arguments());
     assert_eq!(
         terminal_launch
             .launch()
@@ -229,32 +262,30 @@ fn claude_code_adapter_maps_verified_model_to_terminal_launch_plan() {
 }
 
 #[test]
-fn claude_code_adapter_rejects_unverified_harness_model_instead_of_guessing() {
+fn claude_code_adapter_does_not_require_harness_model_identifier() {
     let directory = tempfile::tempdir().expect("tempdir");
     let adapter = ClaudeCodeAdapter::new();
     let launch = MentciPreflightLaunch::validated_from_nota(
-        &valid_claude_launch_nota().replace("claude-haiku-4-5-20251001", "cheap-harness-session"),
+        &valid_claude_launch_nota().replace("subscription-tui-default", "cheap-harness-session"),
     )
     .expect("syntactically valid launch");
 
-    let error = adapter
+    let named_launch = adapter
         .launch(ClaudeCodeLaunchRequest::new(
             launch,
             directory.path().join("scaffold"),
             sandbox_directory(directory.path()),
             HarnessPrompt::new("task"),
         ))
-        .expect_err("unverified model rejected");
+        .expect("subscription TUI launch does not validate a provider model");
 
-    assert!(matches!(
-        error,
-        AdapterError::UnverifiedModel {
-            slot: "harness session model",
-            profile,
-            required_identifier,
-        } if profile == "cheap-harness-session"
-            && required_identifier == "claude-haiku-4-5-20251001"
-    ));
+    assert_subscription_tui_arguments(
+        named_launch
+            .terminal_launch()
+            .launch()
+            .command()
+            .arguments(),
+    );
 }
 
 #[test]
@@ -267,6 +298,34 @@ fn claude_code_adapter_close_request_renders_exit_terminal_input() {
         panic!("Claude adapter should close by terminal input");
     };
     assert_eq!(feed.bytes(), b"/exit\r");
+}
+
+#[test]
+fn claude_code_adapter_frames_initial_prompt_and_feed_for_interactive_tui() {
+    let directory = tempfile::tempdir().expect("tempdir");
+    let adapter = ClaudeCodeAdapter::new();
+
+    let launch = adapter
+        .launch(launch_request(directory.path()))
+        .expect("adapter launch");
+    let initial_input = launch
+        .terminal_launch()
+        .initial_input()
+        .expect("initial input");
+    let feed = adapter
+        .feed(HarnessFeed::new("continue the sandboxed task"))
+        .expect("feed");
+
+    assert!(initial_input.bytes().starts_with(BRACKETED_PASTE_START));
+    assert!(initial_input.bytes().ends_with(b"\x1b[201~\r"));
+    assert!(
+        String::from_utf8_lossy(initial_input.bytes())
+            .contains("Initial task:\nshow jj status and wait for the next turn")
+    );
+    assert_eq!(
+        feed.bytes(),
+        framed_tui_input("continue the sandboxed task").as_slice()
+    );
 }
 
 #[test]
@@ -353,9 +412,11 @@ fn adapter_feed_drives_persistent_session_over_multiple_turns() {
     assert_eq!(
         launcher.sent(),
         vec![
-            b"Mentci sandboxed jj proof session.\nWork only inside the current jj sandbox working copy.\nDo not use /home/li/primary as a jj working copy.\nInitial task:\nshow jj status and wait for the next turn\nPreflight launch:\n(MentciPreflightLaunch (mentci-prompt-scaffold 1 [skills/skills.nota] [ARCHITECTURE.md] skills/skills.nota ReuseDeferred) ([(beads skills/beads.md [claim and update the bead]) (rust-discipline skills/rust-discipline.md [implement the adapter])] (cheap-contained-preflight claude-haiku-4-5-20251001) (ClaudeCode claude-code-terminal-adapter terminal-cell-v1) [Prompt requires a sandboxed jj task and a persistent named harness session]) (mentci-primary-edm1 [(Bead primary-edm1) (WorkSurface sandboxed-jj-task) (HarnessLabel mentci-harness)] primary-edm1-session orchestrate/lanes/primary-edm1) Persistent (SandboxedJjTask PrimaryForbidden PrivateScopeClosed) [(IdleTimeout 1) (TurnCap 8) CompletionSignal] [(WorkSurface sandboxed-jj-task) (ForbiddenPath /home/li/primary)])\n".to_vec(),
-            b"first\r".to_vec(),
-            b"second\r".to_vec(),
+            framed_tui_input(
+                "Mentci sandboxed jj proof session.\nWork only inside the current jj sandbox working copy.\nDo not use /home/li/primary as a jj working copy.\nInitial task:\nshow jj status and wait for the next turn\nPreflight launch:\n(MentciPreflightLaunch (mentci-prompt-scaffold 1 [skills/skills.nota] [ARCHITECTURE.md] skills/skills.nota ReuseDeferred) ([(beads skills/beads.md [claim and update the bead]) (rust-discipline skills/rust-discipline.md [implement the adapter])] (cheap-contained-preflight subscription-tui-default) (ClaudeCode claude-code-terminal-adapter terminal-cell-v1) [Prompt requires a sandboxed jj task and a persistent named harness session]) (mentci-primary-edm1 [(Bead primary-edm1) (WorkSurface sandboxed-jj-task) (HarnessLabel mentci-harness)] primary-edm1-session orchestrate/lanes/primary-edm1) Persistent (SandboxedJjTask PrimaryForbidden PrivateScopeClosed) [(IdleTimeout 1) (TurnCap 8) CompletionSignal] [(WorkSurface sandboxed-jj-task) (ForbiddenPath /home/li/primary)])\n"
+            ),
+            framed_tui_input("first"),
+            framed_tui_input("second"),
         ]
     );
     assert_eq!(first.reason(), &StopReason::IdleTimeout);
@@ -371,6 +432,28 @@ fn adapter_feed_drives_persistent_session_over_multiple_turns() {
 }
 
 #[test]
+fn claude_code_adapter_scrapes_transcript_deltas_without_print_json() {
+    let adapter = ClaudeCodeAdapter::new();
+    let first_transcript =
+        TranscriptCapture::from_bytes(b"Claude TUI opened\nMENTCI_PROOF_READY\n".to_vec());
+
+    let first_delta =
+        adapter.transcript_delta(ClaudeCodeTranscriptCursor::default(), &first_transcript);
+    let second_transcript = TranscriptCapture::from_bytes(
+        b"Claude TUI opened\nMENTCI_PROOF_READY\nMENTCI_PROOF_TURN1_DONE\n".to_vec(),
+    );
+    let second_delta = adapter.transcript_delta(first_delta.next_cursor(), &second_transcript);
+
+    assert!(first_delta.contains_text("MENTCI_PROOF_READY"));
+    assert_eq!(
+        first_delta.next_cursor().offset(),
+        first_transcript.bytes().len()
+    );
+    assert_eq!(second_delta.bytes(), b"MENTCI_PROOF_TURN1_DONE\n");
+    assert!(second_delta.contains_text("MENTCI_PROOF_TURN1_DONE"));
+}
+
+#[test]
 fn claude_specific_behavior_is_not_in_generic_liveness_or_session_layers() {
     let liveness_source = include_str!("../src/harness_liveness.rs");
     let session_source = include_str!("../src/harness_sessions.rs");
@@ -379,6 +462,10 @@ fn claude_specific_behavior_is_not_in_generic_liveness_or_session_layers() {
         assert!(!source.contains("--permission-mode"));
         assert!(!source.contains("bypassPermissions"));
         assert!(!source.contains("claude-haiku-4-5-20251001"));
+        assert!(!source.contains("--bare"));
+        assert!(!source.contains("--print"));
+        assert!(!source.contains("ANTHROPIC_API_KEY"));
+        assert!(!source.contains("apiKeyHelper"));
         assert!(!source.contains("/exit"));
     }
 }
@@ -426,7 +513,7 @@ fn terminal_cell_runtime_accepts_adapter_feed_without_invoking_external_claude_c
         second
             .transcript()
             .to_string_lossy()
-            .contains("adapter:two"),
+            .contains("adapter:\u{1b}[200~two\u{1b}[201~"),
         "real terminal-cell transcript did not include second adapter feed: {:?}",
         second.transcript().to_string_lossy()
     );

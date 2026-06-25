@@ -8,11 +8,11 @@ use crate::harness_liveness::{
     CloseRequest, IdleTimeout, LaunchRequest, LivenessPolicy,
     SandboxPrivacy as DriverSandboxPrivacy, SandboxPrivacyFlag,
     StopCondition as DriverStopCondition, StopConditions, TerminalCommand, TerminalFeed,
-    TerminalLaunch, TerminalSize, TerminalWorkingDirectory, TurnCap, TurnCount,
+    TerminalLaunch, TerminalSize, TerminalWorkingDirectory, TranscriptCapture, TurnCap, TurnCount,
 };
 use crate::harness_sessions::NamedHarnessLaunch;
 use crate::preflight::{
-    HarnessTarget, MentciPreflightLaunch, ModelSlot, PrivacySurface,
+    HarnessTarget, MentciPreflightLaunch, PrivacySurface,
     SandboxPrivacy as PreflightSandboxPrivacy, StopCondition,
 };
 
@@ -20,7 +20,8 @@ const PRIMARY_WORKSPACE: &str = "/home/li/primary";
 const EPHEMERAL_SANDBOX_MARKER: &str = ".mentci-ephemeral-jj-sandbox";
 const CLAUDE_CODE_ADAPTER: &str = "claude-code-terminal-adapter";
 const TERMINAL_CELL_DRIVER: &str = "terminal-cell-v1";
-const CLAUDE_HAIKU_MODEL: &str = "claude-haiku-4-5-20251001";
+const BRACKETED_PASTE_START: &[u8] = b"\x1b[200~";
+const BRACKETED_PASTE_END: &[u8] = b"\x1b[201~";
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ClaudeCodeAdapter {
@@ -46,9 +47,8 @@ impl ClaudeCodeAdapter {
         request: ClaudeCodeLaunchRequest,
     ) -> Result<NamedHarnessLaunch, AdapterError> {
         self.validate_launch(&request)?;
-        let model = ClaudeCodeModel::from_launch(request.preflight_launch())?;
         let terminal_launch = TerminalLaunch::new(
-            TerminalCommand::new(self.executable.clone(), self.arguments(&request, &model)),
+            TerminalCommand::new(self.executable.clone(), self.arguments(&request)),
             self.terminal_size,
         )
         .with_working_directory(TerminalWorkingDirectory::new(
@@ -67,11 +67,24 @@ impl ClaudeCodeAdapter {
     }
 
     pub fn feed(&self, input: HarnessFeed) -> Result<TerminalFeed, AdapterError> {
-        Ok(TerminalFeed::new(input.into_terminal_bytes()))
+        Ok(input.into_terminal_feed())
     }
 
     pub fn close_request(&self) -> CloseRequest {
         CloseRequest::TerminalInput(TerminalFeed::new(b"/exit\r".to_vec()))
+    }
+
+    pub fn transcript_delta(
+        &self,
+        cursor: ClaudeCodeTranscriptCursor,
+        transcript: &TranscriptCapture,
+    ) -> ClaudeCodeTranscriptDelta {
+        let bytes = transcript.bytes();
+        let offset = cursor.offset.min(bytes.len());
+        ClaudeCodeTranscriptDelta::new(
+            bytes[offset..].to_vec(),
+            ClaudeCodeTranscriptCursor::new(bytes.len()),
+        )
     }
 
     fn validate_launch(&self, request: &ClaudeCodeLaunchRequest) -> Result<(), AdapterError> {
@@ -98,13 +111,8 @@ impl ClaudeCodeAdapter {
         Ok(())
     }
 
-    fn arguments(&self, request: &ClaudeCodeLaunchRequest, model: &ClaudeCodeModel) -> Vec<String> {
+    fn arguments(&self, request: &ClaudeCodeLaunchRequest) -> Vec<String> {
         vec![
-            "--bare".to_owned(),
-            "--model".to_owned(),
-            model.as_str().to_owned(),
-            "--permission-mode".to_owned(),
-            "bypassPermissions".to_owned(),
             "--add-dir".to_owned(),
             request.scaffold_path().to_string_lossy().into_owned(),
             "--name".to_owned(),
@@ -127,7 +135,7 @@ impl ClaudeCodeAdapter {
         prompt.push_str("\nPreflight launch:\n");
         prompt.push_str(&request.preflight_launch().to_nota());
         prompt.push_str("\n");
-        TerminalFeed::new(prompt.into_bytes())
+        InteractiveTerminalInput::new(prompt).into_terminal_feed()
     }
 
     fn stop_conditions(&self, stop_conditions: &[StopCondition]) -> StopConditions {
@@ -230,10 +238,73 @@ impl HarnessFeed {
         Self { text: text.into() }
     }
 
-    fn into_terminal_bytes(self) -> Vec<u8> {
-        let mut bytes = self.text.into_bytes();
+    fn into_terminal_feed(self) -> TerminalFeed {
+        InteractiveTerminalInput::new(self.text).into_terminal_feed()
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct InteractiveTerminalInput {
+    text: String,
+}
+
+impl InteractiveTerminalInput {
+    fn new(text: impl Into<String>) -> Self {
+        Self { text: text.into() }
+    }
+
+    fn into_terminal_feed(self) -> TerminalFeed {
+        let mut bytes = Vec::with_capacity(
+            BRACKETED_PASTE_START.len() + self.text.len() + BRACKETED_PASTE_END.len() + b"\r".len(),
+        );
+        bytes.extend_from_slice(BRACKETED_PASTE_START);
+        bytes.extend_from_slice(self.text.as_bytes());
+        bytes.extend_from_slice(BRACKETED_PASTE_END);
         bytes.push(b'\r');
-        bytes
+        TerminalFeed::new(bytes)
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct ClaudeCodeTranscriptCursor {
+    offset: usize,
+}
+
+impl ClaudeCodeTranscriptCursor {
+    pub const fn new(offset: usize) -> Self {
+        Self { offset }
+    }
+
+    pub const fn offset(self) -> usize {
+        self.offset
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ClaudeCodeTranscriptDelta {
+    bytes: Vec<u8>,
+    next_cursor: ClaudeCodeTranscriptCursor,
+}
+
+impl ClaudeCodeTranscriptDelta {
+    fn new(bytes: Vec<u8>, next_cursor: ClaudeCodeTranscriptCursor) -> Self {
+        Self { bytes, next_cursor }
+    }
+
+    pub fn bytes(&self) -> &[u8] {
+        self.bytes.as_slice()
+    }
+
+    pub fn next_cursor(&self) -> ClaudeCodeTranscriptCursor {
+        self.next_cursor
+    }
+
+    pub fn to_string_lossy(&self) -> String {
+        String::from_utf8_lossy(&self.bytes).into_owned()
+    }
+
+    pub fn contains_text(&self, text: &str) -> bool {
+        self.to_string_lossy().contains(text)
     }
 }
 
@@ -405,35 +476,6 @@ impl EphemeralRepositoryName {
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
-struct ClaudeCodeModel {
-    identifier: String,
-}
-
-impl ClaudeCodeModel {
-    fn from_launch(launch: &MentciPreflightLaunch) -> Result<Self, AdapterError> {
-        let profile = launch
-            .route()
-            .model_selection()
-            .harness_session_model()
-            .as_str();
-        match profile {
-            CLAUDE_HAIKU_MODEL => Ok(Self {
-                identifier: CLAUDE_HAIKU_MODEL.to_owned(),
-            }),
-            other => Err(AdapterError::UnverifiedModel {
-                slot: ModelSlot::HarnessSession.as_str(),
-                profile: other.to_owned(),
-                required_identifier: CLAUDE_HAIKU_MODEL.to_owned(),
-            }),
-        }
-    }
-
-    fn as_str(&self) -> &str {
-        self.identifier.as_str()
-    }
-}
-
 impl From<&StopCondition> for DriverStopCondition {
     fn from(condition: &StopCondition) -> Self {
         match condition {
@@ -452,13 +494,6 @@ impl From<&StopCondition> for DriverStopCondition {
 pub enum AdapterError {
     #[error("unsupported harness adapter capability: {capability}")]
     UnsupportedCapability { capability: String },
-
-    #[error("unverified model for {slot}: profile {profile} requires {required_identifier}")]
-    UnverifiedModel {
-        slot: &'static str,
-        profile: String,
-        required_identifier: String,
-    },
 
     #[error("sandbox violation at {path:?}: {reason}")]
     SandboxViolation { path: PathBuf, reason: String },

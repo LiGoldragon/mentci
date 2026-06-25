@@ -36,11 +36,17 @@ mod proof {
     const RUN_GATE: &str = "MENTCI_RUN_REAL_CLAUDE_PROOF";
     const WITNESS_PATH: &str = "MENTCI_REAL_CLAUDE_WITNESS";
     const KEEP_SANDBOX: &str = "MENTCI_KEEP_REAL_CLAUDE_PROOF_SANDBOX";
-    const MODEL: &str = "claude-haiku-4-5-20251001";
     const PROOF_FILE: &str = "mentci-proof.txt";
     const PROOF_FILE_CONTENT: &str = "mentci primary-0bax terminal-cell proof\n";
     const COMMIT_MESSAGE: &str = "mentci proof task";
     const PRIMARY_WORKSPACE: &str = "/home/li/primary";
+    const FORBIDDEN_ARGUMENTS: &[&str] = &[
+        "--bare",
+        "--print",
+        "--model",
+        "--permission-mode",
+        "bypassPermissions",
+    ];
 
     pub struct ProofRunner {
         enabled: ProofGate,
@@ -76,11 +82,10 @@ mod proof {
         sandbox_path: PathBuf,
         scaffold_path: PathBuf,
         claude_version: CommandResult,
-        bare_auth_probe: CommandResult,
         argv_program: String,
         argv_arguments: Vec<String>,
         initial_prompt_summary: String,
-        bypass_permissions_seen: bool,
+        forbidden_arguments_seen: Vec<String>,
         preflight_launch: String,
         first_read_reason: String,
         first_read_snippet: String,
@@ -120,30 +125,20 @@ mod proof {
             let claude_version = CommandRunner::new("claude")
                 .argument("--version")
                 .run_in(Path::new("/tmp"))?;
-            let bare_auth_probe = CommandRunner::new("claude")
-                .argument("--bare")
-                .argument("--print")
-                .argument("reply with exactly mentci-bare-availability-ok")
-                .argument("--model")
-                .argument(MODEL)
-                .argument("--permission-mode")
-                .argument("bypassPermissions")
-                .run_in(Path::new("/tmp"))?;
 
-            if !bare_auth_probe.succeeded() {
+            if !claude_version.succeeded() {
                 let report = BlockedProofReport::new(
                     self.witness_path,
                     claude_version,
-                    bare_auth_probe,
-                    "exact Claude adapter argv is unavailable; bare mode requires ANTHROPIC_API_KEY or an apiKeyHelper visible to --bare",
+                    "normal Claude subscription TUI is unavailable on PATH",
                 );
                 report.write()?;
                 println!(
-                    "MentciClaudeProofBlocked witness={} prerequisite=bare-claude-auth",
+                    "MentciClaudeProofBlocked witness={} prerequisite=claude-subscription-tui",
                     report.path().display()
                 );
                 return Err(ProofError::Blocked(
-                    "bare Claude Code auth is unavailable for the adapter argv".to_owned(),
+                    "normal Claude subscription TUI is unavailable on PATH".to_owned(),
                 ));
             }
 
@@ -178,9 +173,13 @@ mod proof {
                 .initial_input()
                 .map(|input| TranscriptSnippet::new(input.bytes()).summary())
                 .unwrap_or_else(|| "no initial input".to_owned());
-            let bypass_permissions_seen = argv_arguments
-                .windows(2)
-                .any(|window| window == ["--permission-mode", "bypassPermissions"]);
+            let forbidden_arguments_seen =
+                ForbiddenArguments::from_arguments(&argv_arguments).into_vec();
+            if !forbidden_arguments_seen.is_empty() {
+                return Err(ProofError::ForbiddenLaunchArguments(
+                    forbidden_arguments_seen,
+                ));
+            }
             let close_request = adapter.close_request();
             let close_input = CloseInputSummary::new(&close_request).summary();
             let address =
@@ -245,11 +244,10 @@ mod proof {
                 sandbox_path,
                 scaffold_path,
                 claude_version,
-                bare_auth_probe,
                 argv_program,
                 argv_arguments,
                 initial_prompt_summary,
-                bypass_permissions_seen,
+                forbidden_arguments_seen,
                 preflight_launch: preflight.launch.to_nota(),
                 first_read_reason: format!("{:?}", first_read.reason()),
                 first_read_snippet: TranscriptSnippet::new(first_read.transcript().bytes())
@@ -328,14 +326,14 @@ mod proof {
     (rust-discipline skills/rust-discipline.md [implement and verify the Rust proof path])
     (testing skills/testing.md [run the stateful proof witness])
     (jj skills/jj.md [keep the proof in an ephemeral jj repo])]
-   (claude-haiku-4-5-20251001 claude-haiku-4-5-20251001)
+   (claude-haiku-4-5-20251001 subscription-tui-default)
    (ClaudeCode claude-code-terminal-adapter terminal-cell-v1)
    [Prompt requires a real Claude Code terminal-cell session over a sandboxed jj task])
   (mentci-primary-0bax [(Bead primary-0bax) (WorkSurface sandboxed-jj-task) (HarnessLabel real-claude-terminal-cell)] primary-0bax-claude-proof-session orchestrate/lanes/primary-0bax)
   Persistent
   (SandboxedJjTask PrimaryForbidden PrivateScopeClosed)
   [(IdleTimeout 45) (TurnCap 8) CompletionSignal]
-  [(WorkSurface sandboxed-jj-task) (ForbiddenPath /home/li/primary) (RequiredWitness real-claude-terminal-cell) (RequiredWitness bypass-permissions-argv) (ImplementationBoundary claude-adapter-only)])"#
+  [(WorkSurface sandboxed-jj-task) (ForbiddenPath /home/li/primary) (RequiredWitness real-claude-terminal-cell) (RequiredWitness subscription-claude-tui) (ImplementationBoundary claude-adapter-only)])"#
         }
     }
 
@@ -350,19 +348,16 @@ mod proof {
 
         fn render(&self) -> String {
             format!(
-                "# Mentci real Claude proof witness\n\nstatus: passed\nsandbox_path: {}\nscaffold_path: {}\nsandbox_removed: {}\nprimary_unchanged: {}\n\n## Claude\nversion_status: {}\nversion_stdout: {}\nbare_auth_probe_status: {}\nbare_auth_probe_stdout: {}\nbare_auth_probe_stderr: {}\n\n## Launch\nargv_program: {}\nargv_arguments: {:?}\nbypass_permissions_seen: {}\nclose_input: {}\ninitial_prompt_summary: {}\n\n## Preflight\n{}\n\n## Transcript\nfirst_read_reason: {}\nfirst_read_snippet:\n{}\n\nsecond_read_reason: {}\nsecond_read_snippet:\n{}\n\nthird_read_reason: {}\nthird_read_snippet:\n{}\n\nclose_signal: {}\n\n## Jj Task\nproof_file_content: {:?}\njj_status_after_task_status: {}\njj_status_after_task_stdout: {}\njj_log_after_task_status: {}\njj_log_after_task_stdout: {}\n\n## Primary Guard\nprimary_before_status: {}\nprimary_before_stdout: {}\nprimary_after_status: {}\nprimary_after_stdout: {}\n",
+                "# Mentci real Claude proof witness\n\nstatus: passed\nsandbox_path: {}\nscaffold_path: {}\nsandbox_removed: {}\nprimary_unchanged: {}\n\n## Claude\nversion_status: {}\nversion_stdout: {}\nsubscription_tui: normal interactive claude\n\n## Launch\nargv_program: {}\nargv_arguments: {:?}\nforbidden_arguments_seen: {:?}\nclose_input: {}\ninitial_prompt_summary: {}\n\n## Preflight\n{}\n\n## Transcript\nfirst_read_reason: {}\nfirst_read_snippet:\n{}\n\nsecond_read_reason: {}\nsecond_read_snippet:\n{}\n\nthird_read_reason: {}\nthird_read_snippet:\n{}\n\nclose_signal: {}\n\n## Jj Task\nproof_file_content: {:?}\njj_status_after_task_status: {}\njj_status_after_task_stdout: {}\njj_log_after_task_status: {}\njj_log_after_task_stdout: {}\n\n## Primary Guard\nprimary_before_status: {}\nprimary_before_stdout: {}\nprimary_after_status: {}\nprimary_after_stdout: {}\n",
                 self.sandbox_path.display(),
                 self.scaffold_path.display(),
                 self.sandbox_removed,
                 self.primary_unchanged,
                 self.claude_version.status,
                 self.claude_version.stdout.trim(),
-                self.bare_auth_probe.status,
-                self.bare_auth_probe.stdout.trim(),
-                self.bare_auth_probe.stderr.trim(),
                 self.argv_program,
                 self.argv_arguments,
-                self.bypass_permissions_seen,
+                self.forbidden_arguments_seen,
                 self.close_input,
                 self.initial_prompt_summary,
                 self.preflight_launch,
@@ -389,7 +384,6 @@ mod proof {
     struct BlockedProofReport {
         path: PathBuf,
         claude_version: CommandResult,
-        bare_auth_probe: CommandResult,
         prerequisite: String,
     }
 
@@ -397,13 +391,11 @@ mod proof {
         fn new(
             path: PathBuf,
             claude_version: CommandResult,
-            bare_auth_probe: CommandResult,
             prerequisite: impl Into<String>,
         ) -> Self {
             Self {
                 path,
                 claude_version,
-                bare_auth_probe,
                 prerequisite: prerequisite.into(),
             }
         }
@@ -422,16 +414,39 @@ mod proof {
 
         fn render(&self) -> String {
             format!(
-                "# Mentci real Claude proof witness\n\nstatus: blocked\nmissing_prerequisite: {}\n\n## Detection\nclaude_version_status: {}\nclaude_version_stdout: {}\nbare_auth_probe_program: {}\nbare_auth_probe_arguments: {:?}\nbare_auth_probe_status: {}\nbare_auth_probe_stdout: {}\nbare_auth_probe_stderr: {}\n\n## Required Proof Not Run\nThe real terminal-cell proof did not run because the exact Claude adapter auth probe failed before launch. The adapter argv includes `--bare`, `--model {MODEL}`, and `--permission-mode bypassPermissions`; this environment must expose Anthropic auth to bare mode before the proof bead can close.\n",
+                "# Mentci real Claude proof witness\n\nstatus: blocked\nmissing_prerequisite: {}\n\n## Detection\nclaude_version_program: {}\nclaude_version_arguments: {:?}\nclaude_version_status: {}\nclaude_version_stdout: {}\nclaude_version_stderr: {}\n\n## Required Proof Not Run\nThe real terminal-cell proof did not run because the normal interactive `claude` TUI was unavailable. This proof must use the user's Claude subscription session in a terminal cell; it must not use `--bare`, `--print`, an Anthropic API key, or `apiKeyHelper`.\n",
                 self.prerequisite,
+                self.claude_version.program,
+                self.claude_version.arguments,
                 self.claude_version.status,
                 self.claude_version.stdout.trim(),
-                self.bare_auth_probe.program,
-                self.bare_auth_probe.arguments,
-                self.bare_auth_probe.status,
-                self.bare_auth_probe.stdout.trim(),
-                self.bare_auth_probe.stderr.trim(),
+                self.claude_version.stderr.trim(),
             )
+        }
+    }
+
+    struct ForbiddenArguments {
+        arguments: Vec<String>,
+    }
+
+    impl ForbiddenArguments {
+        fn from_arguments(arguments: &[String]) -> Self {
+            let mut seen = arguments
+                .iter()
+                .filter(|argument| FORBIDDEN_ARGUMENTS.contains(&argument.as_str()))
+                .cloned()
+                .collect::<Vec<_>>();
+            if arguments
+                .windows(2)
+                .any(|window| window == ["--permission-mode", "bypassPermissions"])
+            {
+                seen.push("--permission-mode bypassPermissions".to_owned());
+            }
+            Self { arguments: seen }
+        }
+
+        fn into_vec(self) -> Vec<String> {
+            self.arguments
         }
     }
 
@@ -589,5 +604,8 @@ mod proof {
 
         #[error("jj commit witness missing expected message; log output was {0:?}")]
         MissingCommitWitness(String),
+
+        #[error("forbidden Claude subscription TUI launch arguments: {0:?}")]
+        ForbiddenLaunchArguments(Vec<String>),
     }
 }
