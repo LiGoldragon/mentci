@@ -178,7 +178,7 @@ pub enum ReusePolicy {
 
 macro_rules! text_newtype {
     ($name:ident) => {
-        #[derive(NotaDecode, NotaEncode, Clone, Debug, Eq, PartialEq)]
+        #[derive(NotaDecode, NotaEncode, Clone, Debug, Eq, Hash, PartialEq)]
         pub struct $name(String);
 
         impl $name {
@@ -195,7 +195,7 @@ macro_rules! text_newtype {
 
 macro_rules! integer_newtype {
     ($name:ident) => {
-        #[derive(NotaDecode, NotaEncode, Clone, Copy, Debug, Eq, PartialEq)]
+        #[derive(NotaDecode, NotaEncode, Clone, Copy, Debug, Eq, Hash, PartialEq)]
         pub struct $name(u64);
 
         impl $name {

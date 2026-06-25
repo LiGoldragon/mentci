@@ -262,3 +262,41 @@ fn transcript_events_are_provider_agnostic_bytes() {
         "provider-specific words stay raw\n"
     );
 }
+
+#[cfg(feature = "terminal-cell-runtime")]
+#[test]
+fn terminal_cell_runtime_launches_local_command_and_captures_transcript() {
+    let marker = "mentci-terminal-cell-smoke";
+    let driver = TerminalCellDriver::<mentci::harness_liveness::TerminalCellLauncher>::default();
+    let request = LaunchRequest::new(TerminalLaunch::new(
+        TerminalCommand::new(
+            "/bin/sh",
+            vec!["-c".to_string(), format!("printf {marker}")],
+        ),
+        TerminalSize::new(24, 80),
+    ))
+    .with_liveness(LivenessPolicy::new(StopConditions::new([
+        StopCondition::IdleTimeout(IdleTimeout::new(Duration::from_secs(2))),
+    ])));
+    let mut session = driver
+        .launch(request)
+        .expect("terminal-cell session launched");
+
+    let outcome = session
+        .read_until_stop()
+        .expect("terminal-cell read outcome");
+    let transcript = session
+        .transcript()
+        .expect("terminal-cell transcript snapshot")
+        .to_string_lossy();
+
+    assert!(
+        matches!(outcome.reason(), StopReason::TerminalExit(_)),
+        "expected terminal exit from trivial command, got {:?}",
+        outcome.reason()
+    );
+    assert!(
+        transcript.contains(marker),
+        "expected transcript to contain {marker:?}, got {transcript:?}"
+    );
+}

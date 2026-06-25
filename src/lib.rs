@@ -12,6 +12,7 @@ pub mod daemon;
 pub mod error;
 pub mod frame_codec;
 pub mod harness_liveness;
+pub mod harness_sessions;
 pub mod introspection_bridge;
 pub mod preflight;
 pub mod state;
