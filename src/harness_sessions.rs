@@ -7,7 +7,7 @@ use crate::harness_liveness::{
     TerminalFeed, TerminalSessionLauncher,
 };
 use crate::preflight::{
-    AdapterIdentity, HarnessTarget, LaneMetadata, LaneName, MentciPreflightLaunch, ModelSelection,
+    AdapterIdentity, HarnessSessionModelProfile, LaneMetadata, LaneName, MentciPreflightLaunch,
     PersistentSession, SandboxPrivacy, ScaffoldIdentity, ScaffoldVersion, SessionHandle,
     SessionIdentity, TerminalCellDriverIdentity,
 };
@@ -16,13 +16,19 @@ use crate::preflight::{
 pub struct NamedHarnessLaunch {
     preflight_launch: MentciPreflightLaunch,
     terminal_launch: LaunchRequest,
+    launch_metadata: HarnessLaunchMetadata,
 }
 
 impl NamedHarnessLaunch {
-    pub fn new(preflight_launch: MentciPreflightLaunch, terminal_launch: LaunchRequest) -> Self {
+    pub fn new(
+        preflight_launch: MentciPreflightLaunch,
+        terminal_launch: LaunchRequest,
+        launch_metadata: HarnessLaunchMetadata,
+    ) -> Self {
         Self {
             preflight_launch,
             terminal_launch,
+            launch_metadata,
         }
     }
 
@@ -34,8 +40,52 @@ impl NamedHarnessLaunch {
         &self.terminal_launch
     }
 
+    pub fn launch_metadata(&self) -> &HarnessLaunchMetadata {
+        &self.launch_metadata
+    }
+
     fn into_terminal_launch(self) -> LaunchRequest {
         self.terminal_launch
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct HarnessLaunchMetadata {
+    harness_kind: HarnessKind,
+    adapter: AdapterIdentity,
+    terminal_cell_driver: TerminalCellDriverIdentity,
+    harness_session_model: HarnessSessionModelProfile,
+}
+
+impl HarnessLaunchMetadata {
+    pub fn new(
+        harness_kind: HarnessKind,
+        adapter: AdapterIdentity,
+        terminal_cell_driver: TerminalCellDriverIdentity,
+        harness_session_model: HarnessSessionModelProfile,
+    ) -> Self {
+        Self {
+            harness_kind,
+            adapter,
+            terminal_cell_driver,
+            harness_session_model,
+        }
+    }
+
+    pub fn harness_kind(&self) -> HarnessKind {
+        self.harness_kind
+    }
+
+    pub fn adapter(&self) -> &AdapterIdentity {
+        &self.adapter
+    }
+
+    pub fn terminal_cell_driver(&self) -> &TerminalCellDriverIdentity {
+        &self.terminal_cell_driver
+    }
+
+    pub fn harness_session_model(&self) -> &HarnessSessionModelProfile {
+        &self.harness_session_model
     }
 }
 
@@ -48,11 +98,14 @@ pub struct SessionAddressRecord {
 }
 
 impl SessionAddressRecord {
-    pub fn from_launch(launch: &MentciPreflightLaunch) -> Self {
+    pub fn from_launch(
+        launch: &MentciPreflightLaunch,
+        launch_metadata: &HarnessLaunchMetadata,
+    ) -> Self {
         Self {
             identity: launch.session_identity().clone(),
             persistent_session: launch.persistent_session(),
-            metadata: SessionAddressMetadata::from_launch(launch),
+            metadata: SessionAddressMetadata::from_launch(launch, launch_metadata),
             state: SessionRecordState::Open,
         }
     }
@@ -82,21 +135,23 @@ pub struct SessionAddressMetadata {
     harness_kind: HarnessKind,
     adapter: AdapterIdentity,
     terminal_cell_driver: TerminalCellDriverIdentity,
-    model_selection: ModelSelection,
+    harness_session_model: HarnessSessionModelProfile,
     sandbox_privacy: SandboxPrivacy,
 }
 
 impl SessionAddressMetadata {
-    pub fn from_launch(launch: &MentciPreflightLaunch) -> Self {
-        let (harness_kind, driver) = HarnessKind::from_target(launch.route().harness_target());
+    pub fn from_launch(
+        launch: &MentciPreflightLaunch,
+        launch_metadata: &HarnessLaunchMetadata,
+    ) -> Self {
         Self {
             lane_metadata: launch.session_identity().lane_metadata().to_vec(),
             scaffold_identity: launch.scaffold().identity().clone(),
             scaffold_version: launch.scaffold().version(),
-            harness_kind,
-            adapter: driver.adapter().clone(),
-            terminal_cell_driver: driver.terminal_cell_driver().clone(),
-            model_selection: launch.route().model_selection().clone(),
+            harness_kind: launch_metadata.harness_kind(),
+            adapter: launch_metadata.adapter().clone(),
+            terminal_cell_driver: launch_metadata.terminal_cell_driver().clone(),
+            harness_session_model: launch_metadata.harness_session_model().clone(),
             sandbox_privacy: launch.sandbox_privacy().clone(),
         }
     }
@@ -125,8 +180,8 @@ impl SessionAddressMetadata {
         &self.terminal_cell_driver
     }
 
-    pub fn model_selection(&self) -> &ModelSelection {
-        &self.model_selection
+    pub fn harness_session_model(&self) -> &HarnessSessionModelProfile {
+        &self.harness_session_model
     }
 
     pub fn sandbox_privacy(&self) -> &SandboxPrivacy {
@@ -143,13 +198,20 @@ pub enum HarnessKind {
 }
 
 impl HarnessKind {
-    fn from_target(target: &HarnessTarget) -> (Self, &crate::preflight::AdapterDriver) {
-        match target {
-            HarnessTarget::ClaudeCode(driver) => (Self::ClaudeCode, driver),
-            HarnessTarget::Codex(driver) => (Self::Codex, driver),
-            HarnessTarget::Pi(driver) => (Self::Pi, driver),
-            HarnessTarget::OpenEndedHarness(driver) => (Self::OpenEndedHarness, driver),
-        }
+    pub fn claude_code() -> Self {
+        Self::ClaudeCode
+    }
+
+    pub fn codex() -> Self {
+        Self::Codex
+    }
+
+    pub fn pi() -> Self {
+        Self::Pi
+    }
+
+    pub fn open_ended_harness() -> Self {
+        Self::OpenEndedHarness
     }
 }
 
@@ -422,7 +484,10 @@ where
         &mut self,
         request: NamedHarnessLaunch,
     ) -> Result<SessionAddressRecord, SessionRoutingError> {
-        let record = SessionAddressRecord::from_launch(request.preflight_launch());
+        let record = SessionAddressRecord::from_launch(
+            request.preflight_launch(),
+            request.launch_metadata(),
+        );
         let registration = self.directory.register_or_reuse(record)?;
         let handle = registration
             .record()

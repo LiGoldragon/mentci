@@ -10,10 +10,10 @@ use crate::harness_liveness::{
     StopCondition as DriverStopCondition, StopConditions, TerminalCommand, TerminalFeed,
     TerminalLaunch, TerminalSize, TerminalWorkingDirectory, TranscriptCapture, TurnCap, TurnCount,
 };
-use crate::harness_sessions::NamedHarnessLaunch;
+use crate::harness_sessions::{HarnessKind, HarnessLaunchMetadata, NamedHarnessLaunch};
 use crate::preflight::{
-    HarnessTarget, MentciPreflightLaunch, PrivacySurface,
-    SandboxPrivacy as PreflightSandboxPrivacy, StopCondition,
+    AdapterIdentity, HarnessSessionModelProfile, MentciPreflightLaunch, PrivacySurface,
+    SandboxPrivacy as PreflightSandboxPrivacy, StopCondition, TerminalCellDriverIdentity,
 };
 
 const PRIMARY_WORKSPACE: &str = "/home/li/primary";
@@ -63,6 +63,7 @@ impl ClaudeCodeAdapter {
         Ok(NamedHarnessLaunch::new(
             request.into_preflight_launch(),
             launch_request,
+            self.launch_metadata(),
         ))
     }
 
@@ -88,27 +89,17 @@ impl ClaudeCodeAdapter {
     }
 
     fn validate_launch(&self, request: &ClaudeCodeLaunchRequest) -> Result<(), AdapterError> {
-        let HarnessTarget::ClaudeCode(driver) = request.preflight_launch().route().harness_target()
-        else {
-            return Err(AdapterError::UnsupportedCapability {
-                capability: "ClaudeCode harness target".to_owned(),
-            });
-        };
-        if driver.adapter().as_str() != CLAUDE_CODE_ADAPTER {
-            return Err(AdapterError::UnsupportedCapability {
-                capability: format!("adapter {}", driver.adapter().as_str()),
-            });
-        }
-        if driver.terminal_cell_driver().as_str() != TERMINAL_CELL_DRIVER {
-            return Err(AdapterError::UnsupportedCapability {
-                capability: format!(
-                    "terminal-cell driver {}",
-                    driver.terminal_cell_driver().as_str()
-                ),
-            });
-        }
         request.sandbox().validate()?;
         Ok(())
+    }
+
+    fn launch_metadata(&self) -> HarnessLaunchMetadata {
+        HarnessLaunchMetadata::new(
+            HarnessKind::claude_code(),
+            AdapterIdentity::new(CLAUDE_CODE_ADAPTER),
+            TerminalCellDriverIdentity::new(TERMINAL_CELL_DRIVER),
+            HarnessSessionModelProfile::new("subscription-tui-default"),
+        )
     }
 
     fn arguments(&self, request: &ClaudeCodeLaunchRequest) -> Vec<String> {

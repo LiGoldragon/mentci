@@ -1,14 +1,13 @@
 use mentci::Error;
 use mentci::preflight::{
     LaunchConstraint, ModelAvailability, ModelSelection, PreflightApi, PreflightEngine,
-    PreflightModelOutput, PreflightModelProfile, PreflightPrompt, PreflightRequest,
-    VerifiedModelIdentifier, WorkSurface,
+    PreflightModelOutput, PreflightModelProfile, PreflightPrompt, PreflightRequest, PrivacySurface,
+    SandboxPrivacy, VerifiedModelIdentifier, WorkSurface,
 };
 
 #[derive(Clone, Debug)]
 struct FakePreflightApi {
     output: String,
-    unavailable_model: Option<String>,
     fail_completion: bool,
 }
 
@@ -16,14 +15,8 @@ impl FakePreflightApi {
     fn new(output: impl Into<String>) -> Self {
         Self {
             output: output.into(),
-            unavailable_model: None,
             fail_completion: false,
         }
-    }
-
-    fn with_unavailable_model(mut self, model: impl Into<String>) -> Self {
-        self.unavailable_model = Some(model.into());
-        self
     }
 
     fn with_completion_failure(mut self) -> Self {
@@ -35,15 +28,8 @@ impl FakePreflightApi {
 impl PreflightApi for FakePreflightApi {
     fn model_availability(
         &self,
-        identifier: &VerifiedModelIdentifier,
+        _identifier: &VerifiedModelIdentifier,
     ) -> mentci::Result<ModelAvailability> {
-        if self
-            .unavailable_model
-            .as_ref()
-            .is_some_and(|model| model == identifier.as_str())
-        {
-            return Ok(ModelAvailability::Unavailable);
-        }
         Ok(ModelAvailability::Verified)
     }
 
@@ -85,11 +71,6 @@ fn request() -> PreflightRequest {
 fn valid_launch_nota() -> String {
     r#"(MentciPreflightLaunch
   (mentci-prompt-scaffold 1 [skills/skills.nota] [ARCHITECTURE.md] skills/skills.nota ReuseDeferred)
-  ([(beads skills/beads.md [claim and update the bead])
-    (nota-design skills/nota-design.md [preserve positional NOTA shape])]
-   (cheap-contained-preflight cheap-harness-session)
-   (Codex codex-terminal-adapter terminal-cell-v1)
-   [Prompt requires a sandboxed jj task and a persistent named harness session])
   (mentci-primary-k6va [(Bead primary-k6va) (WorkSurface sandboxed-jj-task)] primary-k6va-session orchestrate/lanes/primary-k6va)
   Persistent
   (SandboxedJjTask PrimaryForbidden PrivateScopeClosed)
@@ -113,7 +94,10 @@ fn preflight_path_calls_api_and_validates_launch_packet() {
         launch.scaffold().expansion_index().as_str(),
         "skills/skills.nota"
     );
-    assert_eq!(launch.route().chosen_skills().len(), 2);
+    assert!(matches!(
+        launch.sandbox_privacy(),
+        SandboxPrivacy::SandboxedJjTask(_, PrivacySurface::PrivateScopeClosed)
+    ));
     assert_eq!(launch.stop_conditions().len(), 3);
 }
 
@@ -141,22 +125,6 @@ fn preflight_model_slots_reject_provider_specific_identifiers() {
                 && profile == "claude-haiku-4-5-20251001"
                 && required_identifier == "cheap-contained-preflight"
     ));
-
-    let provider_model_launch =
-        valid_launch_nota().replace("cheap-harness-session", "gpt-5.4-mini");
-    let engine = PreflightEngine::new(FakePreflightApi::new(provider_model_launch));
-
-    let error = engine
-        .launch(&request())
-        .expect_err("provider-specific harness model rejected");
-
-    assert!(matches!(
-        error,
-        Error::UnverifiedModel { slot, profile, required_identifier }
-            if slot == "harness session model"
-                && profile == "gpt-5.4-mini"
-                && required_identifier == "cheap-harness-session"
-    ));
 }
 
 #[test]
@@ -175,18 +143,25 @@ fn preflight_rejects_generic_compression_or_missing_named_slots() {
 }
 
 #[test]
-fn preflight_rejects_missing_skill_selection() {
-    let missing_skills = valid_launch_nota().replace(
-        "[(beads skills/beads.md [claim and update the bead])\n    (nota-design skills/nota-design.md [preserve positional NOTA shape])]",
-        "[]",
-    );
-    let engine = PreflightEngine::new(FakePreflightApi::new(missing_skills));
+fn preflight_rejects_route_or_harness_target_in_launch_packet() {
+    let route_bearing_packet = r#"(MentciPreflightLaunch
+  (mentci-prompt-scaffold 1 [skills/skills.nota] [ARCHITECTURE.md] skills/skills.nota ReuseDeferred)
+  ([(beads skills/beads.md [claim and update the bead])]
+   (cheap-contained-preflight cheap-harness-session)
+   (Codex codex-terminal-adapter terminal-cell-v1)
+   [Prompt requires a sandboxed jj task and a persistent named harness session])
+  (mentci-primary-k6va [(Bead primary-k6va) (WorkSurface sandboxed-jj-task)] primary-k6va-session orchestrate/lanes/primary-k6va)
+  Persistent
+  (SandboxedJjTask PrimaryForbidden PrivateScopeClosed)
+  [(IdleTimeout 600) (TurnCap 8) CompletionSignal]
+  [(WorkSurface sandboxed-jj-task) (ForbiddenPath /home/li/primary)])"#;
+    let engine = PreflightEngine::new(FakePreflightApi::new(route_bearing_packet));
 
     let error = engine
         .launch(&request())
-        .expect_err("missing skills rejected");
+        .expect_err("provider route rejected");
 
-    assert!(matches!(error, Error::PreflightLaunch(message) if message.contains("chosen skill")));
+    assert!(matches!(error, Error::PreflightNota(_)));
 }
 
 #[test]
@@ -210,23 +185,6 @@ fn preflight_reports_unverified_model_before_guessing() {
         error,
         Error::UnverifiedModel { slot, profile, .. }
             if slot == "preflight model" && profile == "some-new-model"
-    ));
-}
-
-#[test]
-fn preflight_reports_runtime_unavailable_verified_model() {
-    let engine = PreflightEngine::new(
-        FakePreflightApi::new(valid_launch_nota()).with_unavailable_model("cheap-harness-session"),
-    );
-
-    let error = engine
-        .launch(&request())
-        .expect_err("unavailable harness model rejected");
-
-    assert!(matches!(
-        error,
-        Error::UnverifiedModel { slot, required_identifier, .. }
-            if slot == "harness session model" && required_identifier == "cheap-harness-session"
     ));
 }
 

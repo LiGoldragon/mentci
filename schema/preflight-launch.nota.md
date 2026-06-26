@@ -8,9 +8,8 @@ or scaffold cache.
 The preflight output is one positional NOTA record:
 
 ```nota
-(MentciPreflightLaunch <scaffold> <route> <session-identity> <persistent-session> <sandbox-privacy> <stop-conditions> <constraints>)
+(MentciPreflightLaunch <scaffold> <session-identity> <persistent-session> <sandbox-privacy> <stop-conditions> <constraints>)
 ;;   scaffold           : (ScaffoldPointer <identity> <version> <minimal-files> <minimal-context> <expansion-index> <reuse-policy>)
-;;   route              : (RouteMetadata <chosen-skills> <model-selection> <harness-target> <routing-rationale>)
 ;;   session-identity   : (SessionIdentity <lane-name> <lane-metadata> <addressable-handle> <lookup-path>)
 ;;   persistent-session : Persistent | Ephemeral
 ;;   sandbox-privacy    : (SandboxedJjTask <primary-scope> <privacy-surface>)
@@ -28,34 +27,6 @@ The preflight output is one positional NOTA record:
 ;;   minimal-context : [ContextLocator]
 ;;   expansion-index : SkillIndexLocator
 ;;   reuse-policy    : ReuseDeferred
-
-(RouteMetadata <chosen-skills> <model-selection> <harness-target> <routing-rationale>)
-;;   chosen-skills     : [(ChosenSkill <skill-name> <skill-source> <load-reason>)]
-;;   model-selection   : (ModelSelection <preflight-model> <harness-session-model>)
-;;   harness-target    : (HarnessTarget <harness-kind> <adapter> <terminal-cell-driver>)
-;;   routing-rationale : RoutingRationale
-
-(ChosenSkill <skill-name> <skill-source> <load-reason>)
-;;   skill-name   : SkillName
-;;   skill-source : SourceLocator
-;;   load-reason  : LoadReason
-
-(ModelSelection <preflight-model> <harness-session-model>)
-;;   preflight-model        : PreflightModelProfile
-;;   harness-session-model  : HarnessSessionModelProfile
-;;   These are unpinned semantic knobs. Concrete provider model identifiers
-;;   are selected later, outside this schema.
-
-HarnessTarget [
-  (ClaudeCode AdapterDriver)
-  (Codex AdapterDriver)
-  (Pi AdapterDriver)
-  (OpenEndedHarness AdapterDriver)
-]
-
-(AdapterDriver <adapter> <terminal-cell-driver>)
-;;   adapter              : AdapterIdentity
-;;   terminal-cell-driver : TerminalCellDriverIdentity
 
 (SessionIdentity <lane-name> <lane-metadata> <addressable-handle> <lookup-path>)
 ;;   lane-name          : LaneName
@@ -95,9 +66,8 @@ LaunchConstraint [
 
 `LaunchConstraint` is intentionally residual and closed. It carries only
 constraints that do not already have a first-class slot. Session identity,
-persistent-session request, sandbox/privacy posture, model selection, harness
-target, scaffold identity/version, chosen skills, and stop conditions must stay
-in their named records.
+persistent-session request, sandbox/privacy posture, scaffold identity/version,
+and stop conditions must stay in their named records.
 
 ## Required Slot Rules
 
@@ -107,36 +77,29 @@ in their named records.
   `LaunchConstraint`.
 - `StopCondition` is a closed typed enum. A bare timeout number or text field is
   not valid.
-- `ModelSelection` always carries two separate unpinned knobs:
-  `PreflightModelProfile` and `HarnessSessionModelProfile`.
 - `ScaffoldPointer` always carries `ScaffoldIdentity` and `ScaffoldVersion`.
   `ReuseDeferred` records that scaffold reuse and caching mechanics are not part
   of this slice.
 - `ScaffoldPointer.expansion-index` is `skills/skills.nota`. The scaffold
   remains minimal; agents load further skills and repo context from that index.
 
-## Model Profile Boundary
+## Adapter And Model Boundary
 
-This guidance does not add schema fields. `ModelSelection` remains two semantic
-knobs: `cheap-contained-preflight` and `cheap-harness-session`. The Mentci
-front door validates only those semantic profiles. Concrete provider model
-identifiers, API names, terminal defaults, and no-op mappings are adapter-owned
-launch-plan details below this schema.
+This guidance does not add schema fields. The Mentci preflight front door may
+use a semantic preflight model profile to produce this packet, but the packet
+itself carries no model profile, provider name, adapter identity, terminal-cell
+driver identity, command-line argument, readiness phrase, or permission policy.
+Those are adapter/session launch-plan details below this schema.
 
-If an adapter cannot map a semantic profile to a locally available provider
-model, it fails launch-plan construction with a typed adapter diagnostic instead
-of teaching Mentci the provider's model roster.
+If an adapter cannot map its own semantic profile to a locally available
+provider model or terminal mode, it fails launch-plan construction with a typed
+adapter diagnostic instead of teaching Mentci the provider's model roster.
 
 ## Canonical Example
 
 ```nota
 (MentciPreflightLaunch
   (mentci-prompt-scaffold 1 [skills/skills.nota] [ARCHITECTURE.md] skills/skills.nota ReuseDeferred)
-  ([(beads skills/beads.md [claim and update the bead])
-    (nota-design skills/nota-design.md [preserve positional NOTA shape])]
-   (cheap-contained-preflight cheap-harness-session)
-   (Codex codex-terminal-adapter terminal-cell-v1)
-   [Prompt requires a sandboxed jj task and a persistent named harness session])
   (mentci-primary-swvx [(Bead primary-swvx) (WorkSurface sandboxed-jj-task)] primary-swvx-session orchestrate/lanes/primary-swvx)
   Persistent
   (SandboxedJjTask PrimaryForbidden PrivateScopeClosed)
@@ -151,11 +114,11 @@ constraints or collapse typed variants into free text:
 
 ```nota
 ;; Invalid: session identity and privacy are swallowed by constraints.
-(MentciPreflightLaunch <scaffold> <route> [] [(Constraint [session primary-swvx]) (Constraint [private])])
+(MentciPreflightLaunch <scaffold> [] [(Constraint [session primary-swvx]) (Constraint [private])])
 
 ;; Invalid: timeout is not a typed stop condition.
-(MentciPreflightLaunch <scaffold> <route> <session-identity> <persistent-session> <sandbox-privacy> 600 [])
+(MentciPreflightLaunch <scaffold> <session-identity> <persistent-session> <sandbox-privacy> 600 [])
 
-;; Invalid: one generic model string collapses the two unpinned model knobs.
-(ModelSelection cheap-model)
+;; Invalid: provider and adapter launch-plan details are below this packet.
+(MentciPreflightLaunch <scaffold> (ProviderAdapter provider-terminal-adapter terminal-cell-v1) <session-identity> <persistent-session> <sandbox-privacy> <stop-conditions> [])
 ```

@@ -322,13 +322,6 @@ mod proof {
         fn launch_nota() -> &'static str {
             r#"(MentciPreflightLaunch
   (mentci-primary-0bax-proof 1 [skills/skills.nota] [README.md] skills/skills.nota ReuseDeferred)
-  ([(beads skills/beads.md [claim and update the bead])
-    (rust-discipline skills/rust-discipline.md [implement and verify the Rust proof path])
-    (testing skills/testing.md [run the stateful proof witness])
-    (jj skills/jj.md [keep the proof in an ephemeral jj repo])]
-   (claude-haiku-4-5-20251001 subscription-tui-default)
-   (ClaudeCode claude-code-terminal-adapter terminal-cell-v1)
-   [Prompt requires a real Claude Code terminal-cell session over a sandboxed jj task])
   (mentci-primary-0bax [(Bead primary-0bax) (WorkSurface sandboxed-jj-task) (HarnessLabel real-claude-terminal-cell)] primary-0bax-claude-proof-session orchestrate/lanes/primary-0bax)
   Persistent
   (SandboxedJjTask PrimaryForbidden PrivateScopeClosed)

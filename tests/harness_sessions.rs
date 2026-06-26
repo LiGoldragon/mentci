@@ -10,11 +10,14 @@ use mentci::harness_liveness::{
     TerminalSessionSurface, TerminalSize, TranscriptCapture,
 };
 use mentci::harness_sessions::{
-    HarnessKind, InMemoryHarnessSessionDirectory, NamedHarnessLaunch, NamedHarnessSessions,
-    SessionAddress, SessionAddressRecord, SessionLookupError, SessionRecordState,
-    SessionRoutingError,
+    HarnessKind, HarnessLaunchMetadata, InMemoryHarnessSessionDirectory, NamedHarnessLaunch,
+    NamedHarnessSessions, SessionAddress, SessionAddressRecord, SessionLookupError,
+    SessionRecordState, SessionRoutingError,
 };
-use mentci::preflight::{LaneName, MentciPreflightLaunch, SessionHandle};
+use mentci::preflight::{
+    AdapterIdentity, HarnessSessionModelProfile, LaneName, MentciPreflightLaunch, SessionHandle,
+    TerminalCellDriverIdentity,
+};
 
 #[derive(Clone)]
 struct FakeLauncher {
@@ -129,11 +132,6 @@ fn terminal_launch_with_liveness(liveness: LivenessPolicy) -> LaunchRequest {
 fn valid_launch_nota() -> &'static str {
     r#"(MentciPreflightLaunch
   (mentci-prompt-scaffold 1 [skills/skills.nota] [ARCHITECTURE.md] skills/skills.nota ReuseDeferred)
-  ([(beads skills/beads.md [claim and update the bead])
-    (session-lanes skills/session-lanes.md [use orchestrate lane lookup])]
-   (cheap-contained-preflight cheap-harness-session)
-   (Codex codex-terminal-adapter terminal-cell-v1)
-   [Prompt requires a sandboxed jj task and a persistent named harness session])
   (mentci-primary-vxu6 [(Bead primary-vxu6) (WorkSurface sandboxed-jj-task) (HarnessLabel mentci-harness)] primary-vxu6-session orchestrate/lanes/primary-vxu6)
   Persistent
   (SandboxedJjTask PrimaryForbidden PrivateScopeClosed)
@@ -145,12 +143,34 @@ fn launch_packet() -> MentciPreflightLaunch {
     MentciPreflightLaunch::validated_from_nota(valid_launch_nota()).expect("valid launch packet")
 }
 
+fn launch_metadata() -> HarnessLaunchMetadata {
+    HarnessLaunchMetadata::new(
+        HarnessKind::codex(),
+        AdapterIdentity::new("codex-terminal-adapter"),
+        TerminalCellDriverIdentity::new("terminal-cell-v1"),
+        HarnessSessionModelProfile::new("cheap-harness-session"),
+    )
+}
+
+fn conflicting_launch_metadata() -> HarnessLaunchMetadata {
+    HarnessLaunchMetadata::new(
+        HarnessKind::codex(),
+        AdapterIdentity::new("other-terminal-adapter"),
+        TerminalCellDriverIdentity::new("terminal-cell-v1"),
+        HarnessSessionModelProfile::new("cheap-harness-session"),
+    )
+}
+
 fn named_launch() -> NamedHarnessLaunch {
-    NamedHarnessLaunch::new(launch_packet(), terminal_launch())
+    NamedHarnessLaunch::new(launch_packet(), terminal_launch(), launch_metadata())
 }
 
 fn named_launch_with_liveness(liveness: LivenessPolicy) -> NamedHarnessLaunch {
-    NamedHarnessLaunch::new(launch_packet(), terminal_launch_with_liveness(liveness))
+    NamedHarnessLaunch::new(
+        launch_packet(),
+        terminal_launch_with_liveness(liveness),
+        launch_metadata(),
+    )
 }
 
 fn address() -> SessionAddress {
@@ -242,7 +262,8 @@ fn closed_session_diagnostic_prevents_liveness_read() {
 #[test]
 fn address_metadata_preserves_launch_packet_identity_without_liveness_state() {
     let launch = launch_packet();
-    let record = SessionAddressRecord::from_launch(&launch);
+    let metadata_source = launch_metadata();
+    let record = SessionAddressRecord::from_launch(&launch, &metadata_source);
     let metadata = record.metadata();
 
     assert_eq!(
@@ -254,7 +275,7 @@ fn address_metadata_preserves_launch_packet_identity_without_liveness_state() {
     assert_eq!(metadata.adapter().as_str(), "codex-terminal-adapter");
     assert_eq!(metadata.terminal_cell_driver().as_str(), "terminal-cell-v1");
     assert_eq!(
-        metadata.model_selection().harness_session_model().as_str(),
+        metadata.harness_session_model().as_str(),
         "cheap-harness-session"
     );
     assert_eq!(metadata.lane_metadata().len(), 3);
@@ -270,18 +291,20 @@ fn address_conflict_diagnostic_prevents_terminal_launch() {
     let launcher = FakeLauncher::new(VecDeque::new());
     let driver = TerminalCellDriver::new(launcher.clone());
     let mut directory = InMemoryHarnessSessionDirectory::new();
-    let original = SessionAddressRecord::from_launch(&launch_packet());
+    let original_launch = launch_packet();
+    let original_metadata = launch_metadata();
+    let original = SessionAddressRecord::from_launch(&original_launch, &original_metadata);
     directory
         .insert_record(original)
         .expect("original address registered");
-    let mut conflicting = valid_launch_nota().to_owned();
-    conflicting = conflicting.replace("codex-terminal-adapter", "other-terminal-adapter");
-    let launch = MentciPreflightLaunch::validated_from_nota(&conflicting)
-        .expect("conflicting packet remains valid");
     let mut sessions = NamedHarnessSessions::new(directory, driver);
 
     let error = sessions
-        .launch(NamedHarnessLaunch::new(launch, terminal_launch()))
+        .launch(NamedHarnessLaunch::new(
+            launch_packet(),
+            terminal_launch(),
+            conflicting_launch_metadata(),
+        ))
         .expect_err("conflicting address rejected");
 
     assert!(matches!(
@@ -294,7 +317,9 @@ fn address_conflict_diagnostic_prevents_terminal_launch() {
 #[test]
 fn duplicate_handle_is_a_typed_address_diagnostic() {
     let mut directory = InMemoryHarnessSessionDirectory::new();
-    let original = SessionAddressRecord::from_launch(&launch_packet());
+    let original_launch = launch_packet();
+    let original_metadata = launch_metadata();
+    let original = SessionAddressRecord::from_launch(&original_launch, &original_metadata);
     directory
         .insert_record(original)
         .expect("original address registered");
@@ -304,7 +329,10 @@ fn duplicate_handle_is_a_typed_address_diagnostic() {
     .expect("duplicate handle packet remains valid");
 
     let error = directory
-        .insert_record(SessionAddressRecord::from_launch(&duplicate))
+        .insert_record(SessionAddressRecord::from_launch(
+            &duplicate,
+            &launch_metadata(),
+        ))
         .expect_err("duplicate handle rejected");
 
     assert!(matches!(
@@ -343,7 +371,9 @@ fn stale_address_is_reported_without_claiming_process_health() {
     let launcher = FakeLauncher::new(VecDeque::new());
     let driver = TerminalCellDriver::new(launcher.clone());
     let mut directory = InMemoryHarnessSessionDirectory::new();
-    let record = SessionAddressRecord::from_launch(&launch_packet());
+    let launch = launch_packet();
+    let metadata = launch_metadata();
+    let record = SessionAddressRecord::from_launch(&launch, &metadata);
     directory
         .insert_record(record)
         .expect("external directory address registered");

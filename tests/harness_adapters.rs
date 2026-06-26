@@ -108,11 +108,6 @@ impl TerminalSessionSurface for FakeTerminal {
 fn valid_claude_launch_nota() -> &'static str {
     r#"(MentciPreflightLaunch
   (mentci-prompt-scaffold 1 [skills/skills.nota] [ARCHITECTURE.md] skills/skills.nota ReuseDeferred)
-  ([(beads skills/beads.md [claim and update the bead])
-    (rust-discipline skills/rust-discipline.md [implement the adapter])]
-   (cheap-contained-preflight subscription-tui-default)
-   (ClaudeCode claude-code-terminal-adapter terminal-cell-v1)
-   [Prompt requires a sandboxed jj task and a persistent named harness session])
   (mentci-primary-edm1 [(Bead primary-edm1) (WorkSurface sandboxed-jj-task) (HarnessLabel mentci-harness)] primary-edm1-session orchestrate/lanes/primary-edm1)
   Persistent
   (SandboxedJjTask PrimaryForbidden PrivateScopeClosed)
@@ -244,6 +239,18 @@ fn claude_code_adapter_builds_subscription_tui_terminal_launch_plan() {
     );
     assert_subscription_tui_arguments(command.arguments());
     assert_eq!(
+        launch.launch_metadata().adapter().as_str(),
+        "claude-code-terminal-adapter"
+    );
+    assert_eq!(
+        launch.launch_metadata().terminal_cell_driver().as_str(),
+        "terminal-cell-v1"
+    );
+    assert_eq!(
+        launch.launch_metadata().harness_session_model().as_str(),
+        "subscription-tui-default"
+    );
+    assert_eq!(
         terminal_launch
             .launch()
             .working_directory()
@@ -265,10 +272,8 @@ fn claude_code_adapter_builds_subscription_tui_terminal_launch_plan() {
 fn claude_code_adapter_does_not_require_harness_model_identifier() {
     let directory = tempfile::tempdir().expect("tempdir");
     let adapter = ClaudeCodeAdapter::new();
-    let launch = MentciPreflightLaunch::validated_from_nota(
-        &valid_claude_launch_nota().replace("subscription-tui-default", "cheap-harness-session"),
-    )
-    .expect("syntactically valid launch");
+    let launch = MentciPreflightLaunch::validated_from_nota(valid_claude_launch_nota())
+        .expect("valid launch");
 
     let named_launch = adapter
         .launch(ClaudeCodeLaunchRequest::new(
@@ -285,6 +290,13 @@ fn claude_code_adapter_does_not_require_harness_model_identifier() {
             .launch()
             .command()
             .arguments(),
+    );
+    assert_eq!(
+        named_launch
+            .launch_metadata()
+            .harness_session_model()
+            .as_str(),
+        "subscription-tui-default"
     );
 }
 
@@ -413,7 +425,7 @@ fn adapter_feed_drives_persistent_session_over_multiple_turns() {
         launcher.sent(),
         vec![
             framed_tui_input(
-                "Mentci sandboxed jj proof session.\nWork only inside the current jj sandbox working copy.\nDo not use /home/li/primary as a jj working copy.\nInitial task:\nshow jj status and wait for the next turn\nPreflight launch:\n(MentciPreflightLaunch (mentci-prompt-scaffold 1 [skills/skills.nota] [ARCHITECTURE.md] skills/skills.nota ReuseDeferred) ([(beads skills/beads.md [claim and update the bead]) (rust-discipline skills/rust-discipline.md [implement the adapter])] (cheap-contained-preflight subscription-tui-default) (ClaudeCode claude-code-terminal-adapter terminal-cell-v1) [Prompt requires a sandboxed jj task and a persistent named harness session]) (mentci-primary-edm1 [(Bead primary-edm1) (WorkSurface sandboxed-jj-task) (HarnessLabel mentci-harness)] primary-edm1-session orchestrate/lanes/primary-edm1) Persistent (SandboxedJjTask PrimaryForbidden PrivateScopeClosed) [(IdleTimeout 1) (TurnCap 8) CompletionSignal] [(WorkSurface sandboxed-jj-task) (ForbiddenPath /home/li/primary)])\n"
+                "Mentci sandboxed jj proof session.\nWork only inside the current jj sandbox working copy.\nDo not use /home/li/primary as a jj working copy.\nInitial task:\nshow jj status and wait for the next turn\nPreflight launch:\n(MentciPreflightLaunch (mentci-prompt-scaffold 1 [skills/skills.nota] [ARCHITECTURE.md] skills/skills.nota ReuseDeferred) (mentci-primary-edm1 [(Bead primary-edm1) (WorkSurface sandboxed-jj-task) (HarnessLabel mentci-harness)] primary-edm1-session orchestrate/lanes/primary-edm1) Persistent (SandboxedJjTask PrimaryForbidden PrivateScopeClosed) [(IdleTimeout 1) (TurnCap 8) CompletionSignal] [(WorkSurface sandboxed-jj-task) (ForbiddenPath /home/li/primary)])\n"
             ),
             framed_tui_input("first"),
             framed_tui_input("second"),

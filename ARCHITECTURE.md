@@ -86,8 +86,8 @@ into a weave of BEADS jobs and a running agent harness session.
 
 The slice stays harness-agnostic. A prompt enters Mentci, a cheap contained API
 preflight model analyzes the prompt, and the preflight emits fixed-schema NOTA
-that names the scaffold identity, skills to load, minimal files/context to
-mount, session identity, persistent harness session request, model knobs,
+that names the scaffold identity, minimal scaffold/context pointers to
+mount, session identity, persistent harness session request,
 sandbox/privacy flags, and typed stop conditions. The preflight is the routing
 and prompt-building engine; it is not a deterministic rule router. Thinness is
 intentional: the scaffold includes only the minimal support plus
@@ -95,10 +95,11 @@ intentional: the scaffold includes only the minimal support plus
 
 The fixed preflight launch schema is the NOTA contract artifact at
 `schema/preflight-launch.nota.md`. It is the canonical schema surface for
-scaffold identity and version, route metadata, chosen skills, the two unpinned
-model knobs, harness target, session identity, persistent-session request,
-sandbox/privacy posture, typed stop conditions, and residual launch
-constraints.
+scaffold identity and version, scaffold/context pointers, session identity,
+persistent-session request, sandbox/privacy posture, typed stop conditions, and
+residual launch constraints. Adapter identity, terminal-cell driver identity,
+provider model identifiers, and terminal launch policy are downstream
+adapter/session launch-plan details, not fields in this front-door packet.
 
 The session is persistent, named, and addressable. `orchestrate` lanes own the
 lane name, lane metadata, addressing, and session lookup. The terminal-cell
@@ -125,10 +126,11 @@ session-address request derived from the preflight output:
 
 ```nota
 ;; Pseudo-NOTA for documentation, not the wire schema.
-(HarnessSessionAddressRequest <session-identity> <persistent-session> <model-selection> <sandbox-privacy>)
+(HarnessSessionAddressRequest <session-identity> <persistent-session> <launch-metadata> <sandbox-privacy>)
 ;;   session-identity  : (SessionIdentity <lane-name> <lane-metadata> <addressable-handle> <lookup-path>)
-;;   lane-metadata     : (LaneMetadata <discipline> <session-intent> <harness-kind> <adapter-kind> <scaffold-identity> <scaffold-version> <model-selection>)
+;;   lane-metadata     : (LaneMetadata <discipline> <session-intent> <harness-kind> <adapter-kind> <scaffold-identity> <scaffold-version>)
 ;;   persistent-session: (PersistentSession <requested> <harness-kind> <adapter-kind> <driver-kind>)
+;;   launch-metadata   : adapter/session-owned metadata outside MentciPreflightLaunch
 ```
 
 `session-identity` is the durable address. `persistent-session` is the launch
@@ -141,7 +143,7 @@ the persistence boolean as identity.
 - The `lane-name` is the stable lookup key and must be derived from the session
   intent, not from the harness provider.
 - `lane-metadata` records the discipline, session intent, harness kind, adapter
-  kind, scaffold identity, scaffold version, and semantic model-selection slots.
+  kind, scaffold identity, and scaffold version.
   It records no process handle, no read/write loop state, no idle timer, and no
   stalled-output detector.
 - The `addressable-handle` is the token Mentci returns to later callers. It is
@@ -269,15 +271,15 @@ prompt-to-harness path as proven.
 - The first pass is an API preflight. It analyzes the prompt and builds the
   harness launch prompt and scaffold; it is not a deterministic rule router.
 - The preflight output is valid NOTA against a fixed schema. The schema carries
-  a versioned scaffold identity, the skill names to load, minimal source
-  locators or files to mount, a session identity, a separate persistent-session
-  request, two model knobs, dedicated sandbox/privacy flags, and typed stop
-  conditions. The session identity is distinct from the persistent-session
+  a versioned scaffold identity, minimal source locators or files to mount, a
+  session identity, a separate persistent-session request, dedicated
+  sandbox/privacy flags, and typed stop conditions. The session identity is
+  distinct from the persistent-session
   request/boolean: lane naming, metadata, handle, and lookup are address fields,
   not generic constraints. The stop conditions include idle timeout, turn cap,
-  and completion signal variants. The model knobs are semantic slots only: one
-  cheap/contained preflight model and one separate cheap harness-session model.
-  Concrete provider model identifiers are outside this contract.
+  and completion signal variants. The launch packet carries no provider,
+  adapter, terminal-driver, concrete model, readiness, or permission-policy
+  fields; those belong to adapter/session launch plans below Mentci.
 - The scaffold is minimal. It includes `skills/skills.nota` as the expansion
   index and enough local context for the harness agent to start; the agent is
   responsible for loading further skills and repo context from the index rather

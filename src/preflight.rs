@@ -64,7 +64,6 @@ pub enum PreflightLaunchEnvelope {
 #[derive(NotaDecode, NotaEncode, Clone, Debug, Eq, PartialEq)]
 pub struct MentciPreflightLaunch {
     scaffold: ScaffoldPointer,
-    route: RouteMetadata,
     session_identity: SessionIdentity,
     persistent_session: PersistentSession,
     sandbox_privacy: SandboxPrivacy,
@@ -83,38 +82,9 @@ pub struct ScaffoldPointer {
 }
 
 #[derive(NotaDecode, NotaEncode, Clone, Debug, Eq, PartialEq)]
-pub struct RouteMetadata {
-    chosen_skills: Vec<ChosenSkill>,
-    model_selection: ModelSelection,
-    harness_target: HarnessTarget,
-    routing_rationale: RoutingRationale,
-}
-
-#[derive(NotaDecode, NotaEncode, Clone, Debug, Eq, PartialEq)]
-pub struct ChosenSkill {
-    skill_name: SkillName,
-    skill_source: SourceLocator,
-    load_reason: LoadReason,
-}
-
-#[derive(NotaDecode, NotaEncode, Clone, Debug, Eq, PartialEq)]
 pub struct ModelSelection {
     preflight_model: PreflightModelProfile,
     harness_session_model: HarnessSessionModelProfile,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub enum HarnessTarget {
-    ClaudeCode(AdapterDriver),
-    Codex(AdapterDriver),
-    Pi(AdapterDriver),
-    OpenEndedHarness(AdapterDriver),
-}
-
-#[derive(NotaDecode, NotaEncode, Clone, Debug, Eq, PartialEq)]
-pub struct AdapterDriver {
-    adapter: AdapterIdentity,
-    terminal_cell_driver: TerminalCellDriverIdentity,
 }
 
 #[derive(NotaDecode, NotaEncode, Clone, Debug, Eq, PartialEq)]
@@ -215,11 +185,8 @@ integer_newtype!(ScaffoldVersion);
 text_newtype!(SourceLocator);
 text_newtype!(ContextLocator);
 text_newtype!(SkillIndexLocator);
-text_newtype!(SkillName);
-text_newtype!(LoadReason);
 text_newtype!(PreflightModelProfile);
 text_newtype!(HarnessSessionModelProfile);
-text_newtype!(RoutingRationale);
 text_newtype!(AdapterIdentity);
 text_newtype!(TerminalCellDriverIdentity);
 text_newtype!(LaneName);
@@ -268,9 +235,11 @@ impl PreflightRequest {
         let mut text = String::new();
         text.push_str("Emit exactly one NOTA MentciPreflightLaunch record. ");
         text.push_str("Use the fixed schema in schema/preflight-launch.nota.md. ");
-        text.push_str("Keep required slots separate: scaffold pointer, route metadata, ");
+        text.push_str("Keep required slots separate: scaffold pointer, ");
         text.push_str("SessionIdentity, PersistentSession, SandboxPrivacy, typed ");
         text.push_str("StopCondition variants, and residual LaunchConstraint only. ");
+        text.push_str("Do not include provider, adapter, terminal driver, or model literals ");
+        text.push_str("in the launch packet. ");
         text.push_str("The scaffold must stay minimal and use skills/skills.nota as ");
         text.push_str("the expansion index. Prompt: ");
         text.push_str(&self.prompt);
@@ -375,29 +344,7 @@ where
         let output = self.api.complete(&prompt, &preflight_identifier)?;
         let launch = MentciPreflightLaunch::validated_from_nota(output.as_str())?;
         launch.validate_against_request(request)?;
-        self.verify_launch_models(&launch)?;
         Ok(launch)
-    }
-
-    fn verify_launch_models(&self, launch: &MentciPreflightLaunch) -> Result<()> {
-        let preflight_identifier = VerifiedModelIdentifier::for_preflight_profile(
-            launch.route.model_selection.preflight_model(),
-        )?;
-        self.verify_model(
-            &preflight_identifier,
-            launch.route.model_selection.preflight_model().as_str(),
-        )?;
-        let harness_identifier = VerifiedModelIdentifier::for_harness_profile(
-            launch.route.model_selection.harness_session_model(),
-        )?;
-        self.verify_model(
-            &harness_identifier,
-            launch
-                .route
-                .model_selection
-                .harness_session_model()
-                .as_str(),
-        )
     }
 
     fn verify_model(&self, identifier: &VerifiedModelIdentifier, profile: &str) -> Result<()> {
@@ -426,10 +373,6 @@ impl MentciPreflightLaunch {
         &self.scaffold
     }
 
-    pub fn route(&self) -> &RouteMetadata {
-        &self.route
-    }
-
     pub fn session_identity(&self) -> &SessionIdentity {
         &self.session_identity
     }
@@ -456,7 +399,6 @@ impl MentciPreflightLaunch {
 
     fn validate(&self) -> Result<()> {
         self.scaffold.validate()?;
-        self.route.validate()?;
         self.session_identity.validate()?;
         self.sandbox_privacy.validate();
         if self.stop_conditions.is_empty() {
@@ -484,7 +426,7 @@ impl MentciPreflightLaunch {
 impl NotaDecode for PreflightLaunchEnvelope {
     fn from_nota_block(block: &nota_next::Block) -> std::result::Result<Self, NotaDecodeError> {
         let body = NotaBlock::new(block).expect_body(Delimiter::Parenthesis, "PreflightLaunch")?;
-        let children = body.expect_fields("MentciPreflightLaunch", 8)?;
+        let children = body.expect_fields("MentciPreflightLaunch", 7)?;
         let variant = children[0]
             .demote_to_string()
             .ok_or(NotaDecodeError::ExpectedAtom {
@@ -514,12 +456,11 @@ impl MentciPreflightLaunch {
     fn from_root_fields(fields: &[nota_next::Block]) -> std::result::Result<Self, NotaDecodeError> {
         Ok(Self {
             scaffold: ScaffoldPointer::from_nota_block(&fields[0])?,
-            route: RouteMetadata::from_nota_block(&fields[1])?,
-            session_identity: SessionIdentity::from_nota_block(&fields[2])?,
-            persistent_session: PersistentSession::from_nota_block(&fields[3])?,
-            sandbox_privacy: SandboxPrivacy::from_nota_block(&fields[4])?,
-            stop_conditions: Vec::<StopCondition>::from_nota_block(&fields[5])?,
-            constraints: Vec::<LaunchConstraint>::from_nota_block(&fields[6])?,
+            session_identity: SessionIdentity::from_nota_block(&fields[1])?,
+            persistent_session: PersistentSession::from_nota_block(&fields[2])?,
+            sandbox_privacy: SandboxPrivacy::from_nota_block(&fields[3])?,
+            stop_conditions: Vec::<StopCondition>::from_nota_block(&fields[4])?,
+            constraints: Vec::<LaunchConstraint>::from_nota_block(&fields[5])?,
         })
     }
 
@@ -527,7 +468,6 @@ impl MentciPreflightLaunch {
         NotaBodyEncoding::new(vec![
             "MentciPreflightLaunch".to_owned(),
             self.scaffold.to_nota(),
-            self.route.to_nota(),
             self.session_identity.to_nota(),
             self.persistent_session.to_nota(),
             self.sandbox_privacy.to_nota(),
@@ -596,73 +536,6 @@ impl ScaffoldPointer {
     }
 }
 
-impl RouteMetadata {
-    pub fn new(
-        chosen_skills: Vec<ChosenSkill>,
-        model_selection: ModelSelection,
-        harness_target: HarnessTarget,
-        routing_rationale: RoutingRationale,
-    ) -> Self {
-        Self {
-            chosen_skills,
-            model_selection,
-            harness_target,
-            routing_rationale,
-        }
-    }
-
-    pub fn chosen_skills(&self) -> &[ChosenSkill] {
-        &self.chosen_skills
-    }
-
-    pub fn model_selection(&self) -> &ModelSelection {
-        &self.model_selection
-    }
-
-    pub fn harness_target(&self) -> &HarnessTarget {
-        &self.harness_target
-    }
-
-    pub fn routing_rationale(&self) -> &RoutingRationale {
-        &self.routing_rationale
-    }
-
-    fn validate(&self) -> Result<()> {
-        if self.chosen_skills.is_empty() {
-            return Err(Error::PreflightLaunch(
-                "route metadata must name at least one chosen skill".to_owned(),
-            ));
-        }
-        Ok(())
-    }
-}
-
-impl ChosenSkill {
-    pub fn new(
-        skill_name: SkillName,
-        skill_source: SourceLocator,
-        load_reason: LoadReason,
-    ) -> Self {
-        Self {
-            skill_name,
-            skill_source,
-            load_reason,
-        }
-    }
-
-    pub fn skill_name(&self) -> &SkillName {
-        &self.skill_name
-    }
-
-    pub fn skill_source(&self) -> &SourceLocator {
-        &self.skill_source
-    }
-
-    pub fn load_reason(&self) -> &LoadReason {
-        &self.load_reason
-    }
-}
-
 impl ModelSelection {
     pub fn new(
         preflight_model: PreflightModelProfile,
@@ -680,66 +553,6 @@ impl ModelSelection {
 
     pub fn harness_session_model(&self) -> &HarnessSessionModelProfile {
         &self.harness_session_model
-    }
-}
-
-impl AdapterDriver {
-    pub fn new(adapter: AdapterIdentity, terminal_cell_driver: TerminalCellDriverIdentity) -> Self {
-        Self {
-            adapter,
-            terminal_cell_driver,
-        }
-    }
-
-    pub fn adapter(&self) -> &AdapterIdentity {
-        &self.adapter
-    }
-
-    pub fn terminal_cell_driver(&self) -> &TerminalCellDriverIdentity {
-        &self.terminal_cell_driver
-    }
-}
-
-impl NotaDecode for HarnessTarget {
-    fn from_nota_block(block: &nota_next::Block) -> std::result::Result<Self, NotaDecodeError> {
-        let body = NotaBlock::new(block).expect_body(Delimiter::Parenthesis, "HarnessTarget")?;
-        let children = body.expect_fields("HarnessTarget", 3)?;
-        let variant = children[0]
-            .demote_to_string()
-            .ok_or(NotaDecodeError::ExpectedAtom {
-                type_name: "HarnessTarget variant",
-            })?;
-        let driver = AdapterDriver::new(
-            AdapterIdentity::from_nota_block(&children[1])?,
-            TerminalCellDriverIdentity::from_nota_block(&children[2])?,
-        );
-        match variant {
-            "ClaudeCode" => Ok(Self::ClaudeCode(driver)),
-            "Codex" => Ok(Self::Codex(driver)),
-            "Pi" => Ok(Self::Pi(driver)),
-            "OpenEndedHarness" => Ok(Self::OpenEndedHarness(driver)),
-            other => Err(NotaDecodeError::UnknownVariant {
-                enum_name: "HarnessTarget",
-                variant: other.to_owned(),
-            }),
-        }
-    }
-}
-
-impl NotaEncode for HarnessTarget {
-    fn to_nota(&self) -> String {
-        let (variant, driver) = match self {
-            Self::ClaudeCode(driver) => ("ClaudeCode", driver),
-            Self::Codex(driver) => ("Codex", driver),
-            Self::Pi(driver) => ("Pi", driver),
-            Self::OpenEndedHarness(driver) => ("OpenEndedHarness", driver),
-        };
-        NotaBodyEncoding::new(vec![
-            variant.to_owned(),
-            driver.adapter().to_nota(),
-            driver.terminal_cell_driver().to_nota(),
-        ])
-        .to_delimited_nota(Delimiter::Parenthesis)
     }
 }
 
