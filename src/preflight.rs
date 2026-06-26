@@ -1,4 +1,4 @@
-use nota_next::{
+use nota::{
     Delimiter, NotaBlock, NotaBodyEncoding, NotaDecode, NotaDecodeError, NotaEncode, NotaSource,
 };
 
@@ -424,7 +424,7 @@ impl MentciPreflightLaunch {
 }
 
 impl NotaDecode for PreflightLaunchEnvelope {
-    fn from_nota_block(block: &nota_next::Block) -> std::result::Result<Self, NotaDecodeError> {
+    fn from_nota_block(block: &nota::Block) -> std::result::Result<Self, NotaDecodeError> {
         let body = NotaBlock::new(block).expect_body(Delimiter::Parenthesis, "PreflightLaunch")?;
         let children = body.expect_fields("MentciPreflightLaunch", 7)?;
         let variant = children[0]
@@ -453,7 +453,7 @@ impl NotaEncode for PreflightLaunchEnvelope {
 }
 
 impl MentciPreflightLaunch {
-    fn from_root_fields(fields: &[nota_next::Block]) -> std::result::Result<Self, NotaDecodeError> {
+    fn from_root_fields(fields: &[nota::Block]) -> std::result::Result<Self, NotaDecodeError> {
         Ok(Self {
             scaffold: ScaffoldPointer::from_nota_block(&fields[0])?,
             session_identity: SessionIdentity::from_nota_block(&fields[1])?,
@@ -606,7 +606,7 @@ impl SandboxPrivacy {
 }
 
 impl NotaDecode for SandboxPrivacy {
-    fn from_nota_block(block: &nota_next::Block) -> std::result::Result<Self, NotaDecodeError> {
+    fn from_nota_block(block: &nota::Block) -> std::result::Result<Self, NotaDecodeError> {
         let body = NotaBlock::new(block).expect_body(Delimiter::Parenthesis, "SandboxPrivacy")?;
         let children = body.expect_fields("SandboxPrivacy", 3)?;
         let variant = children[0]

@@ -78,7 +78,7 @@ pub enum Error {
     ExpectedRequest,
 
     #[error("preflight NOTA does not match MentciPreflightLaunch: {0}")]
-    PreflightNota(nota_next::NotaDecodeError),
+    PreflightNota(nota::NotaDecodeError),
 
     #[error("preflight API failed: {0}")]
     PreflightApi(String),

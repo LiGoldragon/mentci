@@ -11,13 +11,14 @@ use mentci::harness_adapters::{
 };
 use mentci::harness_liveness::{
     CloseReport, CloseRequest, CloseSignal, DriverError, StopReason, TerminalCellDriver,
-    TerminalFeed, TerminalObservation, TerminalSessionLauncher, TerminalSessionSurface,
-    TranscriptCapture,
+    TerminalExitReport, TerminalFeed, TerminalObservation, TerminalSessionLauncher,
+    TerminalSessionSurface, TranscriptCapture,
 };
 use mentci::harness_sessions::{
     InMemoryHarnessSessionDirectory, NamedHarnessSessions, SessionAddress,
 };
 use mentci::preflight::{MentciPreflightLaunch, SessionHandle};
+use signal_harness::{AdapterExitStatus, AdapterStallReason, HarnessEvent, MessageSlot};
 
 const EPHEMERAL_SANDBOX_MARKER: &str = ".mentci-ephemeral-jj-sandbox";
 const PRIMARY_WORKSPACE: &str = "/home/li/primary";
@@ -463,6 +464,91 @@ fn claude_code_adapter_scrapes_transcript_deltas_without_print_json() {
     );
     assert_eq!(second_delta.bytes(), b"MENTCI_PROOF_TURN1_DONE\n");
     assert!(second_delta.contains_text("MENTCI_PROOF_TURN1_DONE"));
+}
+
+#[test]
+fn claude_code_adapter_maps_tui_transcript_to_provider_neutral_events() {
+    let adapter = ClaudeCodeAdapter::new();
+    let mut mapper = adapter.event_mapper("designer");
+    let transcript = TranscriptCapture::from_bytes(
+        b"Welcome to Claude Code\ncwd: /tmp/mentci\nThinking...\nClaude needs permission to run Bash(jj st). Allow? Yes / No\nMENTCI_PROOF_TURN1_DONE\n".to_vec(),
+    );
+    let delta = adapter.transcript_delta(ClaudeCodeTranscriptCursor::default(), &transcript);
+
+    let events = mapper.transcript_delta(&delta, MessageSlot::new(42));
+
+    assert!(matches!(events[0], HarnessEvent::AdapterOutput(_)));
+    assert!(matches!(events[1], HarnessEvent::AdapterReady(_)));
+    assert!(matches!(events[2], HarnessEvent::AdapterProgress(_)));
+    let HarnessEvent::AdapterConfirmationNeeded(confirmation) = &events[3] else {
+        panic!("permission prompt should surface as generic confirmation-needed");
+    };
+    assert_eq!(confirmation.harness.as_str(), "designer");
+    assert_eq!(confirmation.sequence.into_u64(), 4);
+    assert_eq!(confirmation.interaction_id, "claude-confirmation-4");
+    assert!(confirmation.prompt.contains("Allow? Yes / No"));
+    assert_eq!(confirmation.options, ["yes".to_owned(), "no".to_owned()]);
+    let HarnessEvent::AdapterCompletion(completion) = &events[4] else {
+        panic!("turn completion marker should map to generic completion");
+    };
+    assert_eq!(completion.message_slot.into_u64(), 42);
+    assert_eq!(completion.sequence.into_u64(), 5);
+}
+
+#[test]
+fn claude_code_adapter_maps_input_stall_and_exit_to_provider_neutral_events() {
+    let adapter = ClaudeCodeAdapter::new();
+    let mut mapper = adapter.event_mapper("designer");
+
+    let accepted = mapper.input_accepted(MessageSlot::new(7));
+    let no_output = mapper.stop_reason(
+        &StopReason::IdleTimeout,
+        &TranscriptCapture::new(),
+        MessageSlot::new(7),
+    );
+    let stalled = mapper.stop_reason(
+        &StopReason::StalledOutput,
+        &TranscriptCapture::from_bytes(b"partial output".to_vec()),
+        MessageSlot::new(7),
+    );
+    let exited = mapper.stop_reason(
+        &StopReason::TerminalExit(TerminalExitReport::new("status: 0")),
+        &TranscriptCapture::from_bytes(b"done".to_vec()),
+        MessageSlot::new(7),
+    );
+    let idle_after_output = mapper.stop_reason(
+        &StopReason::IdleTimeout,
+        &TranscriptCapture::from_bytes(b"waiting prompt".to_vec()),
+        MessageSlot::new(7),
+    );
+
+    let HarnessEvent::AdapterInputAccepted(accepted) = accepted else {
+        panic!("input should map to generic input-accepted");
+    };
+    assert_eq!(accepted.message_slot.into_u64(), 7);
+    assert_eq!(accepted.sequence.into_u64(), 1);
+
+    let HarnessEvent::AdapterStalled(no_output) = &no_output[0] else {
+        panic!("empty idle read should map to no-output stalled event");
+    };
+    assert_eq!(no_output.reason, AdapterStallReason::NoOutput);
+    assert_eq!(no_output.sequence.into_u64(), 2);
+
+    let HarnessEvent::AdapterStalled(stalled) = &stalled[0] else {
+        panic!("stalled output should map to stalled event");
+    };
+    assert_eq!(stalled.reason, AdapterStallReason::CompletionTimeout);
+    assert_eq!(stalled.sequence.into_u64(), 3);
+
+    let HarnessEvent::AdapterExited(exited) = &exited[0] else {
+        panic!("terminal exit should map to exited event");
+    };
+    assert_eq!(exited.status, AdapterExitStatus::Success);
+    assert_eq!(exited.sequence.into_u64(), 4);
+    assert!(
+        idle_after_output.is_empty(),
+        "idle after visible output is not treated as prompt completion or close"
+    );
 }
 
 #[test]

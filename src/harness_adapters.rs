@@ -2,6 +2,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::{Duration as StandardDuration, SystemTime, UNIX_EPOCH};
 
+use signal_harness as harness_contract;
 use thiserror::Error;
 
 use crate::harness_liveness::{
@@ -73,6 +74,10 @@ impl ClaudeCodeAdapter {
 
     pub fn close_request(&self) -> CloseRequest {
         CloseRequest::TerminalInput(TerminalFeed::new(b"/exit\r".to_vec()))
+    }
+
+    pub fn event_mapper(&self, harness: impl Into<String>) -> ClaudeCodeEventMapper {
+        ClaudeCodeEventMapper::new(harness)
     }
 
     pub fn transcript_delta(
@@ -151,6 +156,292 @@ impl ClaudeCodeAdapter {
             flags.push(SandboxPrivacyFlag::PrivateScopeClosed);
         }
         DriverSandboxPrivacy::new(flags)
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ClaudeCodeEventMapper {
+    harness: harness_contract::HarnessName,
+    next_sequence: u64,
+}
+
+impl ClaudeCodeEventMapper {
+    pub fn new(harness: impl Into<String>) -> Self {
+        Self {
+            harness: harness_contract::HarnessName::new(harness),
+            next_sequence: 1,
+        }
+    }
+
+    pub fn input_accepted(
+        &mut self,
+        message_slot: harness_contract::MessageSlot,
+    ) -> harness_contract::HarnessEvent {
+        harness_contract::HarnessEvent::AdapterInputAccepted(
+            harness_contract::AdapterInputAccepted {
+                harness: self.harness.clone(),
+                sequence: self.sequence(),
+                message_slot,
+            },
+        )
+    }
+
+    pub fn transcript_delta(
+        &mut self,
+        delta: &ClaudeCodeTranscriptDelta,
+        message_slot: harness_contract::MessageSlot,
+    ) -> Vec<harness_contract::HarnessEvent> {
+        ClaudeCodeTranscriptText::from_delta(delta).events(self, message_slot)
+    }
+
+    pub fn read_outcome(
+        &mut self,
+        outcome: &crate::harness_liveness::ReadOutcome,
+        message_slot: harness_contract::MessageSlot,
+    ) -> Vec<harness_contract::HarnessEvent> {
+        self.stop_reason(outcome.reason(), outcome.transcript(), message_slot)
+    }
+
+    pub fn stop_reason(
+        &mut self,
+        reason: &crate::harness_liveness::StopReason,
+        transcript: &TranscriptCapture,
+        message_slot: harness_contract::MessageSlot,
+    ) -> Vec<harness_contract::HarnessEvent> {
+        match reason {
+            crate::harness_liveness::StopReason::CompletionSignal => {
+                vec![self.completion(message_slot)]
+            }
+            crate::harness_liveness::StopReason::StalledOutput => {
+                vec![self.stalled(harness_contract::AdapterStallReason::CompletionTimeout)]
+            }
+            crate::harness_liveness::StopReason::IdleTimeout if transcript.bytes().is_empty() => {
+                vec![self.stalled(harness_contract::AdapterStallReason::NoOutput)]
+            }
+            crate::harness_liveness::StopReason::TerminalExit(exit) => {
+                vec![self.exited(ClaudeCodeExitStatus::from_report(exit).into_contract())]
+            }
+            crate::harness_liveness::StopReason::TurnCap(_)
+            | crate::harness_liveness::StopReason::IdleTimeout
+            | crate::harness_liveness::StopReason::Closed(_) => Vec::new(),
+        }
+    }
+
+    fn ready(&mut self) -> harness_contract::HarnessEvent {
+        harness_contract::HarnessEvent::AdapterReady(harness_contract::AdapterReady {
+            harness: self.harness.clone(),
+            sequence: self.sequence(),
+        })
+    }
+
+    fn output(&mut self, text: String) -> harness_contract::HarnessEvent {
+        harness_contract::HarnessEvent::AdapterOutput(harness_contract::AdapterOutput {
+            harness: self.harness.clone(),
+            sequence: self.sequence(),
+            text,
+        })
+    }
+
+    fn progress(&mut self, status: impl Into<String>) -> harness_contract::HarnessEvent {
+        harness_contract::HarnessEvent::AdapterProgress(harness_contract::AdapterProgress {
+            harness: self.harness.clone(),
+            sequence: self.sequence(),
+            status: status.into(),
+        })
+    }
+
+    fn completion(
+        &mut self,
+        message_slot: harness_contract::MessageSlot,
+    ) -> harness_contract::HarnessEvent {
+        harness_contract::HarnessEvent::AdapterCompletion(harness_contract::AdapterCompletion {
+            harness: self.harness.clone(),
+            sequence: self.sequence(),
+            message_slot,
+        })
+    }
+
+    fn confirmation_needed(
+        &mut self,
+        confirmation: ClaudeCodeConfirmation,
+    ) -> harness_contract::HarnessEvent {
+        let sequence = self.sequence();
+        harness_contract::HarnessEvent::AdapterConfirmationNeeded(
+            harness_contract::AdapterConfirmationNeeded {
+                harness: self.harness.clone(),
+                interaction_id: format!("claude-confirmation-{}", sequence.into_u64()),
+                sequence,
+                prompt: confirmation.prompt,
+                options: confirmation.options,
+            },
+        )
+    }
+
+    fn stalled(
+        &mut self,
+        reason: harness_contract::AdapterStallReason,
+    ) -> harness_contract::HarnessEvent {
+        harness_contract::HarnessEvent::AdapterStalled(harness_contract::AdapterStalled {
+            harness: self.harness.clone(),
+            sequence: self.sequence(),
+            reason,
+        })
+    }
+
+    fn exited(
+        &mut self,
+        status: harness_contract::AdapterExitStatus,
+    ) -> harness_contract::HarnessEvent {
+        harness_contract::HarnessEvent::AdapterExited(harness_contract::AdapterExited {
+            harness: self.harness.clone(),
+            sequence: self.sequence(),
+            status,
+        })
+    }
+
+    fn sequence(&mut self) -> harness_contract::AdapterEventSequence {
+        let sequence = harness_contract::AdapterEventSequence::new(self.next_sequence);
+        self.next_sequence = self.next_sequence.saturating_add(1);
+        sequence
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct ClaudeCodeTranscriptText {
+    text: String,
+    lower_case: String,
+}
+
+impl ClaudeCodeTranscriptText {
+    fn from_delta(delta: &ClaudeCodeTranscriptDelta) -> Self {
+        let text = delta.to_string_lossy();
+        let lower_case = text.to_lowercase();
+        Self { text, lower_case }
+    }
+
+    fn events(
+        &self,
+        mapper: &mut ClaudeCodeEventMapper,
+        message_slot: harness_contract::MessageSlot,
+    ) -> Vec<harness_contract::HarnessEvent> {
+        let mut events = Vec::new();
+        if !self.text.is_empty() {
+            events.push(mapper.output(self.text.clone()));
+        }
+        if self.is_ready() {
+            events.push(mapper.ready());
+        }
+        if self.is_progress() {
+            events.push(mapper.progress("working"));
+        }
+        if let Some(confirmation) = self.confirmation() {
+            events.push(mapper.confirmation_needed(confirmation));
+        }
+        if self.is_completion() {
+            events.push(mapper.completion(message_slot));
+        }
+        events
+    }
+
+    fn is_ready(&self) -> bool {
+        self.lower_case.contains("claude code")
+            && (self.lower_case.contains("welcome")
+                || self.lower_case.contains("cwd:")
+                || self.lower_case.contains("? for shortcuts"))
+    }
+
+    fn is_progress(&self) -> bool {
+        self.lower_case.contains("thinking")
+            || self.lower_case.contains("esc to interrupt")
+            || self.lower_case.contains("working")
+    }
+
+    fn is_completion(&self) -> bool {
+        self.lower_case.contains("mentci_proof_turn") && self.lower_case.contains("done")
+    }
+
+    fn confirmation(&self) -> Option<ClaudeCodeConfirmation> {
+        if !self.looks_like_confirmation() {
+            return None;
+        }
+        Some(ClaudeCodeConfirmation {
+            prompt: self.prompt_line(),
+            options: self.confirmation_options(),
+        })
+    }
+
+    fn looks_like_confirmation(&self) -> bool {
+        self.lower_case.contains("permission")
+            || self.lower_case.contains("do you want to allow")
+            || self.lower_case.contains("allow this command")
+            || self.lower_case.contains("approve")
+                && (self.lower_case.contains("deny") || self.lower_case.contains("reject"))
+    }
+
+    fn prompt_line(&self) -> String {
+        self.text
+            .lines()
+            .rev()
+            .map(str::trim)
+            .find(|line| ClaudeCodeTranscriptText::line_looks_like_confirmation(line))
+            .or_else(|| {
+                self.text
+                    .lines()
+                    .rev()
+                    .map(str::trim)
+                    .find(|line| !line.is_empty())
+            })
+            .unwrap_or(self.text.trim())
+            .to_owned()
+    }
+
+    fn confirmation_options(&self) -> Vec<String> {
+        if self.lower_case.contains("yes") && self.lower_case.contains("no") {
+            return vec!["yes".to_owned(), "no".to_owned()];
+        }
+        if self.lower_case.contains("allow") && self.lower_case.contains("deny") {
+            return vec!["allow".to_owned(), "deny".to_owned()];
+        }
+        vec!["approve".to_owned(), "decline".to_owned()]
+    }
+
+    fn line_looks_like_confirmation(line: &str) -> bool {
+        let lower_case = line.to_lowercase();
+        lower_case.contains("permission")
+            || lower_case.contains("allow")
+            || lower_case.contains("approve")
+            || lower_case.contains("deny")
+            || lower_case.contains("yes / no")
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct ClaudeCodeConfirmation {
+    prompt: String,
+    options: Vec<String>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum ClaudeCodeExitStatus {
+    Success,
+    Failure,
+}
+
+impl ClaudeCodeExitStatus {
+    fn from_report(exit: &crate::harness_liveness::TerminalExitReport) -> Self {
+        let lower_case = exit.status().to_lowercase();
+        if lower_case == "0" || lower_case.contains("success") || lower_case.contains("status: 0") {
+            Self::Success
+        } else {
+            Self::Failure
+        }
+    }
+
+    fn into_contract(self) -> harness_contract::AdapterExitStatus {
+        match self {
+            Self::Success => harness_contract::AdapterExitStatus::Success,
+            Self::Failure => harness_contract::AdapterExitStatus::Failure,
+        }
     }
 }
 

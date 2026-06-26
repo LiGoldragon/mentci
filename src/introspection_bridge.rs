@@ -1,7 +1,7 @@
 use std::os::unix::net::UnixStream;
 use std::path::PathBuf;
 
-use nota_next::NotaEncode;
+use nota::NotaEncode;
 use signal_frame::{
     ExchangeIdentifier, ExchangeLane, LaneSequence, Reply, RequestPayload, SessionEpoch, SubReply,
 };
