@@ -258,6 +258,163 @@ impl NamedSessionAddress {
     }
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PersistentSessionRecord {
+    record: SessionAddressRecord,
+}
+
+impl PersistentSessionRecord {
+    pub fn from_record(record: SessionAddressRecord) -> Result<Self, SessionLookupError> {
+        if record.persistent_session() != PersistentSession::Persistent {
+            return Err(SessionLookupError::NonPersistentSessionRecord {
+                address: record.named_address(),
+                recorded: record.persistent_session(),
+            });
+        }
+        Ok(Self { record })
+    }
+
+    pub fn named_address(&self) -> NamedSessionAddress {
+        self.record.named_address()
+    }
+
+    pub fn identity(&self) -> &SessionIdentity {
+        self.record.identity()
+    }
+
+    pub fn persistent_session(&self) -> PersistentSession {
+        self.record.persistent_session()
+    }
+
+    pub fn metadata(&self) -> &SessionAddressMetadata {
+        self.record.metadata()
+    }
+
+    pub fn launch_metadata(&self) -> &HarnessLaunchMetadata {
+        self.record.launch_metadata()
+    }
+
+    pub fn state(&self) -> SessionRecordState {
+        self.record.state()
+    }
+
+    pub fn session_address_record(&self) -> &SessionAddressRecord {
+        &self.record
+    }
+
+    pub fn into_session_address_record(self) -> SessionAddressRecord {
+        self.record
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct OpenOrReuseHarnessSession {
+    address: NamedSessionAddress,
+    persistent_session: PersistentSession,
+    launch: NamedHarnessLaunch,
+}
+
+impl OpenOrReuseHarnessSession {
+    pub fn new(
+        address: NamedSessionAddress,
+        persistent_session: PersistentSession,
+        launch: NamedHarnessLaunch,
+    ) -> Self {
+        Self {
+            address,
+            persistent_session,
+            launch,
+        }
+    }
+
+    pub fn address(&self) -> &NamedSessionAddress {
+        &self.address
+    }
+
+    pub fn persistent_session(&self) -> PersistentSession {
+        self.persistent_session
+    }
+
+    pub fn launch(&self) -> &NamedHarnessLaunch {
+        &self.launch
+    }
+
+    fn session_address_record(&self) -> Result<SessionAddressRecord, SessionLookupError> {
+        let launch_address =
+            NamedSessionAddress::from_identity(self.launch.preflight_launch().session_identity());
+        if self.address != launch_address {
+            return Err(SessionLookupError::AddressIdentityConflict {
+                requested: self.address.clone(),
+                resolved: launch_address,
+            });
+        }
+
+        let launch_request = self.launch.preflight_launch().persistent_session();
+        if self.persistent_session != launch_request {
+            return Err(SessionLookupError::SessionRequestConflict {
+                address: self.address.clone(),
+                requested: self.persistent_session,
+                launch: launch_request,
+            });
+        }
+
+        if self.persistent_session != PersistentSession::Persistent {
+            return Err(SessionLookupError::NonPersistentSessionRequest {
+                address: self.address.clone(),
+                requested: self.persistent_session,
+            });
+        }
+
+        Ok(SessionAddressRecord::from_launch(
+            self.launch.preflight_launch(),
+            self.launch.launch_metadata(),
+        ))
+    }
+
+    fn into_terminal_launch(self) -> LaunchRequest {
+        self.launch.into_terminal_launch()
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum OpenOrReuseOutcome {
+    Opened(PersistentSessionRecord),
+    Reused(PersistentSessionRecord),
+}
+
+impl OpenOrReuseOutcome {
+    pub fn record(&self) -> &PersistentSessionRecord {
+        match self {
+            Self::Opened(record) | Self::Reused(record) => record,
+        }
+    }
+
+    pub fn into_record(self) -> PersistentSessionRecord {
+        match self {
+            Self::Opened(record) | Self::Reused(record) => record,
+        }
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct SessionOwnerInspection {
+    record: PersistentSessionRecord,
+}
+
+impl SessionOwnerInspection {
+    pub fn new(record: PersistentSessionRecord) -> Self {
+        Self { record }
+    }
+
+    pub fn record(&self) -> &PersistentSessionRecord {
+        &self.record
+    }
+
+    pub fn into_record(self) -> PersistentSessionRecord {
+        self.record
+    }
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum SessionRegistrationStatus {
     Registered,
@@ -456,6 +613,12 @@ pub enum SessionLookupError {
     #[error("unknown harness session address: {address:?}")]
     UnknownSession { address: SessionAddress },
 
+    #[error("harness session named address resolved to a different identity")]
+    AddressIdentityConflict {
+        requested: NamedSessionAddress,
+        resolved: NamedSessionAddress,
+    },
+
     #[error("duplicate harness session handle {handle:?} for lane {lane_name:?}")]
     DuplicateSessionHandle {
         lane_name: LaneName,
@@ -474,6 +637,25 @@ pub enum SessionLookupError {
         lane_name: LaneName,
         existing: PersistentSession,
         requested: PersistentSession,
+    },
+
+    #[error("harness session request does not match launch packet for {address:?}")]
+    SessionRequestConflict {
+        address: NamedSessionAddress,
+        requested: PersistentSession,
+        launch: PersistentSession,
+    },
+
+    #[error("open-or-reuse requires a persistent harness session for {address:?}")]
+    NonPersistentSessionRequest {
+        address: NamedSessionAddress,
+        requested: PersistentSession,
+    },
+
+    #[error("session owner resolved a non-persistent session record for {address:?}")]
+    NonPersistentSessionRecord {
+        address: NamedSessionAddress,
+        recorded: PersistentSession,
     },
 
     #[error("harness session launch metadata conflict for lane {lane_name:?}")]
@@ -550,6 +732,46 @@ where
         let session = self.driver.launch(request.into_terminal_launch())?;
         self.sessions.insert(handle, session);
         Ok(registration.into_record())
+    }
+
+    pub fn open_or_reuse(
+        &mut self,
+        request: OpenOrReuseHarnessSession,
+    ) -> Result<OpenOrReuseOutcome, SessionRoutingError> {
+        let record = request.session_address_record()?;
+        let registration = self.directory.register_or_reuse(record)?;
+        let status = registration.status();
+        let record = registration.into_record();
+        let handle = record.identity().addressable_handle().clone();
+        let persistent_record = PersistentSessionRecord::from_record(record)?;
+
+        if status == SessionRegistrationStatus::Existing {
+            if self.sessions.contains_key(&handle) {
+                return Ok(OpenOrReuseOutcome::Reused(persistent_record));
+            }
+            return Err(SessionRoutingError::StaleSession { handle });
+        }
+
+        let session = self.driver.launch(request.into_terminal_launch())?;
+        self.sessions.insert(handle, session);
+        Ok(OpenOrReuseOutcome::Opened(persistent_record))
+    }
+
+    pub fn inspect(
+        &self,
+        address: &NamedSessionAddress,
+    ) -> Result<SessionOwnerInspection, SessionLookupError> {
+        let record = self.directory.resolve(&address.as_handle_address())?;
+        let resolved_address = record.named_address();
+        if &resolved_address != address {
+            return Err(SessionLookupError::AddressIdentityConflict {
+                requested: address.clone(),
+                resolved: resolved_address,
+            });
+        }
+        Ok(SessionOwnerInspection::new(
+            PersistentSessionRecord::from_record(record)?,
+        ))
     }
 
     pub fn feed(

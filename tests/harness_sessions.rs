@@ -11,12 +11,13 @@ use mentci::harness_liveness::{
 };
 use mentci::harness_sessions::{
     HarnessKind, HarnessLaunchMetadata, InMemoryHarnessSessionDirectory, NamedHarnessLaunch,
-    NamedHarnessSessions, NamedSessionAddress, SessionAddress, SessionAddressRecord,
-    SessionLookupError, SessionRecordState, SessionRoutingError,
+    NamedHarnessSessions, NamedSessionAddress, OpenOrReuseHarnessSession, OpenOrReuseOutcome,
+    SessionAddress, SessionAddressRecord, SessionLookupError, SessionRecordState,
+    SessionRoutingError,
 };
 use mentci::preflight::{
-    AdapterIdentity, HarnessSessionModelProfile, LaneName, MentciPreflightLaunch, SessionHandle,
-    TerminalCellDriverIdentity,
+    AdapterIdentity, HarnessSessionModelProfile, LaneName, MentciPreflightLaunch,
+    PersistentSession, SessionHandle, TerminalCellDriverIdentity,
 };
 
 #[derive(Clone)]
@@ -185,6 +186,13 @@ fn conflicting_identity_launch_packet() -> MentciPreflightLaunch {
     .expect("conflicting identity packet remains valid")
 }
 
+fn duplicate_handle_launch_packet() -> MentciPreflightLaunch {
+    MentciPreflightLaunch::validated_from_nota(
+        &valid_launch_nota().replace("mentci-primary-vxu6", "mentci-primary-other"),
+    )
+    .expect("duplicate handle packet remains valid")
+}
+
 fn named_launch() -> NamedHarnessLaunch {
     NamedHarnessLaunch::new(launch_packet(), terminal_launch(), launch_metadata())
 }
@@ -203,6 +211,14 @@ fn address() -> SessionAddress {
 
 fn named_address() -> NamedSessionAddress {
     NamedSessionAddress::from_identity(launch_packet().session_identity())
+}
+
+fn open_or_reuse_request() -> OpenOrReuseHarnessSession {
+    OpenOrReuseHarnessSession::new(
+        named_address(),
+        PersistentSession::Persistent,
+        named_launch(),
+    )
 }
 
 #[test]
@@ -241,6 +257,124 @@ fn existing_session_lookup_reuses_address_without_second_terminal_launch() {
     assert_eq!(first_read.transcript().bytes(), b"first\n");
     assert_eq!(second_read.reason(), &StopReason::IdleTimeout);
     assert_eq!(second_read.transcript().bytes(), b"first\nsecond\n");
+}
+
+#[test]
+fn open_or_reuse_reports_new_persistent_session_opened() {
+    let launcher = FakeLauncher::new(VecDeque::new());
+    let driver = TerminalCellDriver::new(launcher.clone());
+    let directory = InMemoryHarnessSessionDirectory::new();
+    let mut sessions = NamedHarnessSessions::new(directory, driver);
+
+    let outcome = sessions
+        .open_or_reuse(open_or_reuse_request())
+        .expect("new persistent session opened");
+
+    let OpenOrReuseOutcome::Opened(record) = outcome else {
+        panic!("new session should be opened");
+    };
+    assert_eq!(record.named_address(), named_address());
+    assert_eq!(record.persistent_session(), PersistentSession::Persistent);
+    assert_eq!(launcher.launched().len(), 1);
+}
+
+#[test]
+fn open_or_reuse_reports_existing_persistent_session_reused() {
+    let launcher = FakeLauncher::new(VecDeque::new());
+    let driver = TerminalCellDriver::new(launcher.clone());
+    let directory = InMemoryHarnessSessionDirectory::new();
+    let mut sessions = NamedHarnessSessions::new(directory, driver);
+
+    let opened = sessions
+        .open_or_reuse(open_or_reuse_request())
+        .expect("new persistent session opened");
+    let reused = sessions
+        .open_or_reuse(open_or_reuse_request())
+        .expect("existing persistent session reused");
+
+    assert!(matches!(opened, OpenOrReuseOutcome::Opened(_)));
+    assert!(matches!(reused, OpenOrReuseOutcome::Reused(_)));
+    assert_eq!(
+        opened.record().named_address(),
+        reused.record().named_address()
+    );
+    assert_eq!(launcher.launched().len(), 1);
+}
+
+#[test]
+fn open_or_reuse_rejects_address_identity_mismatch_before_terminal_launch() {
+    let launcher = FakeLauncher::new(VecDeque::new());
+    let driver = TerminalCellDriver::new(launcher.clone());
+    let directory = InMemoryHarnessSessionDirectory::new();
+    let mut sessions = NamedHarnessSessions::new(directory, driver);
+    let mismatched_address =
+        NamedSessionAddress::from_identity(duplicate_handle_launch_packet().session_identity());
+
+    let error = sessions
+        .open_or_reuse(OpenOrReuseHarnessSession::new(
+            mismatched_address,
+            PersistentSession::Persistent,
+            named_launch(),
+        ))
+        .expect_err("mismatched address rejected");
+
+    assert!(matches!(
+        error,
+        SessionRoutingError::Lookup(SessionLookupError::AddressIdentityConflict { .. })
+    ));
+    assert!(launcher.launched().is_empty());
+}
+
+#[test]
+fn open_or_reuse_rejects_session_request_mismatch_before_terminal_launch() {
+    let launcher = FakeLauncher::new(VecDeque::new());
+    let driver = TerminalCellDriver::new(launcher.clone());
+    let directory = InMemoryHarnessSessionDirectory::new();
+    let mut sessions = NamedHarnessSessions::new(directory, driver);
+
+    let error = sessions
+        .open_or_reuse(OpenOrReuseHarnessSession::new(
+            named_address(),
+            PersistentSession::Persistent,
+            NamedHarnessLaunch::new(
+                ephemeral_launch_packet(),
+                terminal_launch(),
+                launch_metadata(),
+            ),
+        ))
+        .expect_err("session request mismatch rejected");
+
+    assert!(matches!(
+        error,
+        SessionRoutingError::Lookup(SessionLookupError::SessionRequestConflict { .. })
+    ));
+    assert!(launcher.launched().is_empty());
+}
+
+#[test]
+fn open_or_reuse_rejects_non_persistent_request_before_terminal_launch() {
+    let launcher = FakeLauncher::new(VecDeque::new());
+    let driver = TerminalCellDriver::new(launcher.clone());
+    let directory = InMemoryHarnessSessionDirectory::new();
+    let mut sessions = NamedHarnessSessions::new(directory, driver);
+
+    let error = sessions
+        .open_or_reuse(OpenOrReuseHarnessSession::new(
+            named_address(),
+            PersistentSession::Ephemeral,
+            NamedHarnessLaunch::new(
+                ephemeral_launch_packet(),
+                terminal_launch(),
+                launch_metadata(),
+            ),
+        ))
+        .expect_err("non-persistent request rejected");
+
+    assert!(matches!(
+        error,
+        SessionRoutingError::Lookup(SessionLookupError::NonPersistentSessionRequest { .. })
+    ));
+    assert!(launcher.launched().is_empty());
 }
 
 #[test]
@@ -419,10 +553,7 @@ fn duplicate_handle_is_a_typed_address_diagnostic() {
     directory
         .insert_record(original)
         .expect("original address registered");
-    let duplicate = MentciPreflightLaunch::validated_from_nota(
-        &valid_launch_nota().replace("mentci-primary-vxu6", "mentci-primary-other"),
-    )
-    .expect("duplicate handle packet remains valid");
+    let duplicate = duplicate_handle_launch_packet();
 
     let error = directory
         .insert_record(SessionAddressRecord::from_launch(
@@ -481,5 +612,52 @@ fn stale_address_is_reported_without_claiming_process_health() {
         .expect_err("address without local terminal handle is stale");
 
     assert!(matches!(error, SessionRoutingError::StaleSession { .. }));
+    assert!(launcher.launched().is_empty());
+}
+
+#[test]
+fn session_owner_inspection_resolves_record_without_claiming_process_health() {
+    let launcher = FakeLauncher::new(VecDeque::new());
+    let driver = TerminalCellDriver::new(launcher.clone());
+    let mut directory = InMemoryHarnessSessionDirectory::new();
+    let record = SessionAddressRecord::from_launch(&launch_packet(), &launch_metadata());
+    directory
+        .insert_record(record)
+        .expect("external directory address registered");
+    let sessions = NamedHarnessSessions::new(directory, driver);
+
+    let inspection = sessions
+        .inspect(&named_address())
+        .expect("owner record inspected");
+
+    assert_eq!(inspection.record().named_address(), named_address());
+    assert_eq!(
+        inspection.record().persistent_session(),
+        PersistentSession::Persistent
+    );
+    assert!(launcher.launched().is_empty());
+}
+
+#[test]
+fn session_owner_inspection_rejects_resolved_address_identity_mismatch() {
+    let launcher = FakeLauncher::new(VecDeque::new());
+    let driver = TerminalCellDriver::new(launcher.clone());
+    let mut directory = InMemoryHarnessSessionDirectory::new();
+    let record = SessionAddressRecord::from_launch(&launch_packet(), &launch_metadata());
+    directory
+        .insert_record(record)
+        .expect("external directory address registered");
+    let sessions = NamedHarnessSessions::new(directory, driver);
+    let mismatched_address =
+        NamedSessionAddress::from_identity(duplicate_handle_launch_packet().session_identity());
+
+    let error = sessions
+        .inspect(&mismatched_address)
+        .expect_err("mismatched resolved address rejected");
+
+    assert!(matches!(
+        error,
+        SessionLookupError::AddressIdentityConflict { .. }
+    ));
     assert!(launcher.launched().is_empty());
 }
