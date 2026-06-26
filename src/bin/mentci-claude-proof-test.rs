@@ -23,8 +23,8 @@ mod proof {
     use std::time::{SystemTime, UNIX_EPOCH};
 
     use mentci::harness_adapters::{
-        ClaudeCodeAdapter, ClaudeCodeLaunchRequest, EphemeralJjRepository, HarnessFeed,
-        HarnessPrompt,
+        ClaudeCodeAdapter, ClaudeCodeLaunchRequest, ClaudeCodeModelCommand, EphemeralJjRepository,
+        HarnessFeed, HarnessPrompt,
     };
     use mentci::harness_liveness::{CloseRequest, CloseSignal, TerminalCellDriver};
     use mentci::harness_sessions::{
@@ -84,6 +84,7 @@ mod proof {
         claude_version: CommandResult,
         argv_program: String,
         argv_arguments: Vec<String>,
+        model_command: ClaudeCodeModelCommand,
         initial_prompt_summary: String,
         forbidden_arguments_seen: Vec<String>,
         preflight_launch: String,
@@ -165,7 +166,8 @@ mod proof {
                 HarnessPrompt::new(
                     "Turn 0 only: reply exactly MENTCI_PROOF_READY and wait for the next Mentci feed. Do not inspect any repository yet.",
                 ),
-            );
+            )
+            .with_model_command(ClaudeCodeModelCommand::haiku());
             let named_launch = adapter.launch(launch_request)?;
             let terminal_launch = named_launch.terminal_launch();
             let argv_program = terminal_launch.launch().command().program().to_owned();
@@ -247,6 +249,7 @@ mod proof {
                 claude_version,
                 argv_program,
                 argv_arguments,
+                model_command: ClaudeCodeModelCommand::haiku(),
                 initial_prompt_summary,
                 forbidden_arguments_seen,
                 preflight_launch: preflight.launch.to_nota(),
@@ -342,13 +345,14 @@ mod proof {
 
         fn render(&self) -> String {
             format!(
-                "# Mentci real Claude proof witness\n\nstatus: passed\nsandbox_path: {}\nscaffold_path: {}\nsandbox_removed: {}\nprimary_unchanged: {}\n\n## Claude\nversion_status: {}\nversion_stdout: {}\nsubscription_tui: normal interactive claude\n\n## Launch\nargv_program: {}\nargv_arguments: {:?}\nforbidden_arguments_seen: {:?}\nclose_input: {}\ninitial_prompt_summary: {}\n\n## Preflight\n{}\n\n## Transcript\nfirst_read_reason: {}\nfirst_read_snippet:\n{}\n\nsecond_read_reason: {}\nsecond_read_snippet:\n{}\n\nthird_read_reason: {}\nthird_read_snippet:\n{}\n\nclose_signal: {}\n\n## Jj Task\nproof_file_content: {:?}\njj_status_after_task_status: {}\njj_status_after_task_stdout: {}\njj_log_after_task_status: {}\njj_log_after_task_stdout: {}\n\n## Primary Guard\nprimary_before_status: {}\nprimary_before_stdout: {}\nprimary_after_status: {}\nprimary_after_stdout: {}\n",
+                "# Mentci real Claude proof witness\n\nstatus: passed\nsandbox_path: {}\nscaffold_path: {}\nsandbox_removed: {}\nprimary_unchanged: {}\n\n## Claude\nversion_status: {}\nversion_stdout: {}\nsubscription_tui: normal interactive claude\nmodel_command: {}\n\n## Launch\nargv_program: {}\nargv_arguments: {:?}\nforbidden_arguments_seen: {:?}\nclose_input: {}\ninitial_prompt_summary: {}\n\n## Preflight\n{}\n\n## Transcript\nfirst_read_reason: {}\nfirst_read_snippet:\n{}\n\nsecond_read_reason: {}\nsecond_read_snippet:\n{}\n\nthird_read_reason: {}\nthird_read_snippet:\n{}\n\nclose_signal: {}\n\n## Jj Task\nproof_file_content: {:?}\njj_status_after_task_status: {}\njj_status_after_task_stdout: {}\njj_log_after_task_status: {}\njj_log_after_task_stdout: {}\n\n## Primary Guard\nprimary_before_status: {}\nprimary_before_stdout: {}\nprimary_after_status: {}\nprimary_after_stdout: {}\n",
                 self.sandbox_path.display(),
                 self.scaffold_path.display(),
                 self.sandbox_removed,
                 self.primary_unchanged,
                 self.claude_version.status,
                 self.claude_version.stdout.trim(),
+                self.model_command.as_str(),
                 self.argv_program,
                 self.argv_arguments,
                 self.forbidden_arguments_seen,

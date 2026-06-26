@@ -153,7 +153,12 @@ impl ClaudeCodeAdapter {
         prompt.push_str("\nPreflight launch:\n");
         prompt.push_str(&request.preflight_launch().to_nota());
         prompt.push_str("\n");
-        InteractiveTerminalInput::new(prompt).into_terminal_feed()
+        let mut input = TerminalInputSequence::new();
+        if let Some(command) = request.model_command() {
+            input.push_model_command(command);
+        }
+        input.push_interactive(InteractiveTerminalInput::new(prompt));
+        input.into_terminal_feed()
     }
 
     fn stop_conditions(&self, stop_conditions: &[StopCondition]) -> StopConditions {
@@ -611,6 +616,7 @@ pub struct ClaudeCodeLaunchRequest {
     scaffold_path: PathBuf,
     sandbox: EphemeralJjRepository,
     prompt: HarnessPrompt,
+    model_command: Option<ClaudeCodeModelCommand>,
 }
 
 impl ClaudeCodeLaunchRequest {
@@ -625,7 +631,13 @@ impl ClaudeCodeLaunchRequest {
             scaffold_path: scaffold_path.into(),
             sandbox,
             prompt,
+            model_command: None,
         }
+    }
+
+    pub fn with_model_command(mut self, command: ClaudeCodeModelCommand) -> Self {
+        self.model_command = Some(command);
+        self
     }
 
     pub fn preflight_launch(&self) -> &MentciPreflightLaunch {
@@ -644,8 +656,34 @@ impl ClaudeCodeLaunchRequest {
         &self.prompt
     }
 
+    pub fn model_command(&self) -> Option<&ClaudeCodeModelCommand> {
+        self.model_command.as_ref()
+    }
+
     fn into_preflight_launch(self) -> MentciPreflightLaunch {
         self.preflight_launch
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ClaudeCodeModelCommand {
+    text: String,
+}
+
+impl ClaudeCodeModelCommand {
+    pub fn haiku() -> Self {
+        Self {
+            text: "/model haiku".to_owned(),
+        }
+    }
+
+    pub fn as_str(&self) -> &str {
+        self.text.as_str()
+    }
+
+    fn append_to(&self, bytes: &mut Vec<u8>) {
+        bytes.extend_from_slice(self.text.as_bytes());
+        bytes.push(b'\r');
     }
 }
 
@@ -689,7 +727,15 @@ impl InteractiveTerminalInput {
         Self { text: text.into() }
     }
 
+    fn append_to(self, bytes: &mut Vec<u8>) {
+        bytes.extend_from_slice(&self.into_bytes());
+    }
+
     fn into_terminal_feed(self) -> TerminalFeed {
+        TerminalFeed::new(self.into_bytes())
+    }
+
+    fn into_bytes(self) -> Vec<u8> {
         let mut bytes = Vec::with_capacity(
             BRACKETED_PASTE_START.len() + self.text.len() + BRACKETED_PASTE_END.len() + b"\r".len(),
         );
@@ -697,7 +743,30 @@ impl InteractiveTerminalInput {
         bytes.extend_from_slice(self.text.as_bytes());
         bytes.extend_from_slice(BRACKETED_PASTE_END);
         bytes.push(b'\r');
-        TerminalFeed::new(bytes)
+        bytes
+    }
+}
+
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+struct TerminalInputSequence {
+    bytes: Vec<u8>,
+}
+
+impl TerminalInputSequence {
+    fn new() -> Self {
+        Self { bytes: Vec::new() }
+    }
+
+    fn push_model_command(&mut self, command: &ClaudeCodeModelCommand) {
+        command.append_to(&mut self.bytes);
+    }
+
+    fn push_interactive(&mut self, input: InteractiveTerminalInput) {
+        input.append_to(&mut self.bytes);
+    }
+
+    fn into_terminal_feed(self) -> TerminalFeed {
+        TerminalFeed::new(self.bytes)
     }
 }
 

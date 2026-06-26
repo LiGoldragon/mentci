@@ -7,8 +7,8 @@ use std::rc::Rc;
 use std::time::Duration;
 
 use mentci::harness_adapters::{
-    AdapterError, ClaudeCodeAdapter, ClaudeCodeLaunchRequest, ClaudeCodeTranscriptCursor,
-    EphemeralJjRepository, HarnessFeed, HarnessPrompt,
+    AdapterError, ClaudeCodeAdapter, ClaudeCodeLaunchRequest, ClaudeCodeModelCommand,
+    ClaudeCodeTranscriptCursor, EphemeralJjRepository, HarnessFeed, HarnessPrompt,
 };
 use mentci::harness_liveness::{
     CloseReport, CloseRequest, CloseSignal, DriverError, StopReason, TerminalCellDriver,
@@ -358,6 +358,57 @@ fn claude_code_adapter_does_not_require_harness_model_identifier() {
             .harness_session_model()
             .as_str(),
         "subscription-tui-default"
+    );
+}
+
+#[test]
+fn claude_code_adapter_selects_haiku_inside_subscription_tui_without_launch_argument() {
+    let directory = tempfile::tempdir().expect("tempdir");
+    let adapter = test_adapter(directory.path());
+
+    let launch = adapter
+        .launch(
+            launch_request(directory.path()).with_model_command(ClaudeCodeModelCommand::haiku()),
+        )
+        .expect("adapter launch");
+    let command = launch.terminal_launch().launch().command();
+    let initial_input = launch
+        .terminal_launch()
+        .initial_input()
+        .expect("initial input");
+    let text = String::from_utf8_lossy(initial_input.bytes());
+
+    assert_subscription_tui_arguments(command.arguments());
+    assert!(
+        !command
+            .arguments()
+            .iter()
+            .any(|argument| argument.contains("haiku") || argument.contains("opus")),
+        "model choice must stay out of Claude launch argv: {:?}",
+        command.arguments()
+    );
+    assert!(
+        initial_input.bytes().starts_with(b"/model haiku\r"),
+        "Haiku selection should be a Claude TUI command before the prompt: {text:?}"
+    );
+    assert!(
+        text.contains("Initial task:\nshow jj status and wait for the next turn"),
+        "initial prompt should still follow the model command: {text:?}"
+    );
+    assert!(
+        !text.to_ascii_lowercase().contains("opus"),
+        "Claude proof input must not select or name Opus: {text:?}"
+    );
+}
+
+#[test]
+fn live_claude_proof_selects_haiku_not_opus() {
+    let proof_source = include_str!("../src/bin/mentci-claude-proof-test.rs");
+
+    assert!(proof_source.contains("ClaudeCodeModelCommand::haiku()"));
+    assert!(
+        !proof_source.to_ascii_lowercase().contains("opus"),
+        "live Claude proof source must not mention Opus"
     );
 }
 
