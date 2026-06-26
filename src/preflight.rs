@@ -311,32 +311,28 @@ impl PreflightModelOutput {
 impl VerifiedModelIdentifier {
     pub fn for_preflight_profile(profile: &PreflightModelProfile) -> Result<Self> {
         match profile.as_str() {
-            "cheap-contained-preflight" | "claude-haiku-4-5-20251001" => Ok(Self {
+            "cheap-contained-preflight" => Ok(Self {
                 slot: ModelSlot::Preflight,
-                identifier: "claude-haiku-4-5-20251001".to_owned(),
+                identifier: profile.as_str().to_owned(),
             }),
             other => Err(Error::UnverifiedModel {
                 slot: ModelSlot::Preflight.as_str(),
                 profile: other.to_owned(),
-                required_identifier: "claude-haiku-4-5-20251001".to_owned(),
+                required_identifier: "cheap-contained-preflight".to_owned(),
             }),
         }
     }
 
     pub fn for_harness_profile(profile: &HarnessSessionModelProfile) -> Result<Self> {
         match profile.as_str() {
-            "cheap-harness-session" | "gpt-5.4-mini" => Ok(Self {
+            "cheap-harness-session" => Ok(Self {
                 slot: ModelSlot::HarnessSession,
-                identifier: "gpt-5.4-mini".to_owned(),
-            }),
-            "openai-codex/gpt-5.4-mini" => Ok(Self {
-                slot: ModelSlot::HarnessSession,
-                identifier: "openai-codex/gpt-5.4-mini".to_owned(),
+                identifier: profile.as_str().to_owned(),
             }),
             other => Err(Error::UnverifiedModel {
                 slot: ModelSlot::HarnessSession.as_str(),
                 profile: other.to_owned(),
-                required_identifier: "gpt-5.4-mini or openai-codex/gpt-5.4-mini".to_owned(),
+                required_identifier: "cheap-harness-session".to_owned(),
             }),
         }
     }

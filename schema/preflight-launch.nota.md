@@ -115,21 +115,17 @@ in their named records.
 - `ScaffoldPointer.expansion-index` is `skills/skills.nota`. The scaffold
   remains minimal; agents load further skills and repo context from that index.
 
-## Verified Model Identifier Guidance
+## Model Profile Boundary
 
 This guidance does not add schema fields. `ModelSelection` remains two semantic
-knobs, and adapters map those knobs to provider-specific identifiers only after
-their local availability is verified.
+knobs: `cheap-contained-preflight` and `cheap-harness-session`. The Mentci
+front door validates only those semantic profiles. Concrete provider model
+identifiers, API names, terminal defaults, and no-op mappings are adapter-owned
+launch-plan details below this schema.
 
-- Cheap Claude Haiku-class preflight can use Anthropic's first-party model ID
-  `claude-haiku-4-5-20251001` when the preflight provider is Claude API or
-  Claude Code with a pinned Haiku model.
-- Cheap OpenAI/Codex harness sessions can use `gpt-5.4-mini`; local pi verifies
-  the provider-qualified form `openai-codex/gpt-5.4-mini`.
-- If a selected provider or harness cannot verify one of those exact IDs
-  locally or from the provider's official docs, keep the semantic placeholder
-  (`cheap-contained-preflight` or `cheap-harness-session`) and fail launch-plan
-  construction with a clear unverified-model diagnostic instead of guessing.
+If an adapter cannot map a semantic profile to a locally available provider
+model, it fails launch-plan construction with a typed adapter diagnostic instead
+of teaching Mentci the provider's model roster.
 
 ## Canonical Example
 

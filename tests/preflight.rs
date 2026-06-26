@@ -52,7 +52,7 @@ impl PreflightApi for FakePreflightApi {
         prompt: &PreflightPrompt,
         identifier: &VerifiedModelIdentifier,
     ) -> mentci::Result<PreflightModelOutput> {
-        assert_eq!(identifier.as_str(), "claude-haiku-4-5-20251001");
+        assert_eq!(identifier.as_str(), "cheap-contained-preflight");
         assert!(prompt.as_str().contains("MentciPreflightLaunch"));
         assert!(prompt.as_str().contains("skills/skills.nota"));
         if self.fail_completion {
@@ -118,6 +118,48 @@ fn preflight_path_calls_api_and_validates_launch_packet() {
 }
 
 #[test]
+fn preflight_model_slots_reject_provider_specific_identifiers() {
+    let provider_model_request = PreflightRequest::new(
+        "Build the Mentci API preflight path",
+        ModelSelection::new(
+            PreflightModelProfile::new("claude-haiku-4-5-20251001"),
+            mentci::preflight::HarnessSessionModelProfile::new("cheap-harness-session"),
+        ),
+        WorkSurface::new("sandboxed-jj-task"),
+        Vec::new(),
+    );
+    let engine = PreflightEngine::new(FakePreflightApi::new(valid_launch_nota()));
+
+    let error = engine
+        .launch(&provider_model_request)
+        .expect_err("provider-specific preflight model rejected");
+
+    assert!(matches!(
+        error,
+        Error::UnverifiedModel { slot, profile, required_identifier }
+            if slot == "preflight model"
+                && profile == "claude-haiku-4-5-20251001"
+                && required_identifier == "cheap-contained-preflight"
+    ));
+
+    let provider_model_launch =
+        valid_launch_nota().replace("cheap-harness-session", "gpt-5.4-mini");
+    let engine = PreflightEngine::new(FakePreflightApi::new(provider_model_launch));
+
+    let error = engine
+        .launch(&request())
+        .expect_err("provider-specific harness model rejected");
+
+    assert!(matches!(
+        error,
+        Error::UnverifiedModel { slot, profile, required_identifier }
+            if slot == "harness session model"
+                && profile == "gpt-5.4-mini"
+                && required_identifier == "cheap-harness-session"
+    ));
+}
+
+#[test]
 fn preflight_rejects_generic_compression_or_missing_named_slots() {
     let compressed = "(MentciPreflightLaunch (mentci-prompt-scaffold 1 [] [] skills/skills.nota ReuseDeferred) [] [(Constraint [session primary-k6va])])";
     let engine = PreflightEngine::new(FakePreflightApi::new(compressed));
@@ -174,7 +216,7 @@ fn preflight_reports_unverified_model_before_guessing() {
 #[test]
 fn preflight_reports_runtime_unavailable_verified_model() {
     let engine = PreflightEngine::new(
-        FakePreflightApi::new(valid_launch_nota()).with_unavailable_model("gpt-5.4-mini"),
+        FakePreflightApi::new(valid_launch_nota()).with_unavailable_model("cheap-harness-session"),
     );
 
     let error = engine
@@ -184,7 +226,7 @@ fn preflight_reports_runtime_unavailable_verified_model() {
     assert!(matches!(
         error,
         Error::UnverifiedModel { slot, required_identifier, .. }
-            if slot == "harness session model" && required_identifier == "gpt-5.4-mini"
+            if slot == "harness session model" && required_identifier == "cheap-harness-session"
     ));
 }
 
@@ -215,4 +257,32 @@ fn preflight_rejects_scaffold_without_skills_index() {
     assert!(
         matches!(error, Error::PreflightLaunch(message) if message.contains("skills/skills.nota"))
     );
+}
+
+#[test]
+fn front_door_boundary_has_no_claude_tui_or_permission_policy() {
+    let front_door_sources = [
+        include_str!("../src/preflight.rs"),
+        include_str!("../src/harness_sessions.rs"),
+    ];
+    let forbidden_policy_terms = [
+        "claude-haiku",
+        "subscription-tui",
+        "permission-mode",
+        "bypassPermissions",
+        "apiKeyHelper",
+        "--print",
+        "--bare",
+        "prompt injection",
+        "readiness",
+    ];
+
+    for source in front_door_sources {
+        for term in forbidden_policy_terms {
+            assert!(
+                !source.contains(term),
+                "front-door/session boundary must not encode provider policy term {term:?}"
+            );
+        }
+    }
 }
