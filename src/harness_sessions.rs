@@ -93,7 +93,8 @@ impl HarnessLaunchMetadata {
 pub struct SessionAddressRecord {
     identity: SessionIdentity,
     persistent_session: PersistentSession,
-    metadata: SessionAddressMetadata,
+    address_metadata: SessionAddressMetadata,
+    launch_metadata: HarnessLaunchMetadata,
     state: SessionRecordState,
 }
 
@@ -105,9 +106,14 @@ impl SessionAddressRecord {
         Self {
             identity: launch.session_identity().clone(),
             persistent_session: launch.persistent_session(),
-            metadata: SessionAddressMetadata::from_launch(launch, launch_metadata),
+            address_metadata: SessionAddressMetadata::from_launch(launch),
+            launch_metadata: launch_metadata.clone(),
             state: SessionRecordState::Open,
         }
+    }
+
+    pub fn named_address(&self) -> NamedSessionAddress {
+        NamedSessionAddress::from_identity(&self.identity)
     }
 
     pub fn identity(&self) -> &SessionIdentity {
@@ -119,7 +125,11 @@ impl SessionAddressRecord {
     }
 
     pub fn metadata(&self) -> &SessionAddressMetadata {
-        &self.metadata
+        &self.address_metadata
+    }
+
+    pub fn launch_metadata(&self) -> &HarnessLaunchMetadata {
+        &self.launch_metadata
     }
 
     pub fn state(&self) -> SessionRecordState {
@@ -132,26 +142,15 @@ pub struct SessionAddressMetadata {
     lane_metadata: Vec<LaneMetadata>,
     scaffold_identity: ScaffoldIdentity,
     scaffold_version: ScaffoldVersion,
-    harness_kind: HarnessKind,
-    adapter: AdapterIdentity,
-    terminal_cell_driver: TerminalCellDriverIdentity,
-    harness_session_model: HarnessSessionModelProfile,
     sandbox_privacy: SandboxPrivacy,
 }
 
 impl SessionAddressMetadata {
-    pub fn from_launch(
-        launch: &MentciPreflightLaunch,
-        launch_metadata: &HarnessLaunchMetadata,
-    ) -> Self {
+    pub fn from_launch(launch: &MentciPreflightLaunch) -> Self {
         Self {
             lane_metadata: launch.session_identity().lane_metadata().to_vec(),
             scaffold_identity: launch.scaffold().identity().clone(),
             scaffold_version: launch.scaffold().version(),
-            harness_kind: launch_metadata.harness_kind(),
-            adapter: launch_metadata.adapter().clone(),
-            terminal_cell_driver: launch_metadata.terminal_cell_driver().clone(),
-            harness_session_model: launch_metadata.harness_session_model().clone(),
             sandbox_privacy: launch.sandbox_privacy().clone(),
         }
     }
@@ -166,22 +165,6 @@ impl SessionAddressMetadata {
 
     pub fn scaffold_version(&self) -> ScaffoldVersion {
         self.scaffold_version
-    }
-
-    pub fn harness_kind(&self) -> HarnessKind {
-        self.harness_kind
-    }
-
-    pub fn adapter(&self) -> &AdapterIdentity {
-        &self.adapter
-    }
-
-    pub fn terminal_cell_driver(&self) -> &TerminalCellDriverIdentity {
-        &self.terminal_cell_driver
-    }
-
-    pub fn harness_session_model(&self) -> &HarnessSessionModelProfile {
-        &self.harness_session_model
     }
 
     pub fn sandbox_privacy(&self) -> &SandboxPrivacy {
@@ -235,6 +218,43 @@ impl SessionAddress {
 
     pub fn handle(value: SessionHandle) -> Self {
         Self::Handle(value)
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct NamedSessionAddress {
+    lane_name: LaneName,
+    handle: SessionHandle,
+    lookup_path: crate::preflight::SessionLookupPath,
+}
+
+impl NamedSessionAddress {
+    pub fn from_identity(identity: &SessionIdentity) -> Self {
+        Self {
+            lane_name: identity.lane_name().clone(),
+            handle: identity.addressable_handle().clone(),
+            lookup_path: identity.lookup_path().clone(),
+        }
+    }
+
+    pub fn lane_name(&self) -> &LaneName {
+        &self.lane_name
+    }
+
+    pub fn handle(&self) -> &SessionHandle {
+        &self.handle
+    }
+
+    pub fn lookup_path(&self) -> &crate::preflight::SessionLookupPath {
+        &self.lookup_path
+    }
+
+    pub fn as_handle_address(&self) -> SessionAddress {
+        SessionAddress::handle(self.handle.clone())
+    }
+
+    pub fn as_lane_address(&self) -> SessionAddress {
+        SessionAddress::lane_name(self.lane_name.clone())
     }
 }
 
@@ -367,20 +387,32 @@ impl HarnessSessionDirectory for InMemoryHarnessSessionDirectory {
                     state: existing.state,
                 });
             }
-            if existing.identity() == record.identity()
-                && existing.persistent_session() == record.persistent_session()
-                && existing.metadata() == record.metadata()
+            if existing.identity() != record.identity() || existing.metadata() != record.metadata()
             {
-                return Ok(SessionRegistration::new(
-                    existing.clone(),
-                    SessionRegistrationStatus::Existing,
-                ));
+                return Err(SessionLookupError::AddressConflict {
+                    lane_name,
+                    existing: existing.metadata().clone(),
+                    requested: record.metadata().clone(),
+                });
             }
-            return Err(SessionLookupError::AddressConflict {
-                lane_name,
-                existing: existing.metadata().clone(),
-                requested: record.metadata().clone(),
-            });
+            if existing.persistent_session() != record.persistent_session() {
+                return Err(SessionLookupError::SessionInstanceConflict {
+                    lane_name,
+                    existing: existing.persistent_session(),
+                    requested: record.persistent_session(),
+                });
+            }
+            if existing.launch_metadata() != record.launch_metadata() {
+                return Err(SessionLookupError::LaunchMetadataConflict {
+                    lane_name,
+                    existing: existing.launch_metadata().clone(),
+                    requested: record.launch_metadata().clone(),
+                });
+            }
+            return Ok(SessionRegistration::new(
+                existing.clone(),
+                SessionRegistrationStatus::Existing,
+            ));
         }
 
         if self.by_handle.contains_key(&handle) {
@@ -435,6 +467,20 @@ pub enum SessionLookupError {
         lane_name: LaneName,
         existing: SessionAddressMetadata,
         requested: SessionAddressMetadata,
+    },
+
+    #[error("harness session instance request conflict for lane {lane_name:?}")]
+    SessionInstanceConflict {
+        lane_name: LaneName,
+        existing: PersistentSession,
+        requested: PersistentSession,
+    },
+
+    #[error("harness session launch metadata conflict for lane {lane_name:?}")]
+    LaunchMetadataConflict {
+        lane_name: LaneName,
+        existing: HarnessLaunchMetadata,
+        requested: HarnessLaunchMetadata,
     },
 
     #[error("harness session address is not open: {address:?}")]

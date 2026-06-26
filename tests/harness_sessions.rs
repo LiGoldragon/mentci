@@ -11,8 +11,8 @@ use mentci::harness_liveness::{
 };
 use mentci::harness_sessions::{
     HarnessKind, HarnessLaunchMetadata, InMemoryHarnessSessionDirectory, NamedHarnessLaunch,
-    NamedHarnessSessions, SessionAddress, SessionAddressRecord, SessionLookupError,
-    SessionRecordState, SessionRoutingError,
+    NamedHarnessSessions, NamedSessionAddress, SessionAddress, SessionAddressRecord,
+    SessionLookupError, SessionRecordState, SessionRoutingError,
 };
 use mentci::preflight::{
     AdapterIdentity, HarnessSessionModelProfile, LaneName, MentciPreflightLaunch, SessionHandle,
@@ -161,6 +161,30 @@ fn conflicting_launch_metadata() -> HarnessLaunchMetadata {
     )
 }
 
+fn different_harness_launch_metadata() -> HarnessLaunchMetadata {
+    HarnessLaunchMetadata::new(
+        HarnessKind::open_ended_harness(),
+        AdapterIdentity::new("open-ended-terminal-adapter"),
+        TerminalCellDriverIdentity::new("terminal-cell-v2"),
+        HarnessSessionModelProfile::new("other-harness-session"),
+    )
+}
+
+fn ephemeral_launch_packet() -> MentciPreflightLaunch {
+    MentciPreflightLaunch::validated_from_nota(
+        &valid_launch_nota().replace("Persistent", "Ephemeral"),
+    )
+    .expect("ephemeral launch packet")
+}
+
+fn conflicting_identity_launch_packet() -> MentciPreflightLaunch {
+    MentciPreflightLaunch::validated_from_nota(&valid_launch_nota().replace(
+        "(HarnessLabel mentci-harness)",
+        "(HarnessLabel different-address-target)",
+    ))
+    .expect("conflicting identity packet remains valid")
+}
+
 fn named_launch() -> NamedHarnessLaunch {
     NamedHarnessLaunch::new(launch_packet(), terminal_launch(), launch_metadata())
 }
@@ -175,6 +199,10 @@ fn named_launch_with_liveness(liveness: LivenessPolicy) -> NamedHarnessLaunch {
 
 fn address() -> SessionAddress {
     SessionAddress::handle(SessionHandle::new("primary-vxu6-session"))
+}
+
+fn named_address() -> NamedSessionAddress {
+    NamedSessionAddress::from_identity(launch_packet().session_identity())
 }
 
 #[test]
@@ -264,26 +292,52 @@ fn address_metadata_preserves_launch_packet_identity_without_liveness_state() {
     let launch = launch_packet();
     let metadata_source = launch_metadata();
     let record = SessionAddressRecord::from_launch(&launch, &metadata_source);
+    let named_address = record.named_address();
     let metadata = record.metadata();
 
+    assert_eq!(named_address.lane_name().as_str(), "mentci-primary-vxu6");
+    assert_eq!(named_address.handle().as_str(), "primary-vxu6-session");
+    assert_eq!(
+        named_address.lookup_path().as_str(),
+        "orchestrate/lanes/primary-vxu6"
+    );
     assert_eq!(
         metadata.scaffold_identity().as_str(),
         "mentci-prompt-scaffold"
     );
     assert_eq!(metadata.scaffold_version().value(), 1);
-    assert_eq!(metadata.harness_kind(), HarnessKind::Codex);
-    assert_eq!(metadata.adapter().as_str(), "codex-terminal-adapter");
-    assert_eq!(metadata.terminal_cell_driver().as_str(), "terminal-cell-v1");
-    assert_eq!(
-        metadata.harness_session_model().as_str(),
-        "cheap-harness-session"
-    );
     assert_eq!(metadata.lane_metadata().len(), 3);
+    assert_eq!(record.launch_metadata(), &metadata_source);
     assert_eq!(
         record.persistent_session(),
         mentci::preflight::PersistentSession::Persistent
     );
     assert_eq!(record.state(), SessionRecordState::Open);
+}
+
+#[test]
+fn target_identity_resolves_to_stable_address_independent_of_session_request() {
+    let persistent = SessionAddressRecord::from_launch(&launch_packet(), &launch_metadata());
+    let ephemeral =
+        SessionAddressRecord::from_launch(&ephemeral_launch_packet(), &launch_metadata());
+
+    assert_eq!(persistent.named_address(), ephemeral.named_address());
+    assert_ne!(
+        persistent.persistent_session(),
+        ephemeral.persistent_session()
+    );
+    assert_eq!(persistent.metadata(), ephemeral.metadata());
+}
+
+#[test]
+fn provider_launch_metadata_is_not_address_metadata() {
+    let codex = SessionAddressRecord::from_launch(&launch_packet(), &launch_metadata());
+    let open_ended =
+        SessionAddressRecord::from_launch(&launch_packet(), &different_harness_launch_metadata());
+
+    assert_eq!(codex.named_address(), open_ended.named_address());
+    assert_eq!(codex.metadata(), open_ended.metadata());
+    assert_ne!(codex.launch_metadata(), open_ended.launch_metadata());
 }
 
 #[test]
@@ -301,9 +355,9 @@ fn address_conflict_diagnostic_prevents_terminal_launch() {
 
     let error = sessions
         .launch(NamedHarnessLaunch::new(
-            launch_packet(),
+            conflicting_identity_launch_packet(),
             terminal_launch(),
-            conflicting_launch_metadata(),
+            launch_metadata(),
         ))
         .expect_err("conflicting address rejected");
 
@@ -312,6 +366,48 @@ fn address_conflict_diagnostic_prevents_terminal_launch() {
         SessionRoutingError::Lookup(SessionLookupError::AddressConflict { .. })
     ));
     assert!(launcher.launched().is_empty());
+}
+
+#[test]
+fn session_instance_conflict_is_separate_from_address_conflict() {
+    let mut directory = InMemoryHarnessSessionDirectory::new();
+    let original = SessionAddressRecord::from_launch(&launch_packet(), &launch_metadata());
+    directory
+        .insert_record(original)
+        .expect("original address registered");
+
+    let error = directory
+        .insert_record(SessionAddressRecord::from_launch(
+            &ephemeral_launch_packet(),
+            &launch_metadata(),
+        ))
+        .expect_err("persistent-session mismatch rejected separately");
+
+    assert!(matches!(
+        error,
+        SessionLookupError::SessionInstanceConflict { .. }
+    ));
+}
+
+#[test]
+fn launch_metadata_conflict_is_separate_from_address_conflict() {
+    let mut directory = InMemoryHarnessSessionDirectory::new();
+    let original = SessionAddressRecord::from_launch(&launch_packet(), &launch_metadata());
+    directory
+        .insert_record(original)
+        .expect("original address registered");
+
+    let error = directory
+        .insert_record(SessionAddressRecord::from_launch(
+            &launch_packet(),
+            &conflicting_launch_metadata(),
+        ))
+        .expect_err("launch metadata mismatch rejected separately");
+
+    assert!(matches!(
+        error,
+        SessionLookupError::LaunchMetadataConflict { .. }
+    ));
 }
 
 #[test]
@@ -353,10 +449,11 @@ fn lane_name_lookup_routes_to_the_same_live_terminal_session() {
 
     let registration = sessions.launch(named_launch()).expect("session launched");
     let by_lane = SessionAddress::lane_name(LaneName::new("mentci-primary-vxu6"));
+    let by_named_handle = named_address().as_handle_address();
     sessions
         .feed(&by_lane, TerminalFeed::new(b"lane prompt\r".to_vec()))
         .expect("feed by lane");
-    let read = sessions.read(&by_lane).expect("read by lane");
+    let read = sessions.read(&by_named_handle).expect("read by handle");
 
     assert_eq!(
         registration.identity().lookup_path().as_str(),
