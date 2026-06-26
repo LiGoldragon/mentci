@@ -1,6 +1,7 @@
 use std::cell::RefCell;
 use std::collections::VecDeque;
 use std::fs;
+use std::os::unix::fs::PermissionsExt;
 use std::path::Path;
 use std::rc::Rc;
 use std::time::Duration;
@@ -176,6 +177,40 @@ fn launch_request(parent: &Path) -> ClaudeCodeLaunchRequest {
     )
 }
 
+fn safe_claude_executable(parent: &Path) -> std::path::PathBuf {
+    let path = parent.join("safe-claude");
+    fs::write(
+        &path,
+        "#!/bin/sh\nexec /nix/store/example-claude-code/bin/.claude-wrapped \"$@\"\n",
+    )
+    .expect("safe claude fixture");
+    let mut permissions = fs::metadata(&path)
+        .expect("safe claude metadata")
+        .permissions();
+    permissions.set_mode(0o755);
+    fs::set_permissions(&path, permissions).expect("safe claude permissions");
+    path
+}
+
+fn unsafe_claude_executable(parent: &Path) -> std::path::PathBuf {
+    let path = parent.join("unsafe-claude");
+    fs::write(
+        &path,
+        "#!/bin/sh\narguments=(--bare)\nexec /nix/store/example-claude-code/bin/claude \"${arguments[@]}\" \"$@\"\n",
+    )
+    .expect("unsafe claude fixture");
+    let mut permissions = fs::metadata(&path)
+        .expect("unsafe claude metadata")
+        .permissions();
+    permissions.set_mode(0o755);
+    fs::set_permissions(&path, permissions).expect("unsafe claude permissions");
+    path
+}
+
+fn test_adapter(parent: &Path) -> ClaudeCodeAdapter {
+    ClaudeCodeAdapter::new().with_executable(safe_claude_executable(parent))
+}
+
 fn address() -> SessionAddress {
     SessionAddress::handle(SessionHandle::new("primary-edm1-session"))
 }
@@ -216,7 +251,8 @@ fn assert_subscription_tui_arguments(arguments: &[String]) {
 #[test]
 fn claude_code_adapter_builds_subscription_tui_terminal_launch_plan() {
     let directory = tempfile::tempdir().expect("tempdir");
-    let adapter = ClaudeCodeAdapter::new();
+    let executable = safe_claude_executable(directory.path());
+    let adapter = ClaudeCodeAdapter::new().with_executable(&executable);
 
     let launch = adapter
         .launch(launch_request(directory.path()))
@@ -224,7 +260,13 @@ fn claude_code_adapter_builds_subscription_tui_terminal_launch_plan() {
     let terminal_launch = launch.terminal_launch();
     let command = terminal_launch.launch().command();
 
-    assert_eq!(command.program(), "claude");
+    assert_eq!(
+        command.program(),
+        executable
+            .canonicalize()
+            .expect("canonical executable")
+            .to_string_lossy()
+    );
     assert_eq!(
         command.arguments(),
         &[
@@ -270,9 +312,27 @@ fn claude_code_adapter_builds_subscription_tui_terminal_launch_plan() {
 }
 
 #[test]
+fn claude_code_adapter_rejects_forbidden_subscription_tui_launcher() {
+    let directory = tempfile::tempdir().expect("tempdir");
+    let executable = unsafe_claude_executable(directory.path());
+    let adapter = ClaudeCodeAdapter::new().with_executable(&executable);
+
+    let error = adapter
+        .launch(launch_request(directory.path()))
+        .expect_err("unsafe launcher rejected");
+
+    assert!(matches!(
+        error,
+        AdapterError::ForbiddenClaudeLauncher { path, reason }
+            if path == executable.canonicalize().expect("canonical executable")
+                && reason.contains("--bare")
+    ));
+}
+
+#[test]
 fn claude_code_adapter_does_not_require_harness_model_identifier() {
     let directory = tempfile::tempdir().expect("tempdir");
-    let adapter = ClaudeCodeAdapter::new();
+    let adapter = test_adapter(directory.path());
     let launch = MentciPreflightLaunch::validated_from_nota(valid_claude_launch_nota())
         .expect("valid launch");
 
@@ -316,7 +376,7 @@ fn claude_code_adapter_close_request_renders_exit_terminal_input() {
 #[test]
 fn claude_code_adapter_frames_initial_prompt_and_feed_for_interactive_tui() {
     let directory = tempfile::tempdir().expect("tempdir");
-    let adapter = ClaudeCodeAdapter::new();
+    let adapter = test_adapter(directory.path());
 
     let launch = adapter
         .launch(launch_request(directory.path()))
@@ -394,7 +454,7 @@ fn create_in_fails_closed_when_parent_is_missing() {
 #[test]
 fn adapter_feed_drives_persistent_session_over_multiple_turns() {
     let directory = tempfile::tempdir().expect("tempdir");
-    let adapter = ClaudeCodeAdapter::new();
+    let adapter = test_adapter(directory.path());
     let launcher = FakeLauncher::new(VecDeque::from([
         b"initial adapter prompt\n".to_vec(),
         b"first adapter turn\n".to_vec(),

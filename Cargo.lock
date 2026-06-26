@@ -479,7 +479,7 @@ dependencies = [
 
 [[package]]
 name = "mentci"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "criome",
  "kameo",

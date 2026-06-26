@@ -122,7 +122,9 @@ mod proof {
         }
 
         pub fn run(self) -> Result<(), ProofError> {
-            let claude_version = CommandRunner::new("claude")
+            let adapter = ClaudeCodeAdapter::new();
+            let claude_executable = adapter.resolved_executable()?;
+            let claude_version = CommandRunner::new(claude_executable.to_string_lossy())
                 .argument("--version")
                 .run_in(Path::new("/tmp"))?;
 
@@ -130,7 +132,7 @@ mod proof {
                 let report = BlockedProofReport::new(
                     self.witness_path,
                     claude_version,
-                    "normal Claude subscription TUI is unavailable on PATH",
+                    "validated Claude subscription TUI executable is unavailable",
                 );
                 report.write()?;
                 println!(
@@ -138,7 +140,7 @@ mod proof {
                     report.path().display()
                 );
                 return Err(ProofError::Blocked(
-                    "normal Claude subscription TUI is unavailable on PATH".to_owned(),
+                    "validated Claude subscription TUI executable is unavailable".to_owned(),
                 ));
             }
 
@@ -156,7 +158,6 @@ mod proof {
                 .run_in(Path::new("/tmp"))?;
             let workspace = ProofWorkspace::create()?;
             let preflight = ProofPreflight::new();
-            let adapter = ClaudeCodeAdapter::new();
             let launch_request = ClaudeCodeLaunchRequest::new(
                 preflight.launch.clone(),
                 workspace.scaffold.clone(),
