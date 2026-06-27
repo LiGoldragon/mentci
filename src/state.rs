@@ -1,7 +1,9 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use mentci_lib::CriomeVerdict;
-use signal_criome::ParkedAuthorization;
+use signal_criome::{
+    ParkedAuthorization, ParkedRequestAnswer, ParkedRequestDecision, ParkedSpiritRequest,
+};
 use signal_mentci::{
     AnswerProposal, AnswerProposalAdmitted, AnswerText, ApprovalDecision, ApprovalQuestion,
     ApprovalSource, ApprovalVerdict, ContextBody, ContextLabel, CriomeAccess, ExplanationText,
@@ -28,6 +30,7 @@ pub struct State {
     notification: Option<NotificationText>,
     panes: Vec<PaneContent>,
     criome_request_slots: BTreeSet<String>,
+    criome_parked_request_identifiers: BTreeSet<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -43,9 +46,20 @@ pub struct CriomeParkedApproval {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CriomeParkedInterception {
+    parked: ParkedSpiritRequest,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum CriomeEffect {
+    AuthorizationVerdict(CriomeVerdict),
+    ParkedRequestAnswer(ParkedRequestAnswer),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct StateApplication {
     reply: MentciReply,
-    criome_verdict: Option<CriomeVerdict>,
+    criome_effect: Option<CriomeEffect>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -69,6 +83,7 @@ impl Default for State {
             notification: None,
             panes: Vec::new(),
             criome_request_slots: BTreeSet::new(),
+            criome_parked_request_identifiers: BTreeSet::new(),
         }
     }
 }
@@ -109,6 +124,14 @@ impl State {
             MentciRequest::RetractInterfaceObservation(token) => {
                 StateApplication::reply(self.retract(token))
             }
+            MentciRequest::CreateInterceptPolicy(_)
+            | MentciRequest::ReplaceInterceptPolicy(_)
+            | MentciRequest::CancelInterceptPolicy(_)
+            | MentciRequest::ListInterceptPolicies(_)
+            | MentciRequest::FetchParkedRequests(_)
+            | MentciRequest::AnswerParkedRequest(_) => StateApplication::reply(
+                MentciReply::Rejection(Rejection::new(RejectionReason::UnsupportedMutation)),
+            ),
         }
     }
 
@@ -131,6 +154,23 @@ impl State {
                 self.pending_questions.push(ApprovalQuestion {
                     identifier: question,
                     proposal: approval.into_question_proposal(),
+                });
+                self.bump_revision();
+            }
+        }
+    }
+
+    pub fn absorb_criome_parked_requests(&mut self, parked: Vec<ParkedSpiritRequest>) {
+        for request in parked {
+            let interception = CriomeParkedInterception::new(request);
+            if self
+                .criome_parked_request_identifiers
+                .insert(interception.identifier_key())
+            {
+                let question = self.mint_question_identifier();
+                self.pending_questions.push(ApprovalQuestion {
+                    identifier: question,
+                    proposal: interception.into_question_proposal(),
                 });
                 self.bump_revision();
             }
@@ -226,27 +266,29 @@ impl State {
             .source
             .criome_slot()
             .is_some()
-            && !context.criome_write_available()
+            || self.pending_questions[index]
+                .proposal
+                .source
+                .parked_request()
+                .is_some()
         {
-            return StateApplication::reply(MentciReply::Rejection(Rejection::new(
-                RejectionReason::UnauthorizedProjection,
-            )));
+            if !context.criome_write_available() {
+                return StateApplication::reply(MentciReply::Rejection(Rejection::new(
+                    RejectionReason::UnauthorizedProjection,
+                )));
+            }
         }
         let answered = self.pending_questions.remove(index);
-        let criome_verdict = answered
-            .proposal
-            .source
-            .criome_slot()
-            .map(|slot| CriomeVerdict::from_decision(slot.clone(), verdict.decision));
+        let criome_effect = CriomeEffect::from_answered_question(&answered, verdict.decision);
         self.decisions.push(verdict.clone());
         self.bump_revision();
-        StateApplication::with_criome_verdict(
+        StateApplication::with_criome_effect(
             MentciReply::VerdictAccepted(signal_mentci::VerdictAccepted {
                 question: verdict.question,
                 decision: verdict.decision,
                 accepted_at: self.current_time(),
             }),
-            criome_verdict,
+            criome_effect,
         )
     }
 
@@ -365,6 +407,33 @@ impl State {
     }
 }
 
+impl CriomeEffect {
+    pub fn from_answered_question(
+        answered: &ApprovalQuestion,
+        decision: ApprovalDecision,
+    ) -> Option<Self> {
+        if let Some(slot) = answered.proposal.source.criome_slot() {
+            return Some(Self::AuthorizationVerdict(CriomeVerdict::from_decision(
+                slot.clone(),
+                decision,
+            )));
+        }
+        answered.proposal.source.parked_request().map(|identifier| {
+            Self::ParkedRequestAnswer(ParkedRequestAnswer {
+                identifier: identifier.clone(),
+                decision: Self::parked_request_decision(decision),
+            })
+        })
+    }
+
+    fn parked_request_decision(decision: ApprovalDecision) -> ParkedRequestDecision {
+        match decision {
+            ApprovalDecision::ApproveSuggestedAnswer => ParkedRequestDecision::Approve,
+            ApprovalDecision::Reject | ApprovalDecision::Defer => ParkedRequestDecision::Reject,
+        }
+    }
+}
+
 impl StateApplicationContext {
     pub fn write_enabled() -> Self {
         Self {
@@ -395,27 +464,27 @@ impl StateApplication {
     pub fn reply(reply: MentciReply) -> Self {
         Self {
             reply,
-            criome_verdict: None,
+            criome_effect: None,
         }
     }
 
-    pub fn with_criome_verdict(reply: MentciReply, criome_verdict: Option<CriomeVerdict>) -> Self {
+    pub fn with_criome_effect(reply: MentciReply, criome_effect: Option<CriomeEffect>) -> Self {
         Self {
             reply,
-            criome_verdict,
+            criome_effect,
         }
     }
 
-    pub fn criome_verdict(&self) -> Option<&CriomeVerdict> {
-        self.criome_verdict.as_ref()
+    pub fn criome_effect(&self) -> Option<&CriomeEffect> {
+        self.criome_effect.as_ref()
     }
 
     pub fn into_reply(self) -> MentciReply {
         self.reply
     }
 
-    pub fn into_parts(self) -> (MentciReply, Option<CriomeVerdict>) {
-        (self.reply, self.criome_verdict)
+    pub fn into_parts(self) -> (MentciReply, Option<CriomeEffect>) {
+        (self.reply, self.criome_effect)
     }
 }
 
@@ -497,10 +566,88 @@ impl CriomeParkedApproval {
                     body: ContextBody::new(format!("{:?}", authorization.requester)),
                 },
             ]);
+            if let Some(spirit_context) = authorization.spirit_context() {
+                context.extend(CriomeParkedInterception::spirit_context_rows(
+                    spirit_context,
+                ));
+            }
             return ExplanationText::new(
                 "criome parked a signal-call authorization in ClientApproval mode",
             );
         }
         ExplanationText::new("criome parked an authorization request without a projected payload")
+    }
+}
+
+impl CriomeParkedInterception {
+    pub fn new(parked: ParkedSpiritRequest) -> Self {
+        Self { parked }
+    }
+
+    pub fn identifier_key(&self) -> String {
+        self.parked.identifier.payload().clone()
+    }
+
+    pub fn into_question_proposal(self) -> signal_mentci::QuestionProposal {
+        let identifier = self.parked.identifier.payload().clone();
+        let operation = self.parked.context.operation_name.as_str().to_owned();
+        let target = self.parked.context.target_key.as_str().to_owned();
+        let mut context = vec![
+            QuestionContext {
+                label: ContextLabel::new("criome-kind"),
+                body: ContextBody::new("parked-spirit-request"),
+            },
+            QuestionContext {
+                label: ContextLabel::new("parked-request"),
+                body: ContextBody::new(identifier.clone()),
+            },
+            QuestionContext {
+                label: ContextLabel::new("matched-policy"),
+                body: ContextBody::new(self.parked.matched_policy.as_str()),
+            },
+            QuestionContext {
+                label: ContextLabel::new("session-slot"),
+                body: ContextBody::new(self.parked.session_slot.as_str()),
+            },
+            QuestionContext {
+                label: ContextLabel::new("parked-at"),
+                body: ContextBody::new(self.parked.parked_at.payload().to_string()),
+            },
+            QuestionContext {
+                label: ContextLabel::new("expires-at"),
+                body: ContextBody::new(self.parked.expires_at.payload().to_string()),
+            },
+            QuestionContext {
+                label: ContextLabel::new("expiry-action"),
+                body: ContextBody::new(format!("{:?}", self.parked.expiry_action)),
+            },
+        ];
+        context.extend(Self::spirit_context_rows(&self.parked.context));
+        signal_mentci::QuestionProposal::new(
+            ApprovalSource::CriomeInterception(self.parked.identifier),
+            PromptText::new(format!("Authorize Spirit {operation} for {target}")),
+            Some(AnswerText::new("approve")),
+            ExplanationText::new("criome parked a Spirit operation matched by intercept policy"),
+            context,
+        )
+    }
+
+    fn spirit_context_rows(
+        spirit_context: &signal_criome::SpiritAuthorizationContext,
+    ) -> Vec<QuestionContext> {
+        vec![
+            QuestionContext {
+                label: ContextLabel::new("spirit-target"),
+                body: ContextBody::new(spirit_context.target_key.as_str()),
+            },
+            QuestionContext {
+                label: ContextLabel::new("spirit-operation"),
+                body: ContextBody::new(spirit_context.operation_name.as_str()),
+            },
+            QuestionContext {
+                label: ContextLabel::new("raw-spirit-payload"),
+                body: ContextBody::new(spirit_context.raw_payload.as_str()),
+            },
+        ]
     }
 }

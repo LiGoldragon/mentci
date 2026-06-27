@@ -141,8 +141,8 @@ dependencies = [
 
 [[package]]
 name = "criome"
-version = "0.2.0"
-source = "git+https://github.com/LiGoldragon/criome?branch=main#cd9791db3e9158072a617406e701dcbf122ba707"
+version = "0.4.0"
+source = "git+https://github.com/LiGoldragon/criome?branch=main#249ac407062f7d26b67f21fa46ef3ae92f239f59"
 dependencies = [
  "blake3",
  "blst",
@@ -479,7 +479,7 @@ dependencies = [
 
 [[package]]
 name = "mentci"
-version = "0.3.1"
+version = "0.4.0"
 dependencies = [
  "criome",
  "kameo",
@@ -516,8 +516,8 @@ dependencies = [
 
 [[package]]
 name = "meta-signal-criome"
-version = "0.2.0"
-source = "git+https://github.com/LiGoldragon/meta-signal-criome?branch=main#507c56f570807ee1062a7e702b222b4c7691532e"
+version = "0.3.0"
+source = "git+https://github.com/LiGoldragon/meta-signal-criome?branch=main#4814625aa23dcb0e3cee19580914ccc1a3b4aadc"
 dependencies = [
  "nota",
  "rkyv",
@@ -1028,8 +1028,8 @@ checksum = "f8fadd59c855ef2080decdef8ff161eb6661b86933c9d82e5ba29dc602a55aba"
 
 [[package]]
 name = "signal-criome"
-version = "0.3.0"
-source = "git+https://github.com/LiGoldragon/signal-criome?branch=main#182036acc4e763b9ef6c763082f6c277785f86b3"
+version = "0.5.0"
+source = "git+https://github.com/LiGoldragon/signal-criome?branch=main#478d6cca0d31b670fc7aabf54994ebffa41527c4"
 dependencies = [
  "blake3",
  "blst",
@@ -1121,8 +1121,8 @@ dependencies = [
 
 [[package]]
 name = "signal-mentci"
-version = "0.1.0"
-source = "git+https://github.com/LiGoldragon/signal-mentci?branch=main#32f04f44901a9b59a73185213d54811d5d11f7c7"
+version = "0.2.0"
+source = "git+https://github.com/LiGoldragon/signal-mentci?branch=main#8376ee421d7d6949052b84134bf2966ea4d5d476"
 dependencies = [
  "nota",
  "rkyv",

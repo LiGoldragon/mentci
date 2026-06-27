@@ -16,7 +16,7 @@ use crate::configuration::DaemonConfiguration;
 use crate::criome_bridge::CriomeApprovalBridge;
 use crate::frame_codec::FrameCodec;
 use crate::introspection_bridge::{IntrospectionBridge, IntrospectionPane};
-use crate::state::{State, StateApplication, StateApplicationContext};
+use crate::state::{CriomeEffect, State, StateApplication, StateApplicationContext};
 use crate::{Error, Result};
 
 #[derive(Debug)]
@@ -43,6 +43,7 @@ pub struct StateOwner {
 pub struct ApplyRequest {
     request: MentciRequest,
     parked_authorizations: Vec<signal_criome::ParkedAuthorization>,
+    parked_requests: Vec<signal_criome::ParkedSpiritRequest>,
     introspection_pane: Option<signal_mentci::PaneContent>,
     context: StateApplicationContext,
 }
@@ -50,7 +51,7 @@ pub struct ApplyRequest {
 #[derive(Debug, Clone, PartialEq, Eq, kameo::Reply)]
 pub struct ApplyReply {
     reply: MentciReply,
-    criome_verdict: Option<mentci_lib::CriomeVerdict>,
+    criome_effect: Option<CriomeEffect>,
 }
 
 impl Daemon {
@@ -123,7 +124,11 @@ impl BoundDaemon {
             return Err(Error::ExpectedRequest);
         };
         let request = request.payloads.into_head();
+        if let Some(reply) = self.criome_control_reply(&request)? {
+            return self.write_reply(stream, exchange, reply);
+        }
         let parked_authorizations = self.parked_authorizations_for_request(&request);
+        let parked_requests = self.parked_requests_for_request(&request);
         let introspection_pane = self.introspection_pane_for_request(&request);
         let context = self.application_context();
         let applied = self
@@ -133,6 +138,7 @@ impl BoundDaemon {
                     .ask(ApplyRequest {
                         request,
                         parked_authorizations,
+                        parked_requests,
                         introspection_pane,
                         context,
                     })
@@ -140,24 +146,101 @@ impl BoundDaemon {
             )
             .map_err(|error| Error::ActorCall(error.to_string()))?
             .into_application();
-        let (mut reply, criome_verdict) = applied.into_parts();
-        if let Some(verdict) = criome_verdict {
-            let Some(bridge) = &self.criome_bridge else {
-                return Err(Error::MissingComponentSocket {
-                    kind: meta_signal_mentci::ComponentSocketKind::MetaCriome,
-                });
-            };
-            let submission = bridge.submit_criome_verdict(&verdict)?;
-            if !submission.is_recorded() {
-                reply =
-                    MentciReply::Rejection(Rejection::new(RejectionReason::UnauthorizedProjection));
-            }
+        let (mut reply, criome_effect) = applied.into_parts();
+        if let Some(effect) = criome_effect {
+            reply = self.apply_criome_effect(effect, reply)?;
         }
+        self.write_reply(stream, exchange, reply)
+    }
+
+    fn write_reply(
+        &self,
+        stream: &mut std::os::unix::net::UnixStream,
+        exchange: signal_frame::ExchangeIdentifier,
+        reply: MentciReply,
+    ) -> Result<()> {
         let frame = MentciFrame::new(MentciFrameBody::Reply {
             exchange,
             reply: Reply::committed(NonEmpty::single(SubReply::Ok(reply))),
         });
         self.codec.write_mentci_frame(stream, &frame)
+    }
+
+    fn apply_criome_effect(
+        &self,
+        effect: CriomeEffect,
+        accepted_reply: MentciReply,
+    ) -> Result<MentciReply> {
+        let Some(bridge) = &self.criome_bridge else {
+            return Err(Error::MissingComponentSocket {
+                kind: meta_signal_mentci::ComponentSocketKind::MetaCriome,
+            });
+        };
+        match effect {
+            CriomeEffect::AuthorizationVerdict(verdict) => {
+                let submission = bridge.submit_criome_verdict(&verdict)?;
+                if submission.is_recorded() {
+                    Ok(accepted_reply)
+                } else {
+                    Ok(MentciReply::Rejection(Rejection::new(
+                        RejectionReason::UnauthorizedProjection,
+                    )))
+                }
+            }
+            CriomeEffect::ParkedRequestAnswer(answer) => {
+                match bridge.answer_parked_request(answer) {
+                    Ok(_resolution) => Ok(accepted_reply),
+                    Err(_error) => Ok(MentciReply::Rejection(Rejection::new(
+                        RejectionReason::UnsupportedMutation,
+                    ))),
+                }
+            }
+        }
+    }
+
+    fn criome_control_reply(&self, request: &MentciRequest) -> Result<Option<MentciReply>> {
+        let Some(bridge) = &self.criome_bridge else {
+            return Ok(self.criome_control_without_bridge(request));
+        };
+        let reply = match request {
+            MentciRequest::CreateInterceptPolicy(proposal) => bridge
+                .create_intercept_policy(proposal.clone())
+                .map(MentciReply::InterceptPolicyCreated),
+            MentciRequest::ReplaceInterceptPolicy(proposal) => bridge
+                .replace_intercept_policy(proposal.clone())
+                .map(MentciReply::InterceptPolicyReplaced),
+            MentciRequest::CancelInterceptPolicy(cancellation) => bridge
+                .cancel_intercept_policy(cancellation.clone())
+                .map(MentciReply::InterceptPolicyCancelled),
+            MentciRequest::ListInterceptPolicies(_observation) => bridge
+                .list_intercept_policies()
+                .map(MentciReply::InterceptPoliciesListed),
+            MentciRequest::FetchParkedRequests(query) => bridge
+                .fetch_parked_requests(query.clone())
+                .map(MentciReply::ParkedRequestsFetched),
+            MentciRequest::AnswerParkedRequest(answer) => bridge
+                .answer_parked_request(answer.clone())
+                .map(MentciReply::ParkedRequestAnswered),
+            _ => return Ok(None),
+        }
+        .unwrap_or_else(|_error| {
+            MentciReply::Rejection(Rejection::new(RejectionReason::UnsupportedMutation))
+        });
+        Ok(Some(reply))
+    }
+
+    fn criome_control_without_bridge(&self, request: &MentciRequest) -> Option<MentciReply> {
+        match request {
+            MentciRequest::CreateInterceptPolicy(_)
+            | MentciRequest::ReplaceInterceptPolicy(_)
+            | MentciRequest::CancelInterceptPolicy(_)
+            | MentciRequest::ListInterceptPolicies(_)
+            | MentciRequest::FetchParkedRequests(_)
+            | MentciRequest::AnswerParkedRequest(_) => Some(MentciReply::Rejection(
+                Rejection::new(RejectionReason::UnauthorizedProjection),
+            )),
+            _ => None,
+        }
     }
 
     fn parked_authorizations_for_request(
@@ -173,6 +256,25 @@ impl BoundDaemon {
         bridge
             .parked_authorizations()
             .map(|snapshot| snapshot.into_parked())
+            .unwrap_or_default()
+    }
+
+    fn parked_requests_for_request(
+        &self,
+        request: &MentciRequest,
+    ) -> Vec<signal_criome::ParkedSpiritRequest> {
+        if !matches!(request, MentciRequest::ObserveInterfaceState(_)) {
+            return Vec::new();
+        }
+        let Some(bridge) = &self.criome_bridge else {
+            return Vec::new();
+        };
+        bridge
+            .fetch_parked_requests(signal_criome::ParkedRequestQuery {
+                session_slot: None,
+                target: None,
+            })
+            .map(|snapshot| snapshot.into_requests())
             .unwrap_or_default()
     }
 
@@ -229,6 +331,8 @@ impl Message<ApplyRequest> for StateOwner {
     ) -> Self::Reply {
         self.state
             .absorb_criome_parked_authorizations(message.parked_authorizations);
+        self.state
+            .absorb_criome_parked_requests(message.parked_requests);
         if let Some(pane) = message.introspection_pane {
             self.state.refresh_pane(pane);
         }
@@ -241,15 +345,15 @@ impl Message<ApplyRequest> for StateOwner {
 
 impl ApplyReply {
     pub fn from_application(application: StateApplication) -> Self {
-        let (reply, criome_verdict) = application.into_parts();
+        let (reply, criome_effect) = application.into_parts();
         Self {
             reply,
-            criome_verdict,
+            criome_effect,
         }
     }
 
     pub fn into_application(self) -> StateApplication {
-        StateApplication::with_criome_verdict(self.reply, self.criome_verdict)
+        StateApplication::with_criome_effect(self.reply, self.criome_effect)
     }
 }
 

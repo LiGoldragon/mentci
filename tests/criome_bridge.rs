@@ -2,12 +2,12 @@ use std::os::unix::net::UnixStream;
 use std::path::Path;
 use std::thread;
 
-use criome::daemon::{CriomeDaemon, CriomeDaemonConfiguration};
-use criome::tables::StoreLocation;
+use criome::daemon::{BoundCriomeDaemon, CriomeDaemon, CriomeDaemonConfiguration};
+use criome::tables::{CriomeTables, InterceptPolicyDraft, StoreLocation};
 use criome::transport::CriomeClient;
 use mentci::configuration::DaemonConfiguration;
 use mentci::criome_bridge::{CriomeApprovalBridge, CriomeApprovalSubmission};
-use mentci::daemon::Daemon;
+use mentci::daemon::{BoundDaemon, Daemon};
 use mentci::frame_codec::FrameCodec;
 use mentci_lib::CriomeVerdict;
 use meta_signal_mentci::{
@@ -20,8 +20,13 @@ use signal_criome::{
     AuthorizationRequestSlot, AuthorizationScope, AuthorizationStatus, AuthorizedObjectInterest,
     AuthorizedObjectKind, AuthorizedObjectObservation, ComponentKind, ContractName,
     ContractOperationHead, CriomeReply, CriomeRequest, EvaluationDecision, Evidence, Identity,
-    ObjectDigest, OperationDigest, ParkedAuthorization, ReplayNonce, RequiredSignatureThreshold,
-    SignalCallAuthorization, SignatureScheme, TimeWindow, TimestampNanos,
+    InterceptPolicyCancellation, InterceptPolicyProposal, InterceptTargetSelector,
+    MentciSessionSlot, ObjectDigest, OperationDigest, ParkedAuthorization, ParkedRequestAnswer,
+    ParkedRequestDecision, ParkedRequestQuery, ParkedSpiritRequest, PolicyDurationNanos,
+    PolicyOverlapMode, PolicyPriority, RawSpiritOperationPayload, ReplayNonce,
+    RequiredSignatureThreshold, SignalCallAuthorization, SignatureScheme,
+    SpiritAuthorizationContext, SpiritOperationName, SpiritOperationNames, SpiritProcessKey,
+    TimeWindow, TimestampNanos,
 };
 use signal_frame::{
     ExchangeIdentifier, ExchangeLane, LaneSequence, Reply, RequestPayload, SessionEpoch, SubReply,
@@ -96,6 +101,41 @@ fn spirit_signal_authorization(seed: &[u8], nonce: &str) -> SignalCallAuthorizat
     )
 }
 
+fn intercept_policy_proposal(
+    session: &str,
+    target: &str,
+    operation: &str,
+    priority: u64,
+    overlap_mode: PolicyOverlapMode,
+) -> InterceptPolicyProposal {
+    InterceptPolicyProposal {
+        session_slot: MentciSessionSlot::new(session),
+        target: InterceptTargetSelector::new(SpiritProcessKey::new(target)),
+        spirit_operation_names: SpiritOperationNames::from_names(vec![SpiritOperationName::new(
+            operation,
+        )]),
+        duration: PolicyDurationNanos::new(9_000_000_000_000_000_000),
+        expiry_action: signal_criome::ExpiryAction::LeaveParked,
+        priority: PolicyPriority::new(priority),
+        overlap_mode,
+    }
+}
+
+fn spirit_context(target: &str, operation: &str, payload: &str) -> SpiritAuthorizationContext {
+    SpiritAuthorizationContext {
+        operation_name: SpiritOperationName::new(operation),
+        raw_payload: RawSpiritOperationPayload::new(payload),
+        target_key: SpiritProcessKey::new(target),
+    }
+}
+
+fn all_parked_requests() -> ParkedRequestQuery {
+    ParkedRequestQuery {
+        session_slot: None,
+        target: None,
+    }
+}
+
 fn mentci_configuration(socket: &Path, criome_meta_socket: &Path) -> DaemonConfiguration {
     DaemonConfiguration::new(MentciDaemonConfiguration::new(
         vec![
@@ -142,6 +182,73 @@ fn send_mentci(socket: &Path, request: MentciRequest) -> MentciReply {
     }
 }
 
+fn send_mentci_with_criome_meta(
+    criome: &BoundCriomeDaemon,
+    mentci: &BoundDaemon,
+    mentci_socket: &Path,
+    request: MentciRequest,
+) -> (MentciReply, meta_signal_criome::Output) {
+    let (reply, mut meta_replies) =
+        send_mentci_with_criome_meta_replies(criome, mentci, mentci_socket, request, 1);
+    (reply, meta_replies.remove(0))
+}
+
+fn send_mentci_with_criome_meta_replies(
+    criome: &BoundCriomeDaemon,
+    mentci: &BoundDaemon,
+    mentci_socket: &Path,
+    request: MentciRequest,
+    meta_reply_count: usize,
+) -> (MentciReply, Vec<meta_signal_criome::Output>) {
+    thread::scope(|scope| {
+        let criome_meta_server = scope.spawn(|| {
+            let mut replies = Vec::new();
+            for _ in 0..meta_reply_count {
+                replies.push(criome.serve_next_meta().expect("serve criome meta"));
+            }
+            replies
+        });
+        let mentci_server = scope.spawn(|| mentci.serve_next().expect("serve mentci"));
+        let reply = send_mentci(mentci_socket, request);
+        let meta_replies = criome_meta_server.join().expect("join criome meta");
+        mentci_server.join().expect("join mentci");
+        (reply, meta_replies)
+    })
+}
+
+fn prepopulate_parked_spirit_requests(
+    store: StoreLocation,
+    requests: &[(&str, &str, &str)],
+) -> Vec<ParkedSpiritRequest> {
+    let tables = CriomeTables::open(&store).expect("open criome tables");
+    tables
+        .put_intercept_policy(InterceptPolicyDraft::create(
+            intercept_policy_proposal(
+                "mentci-policy-session",
+                "spirit-process-main",
+                "Record",
+                1,
+                PolicyOverlapMode::RejectSamePriorityOverlap,
+            ),
+            TimestampNanos::new(10),
+        ))
+        .expect("store intercept policy");
+    requests
+        .iter()
+        .map(|(target, operation, payload)| {
+            tables
+                .put_parked_spirit_request(
+                    spirit_context(target, operation, payload),
+                    TimestampNanos::new(11),
+                )
+                .expect("intercept spirit authorization")
+                .expect("policy parks request")
+                .request()
+                .clone()
+        })
+        .collect()
+}
+
 fn criome_escalation_question(slot: AuthorizationRequestSlot) -> signal_mentci::QuestionProposal {
     signal_mentci::QuestionProposal::new(
         ApprovalSource::CriomeEscalation(slot.clone()),
@@ -153,6 +260,248 @@ fn criome_escalation_question(slot: AuthorizationRequestSlot) -> signal_mentci::
             body: signal_mentci::ContextBody::new(slot.as_str()),
         }],
     )
+}
+
+#[test]
+fn mentci_daemon_manages_intercept_policies_over_criome_meta_socket() {
+    let workspace = fixture_path("intercept-policy-control");
+    let criome_socket = workspace.join("criome.sock");
+    let criome_meta_socket = workspace.join("criome-meta.sock");
+    let mentci_socket = workspace.join("mentci.sock");
+    let store = StoreLocation::new(workspace.join("criome.sema"));
+    let criome = CriomeDaemon::new(&criome_socket, store)
+        .with_meta_socket(&criome_meta_socket)
+        .bind()
+        .expect("bind criome");
+    let mentci =
+        Daemon::from_configuration(mentci_configuration(&mentci_socket, &criome_meta_socket))
+            .expect("mentci daemon")
+            .bind()
+            .expect("bind mentci");
+    wait_for_socket(&criome_meta_socket);
+    wait_for_socket(&mentci_socket);
+
+    let created = send_mentci_with_criome_meta(
+        &criome,
+        &mentci,
+        &mentci_socket,
+        MentciRequest::CreateInterceptPolicy(intercept_policy_proposal(
+            "mentci-a",
+            "spirit-process-main",
+            "Record",
+            1,
+            PolicyOverlapMode::RejectSamePriorityOverlap,
+        )),
+    )
+    .0;
+    let MentciReply::InterceptPolicyCreated(created) = created else {
+        panic!("expected InterceptPolicyCreated, got {created:?}");
+    };
+    assert_eq!(created.session_slot.as_str(), "mentci-a");
+
+    let listed = send_mentci_with_criome_meta(
+        &criome,
+        &mentci,
+        &mentci_socket,
+        MentciRequest::ListInterceptPolicies(signal_mentci::InterceptPolicyObservation::new()),
+    )
+    .0;
+    let MentciReply::InterceptPoliciesListed(listed) = listed else {
+        panic!("expected InterceptPoliciesListed, got {listed:?}");
+    };
+    assert_eq!(listed.policies(), std::slice::from_ref(&created));
+
+    let replaced = send_mentci_with_criome_meta(
+        &criome,
+        &mentci,
+        &mentci_socket,
+        MentciRequest::ReplaceInterceptPolicy(intercept_policy_proposal(
+            "mentci-b",
+            "spirit-process-main",
+            "Record",
+            1,
+            PolicyOverlapMode::ReplaceSamePriorityOverlap,
+        )),
+    )
+    .0;
+    let MentciReply::InterceptPolicyReplaced(replaced) = replaced else {
+        panic!("expected InterceptPolicyReplaced, got {replaced:?}");
+    };
+    assert_eq!(replaced.session_slot.as_str(), "mentci-b");
+
+    let cancelled = send_mentci_with_criome_meta(
+        &criome,
+        &mentci,
+        &mentci_socket,
+        MentciRequest::CancelInterceptPolicy(InterceptPolicyCancellation::new(
+            replaced.identifier.clone(),
+        )),
+    )
+    .0;
+    assert!(matches!(
+        cancelled,
+        MentciReply::InterceptPolicyCancelled(identifier) if identifier == replaced.identifier
+    ));
+
+    let listed_after_cancel = send_mentci_with_criome_meta(
+        &criome,
+        &mentci,
+        &mentci_socket,
+        MentciRequest::ListInterceptPolicies(signal_mentci::InterceptPolicyObservation::new()),
+    )
+    .0;
+    let MentciReply::InterceptPoliciesListed(listed_after_cancel) = listed_after_cancel else {
+        panic!("expected InterceptPoliciesListed after cancel, got {listed_after_cancel:?}");
+    };
+    assert!(listed_after_cancel.policies().is_empty());
+
+    mentci.shutdown().expect("shutdown mentci");
+    criome.shutdown().expect("shutdown criome");
+}
+
+#[test]
+fn mentci_fetches_projects_and_answers_policy_parked_spirit_requests() {
+    let workspace = fixture_path("policy-parked-spirit");
+    let criome_socket = workspace.join("criome.sock");
+    let criome_meta_socket = workspace.join("criome-meta.sock");
+    let mentci_socket = workspace.join("mentci.sock");
+    let store = StoreLocation::new(workspace.join("criome.sema"));
+    let parked = prepopulate_parked_spirit_requests(
+        store.clone(),
+        &[
+            (
+                "spirit-process-main",
+                "Record",
+                "(Record first-policy-parked)",
+            ),
+            (
+                "spirit-process-main",
+                "Record",
+                "(Record second-policy-parked)",
+            ),
+        ],
+    );
+    let criome = CriomeDaemon::new(&criome_socket, store)
+        .with_meta_socket(&criome_meta_socket)
+        .bind()
+        .expect("bind criome");
+    let mentci =
+        Daemon::from_configuration(mentci_configuration(&mentci_socket, &criome_meta_socket))
+            .expect("mentci daemon")
+            .bind()
+            .expect("bind mentci");
+    wait_for_socket(&criome_meta_socket);
+    wait_for_socket(&mentci_socket);
+
+    let fetched = send_mentci_with_criome_meta(
+        &criome,
+        &mentci,
+        &mentci_socket,
+        MentciRequest::FetchParkedRequests(all_parked_requests()),
+    )
+    .0;
+    let MentciReply::ParkedRequestsFetched(fetched) = fetched else {
+        panic!("expected ParkedRequestsFetched, got {fetched:?}");
+    };
+    assert_eq!(fetched.requests(), parked.as_slice());
+    assert_eq!(
+        fetched.requests()[0].context.raw_payload.as_str(),
+        "(Record first-policy-parked)"
+    );
+
+    let direct_answered = send_mentci_with_criome_meta(
+        &criome,
+        &mentci,
+        &mentci_socket,
+        MentciRequest::AnswerParkedRequest(ParkedRequestAnswer {
+            identifier: parked[0].identifier.clone(),
+            decision: ParkedRequestDecision::Reject,
+        }),
+    )
+    .0;
+    let MentciReply::ParkedRequestAnswered(direct_answered) = direct_answered else {
+        panic!("expected ParkedRequestAnswered, got {direct_answered:?}");
+    };
+    assert_eq!(direct_answered.identifier, parked[0].identifier);
+    assert_eq!(
+        direct_answered.audit_source,
+        signal_criome::ApprovalAuditSource::Manual
+    );
+
+    let observed = send_mentci_with_criome_meta_replies(
+        &criome,
+        &mentci,
+        &mentci_socket,
+        MentciRequest::ObserveInterfaceState(signal_mentci::InterfaceStateObservation {
+            subscriber: SubscriberName::new("mentci-egui"),
+            interest: InterfaceInterest::PendingQuestions,
+        }),
+        2,
+    )
+    .0;
+    let MentciReply::InterfaceObservationOpened(opened) = observed else {
+        panic!("expected InterfaceObservationOpened, got {observed:?}");
+    };
+    let questions = opened.state.pending_questions();
+    assert_eq!(questions.len(), 1);
+    assert_eq!(
+        questions[0].proposal.source.parked_request(),
+        Some(&parked[1].identifier)
+    );
+    assert!(
+        questions[0]
+            .proposal
+            .context()
+            .iter()
+            .any(|context| context.body.as_str() == "(Record second-policy-parked)")
+    );
+    assert!(
+        questions[0]
+            .proposal
+            .context()
+            .iter()
+            .any(|context| context.body.as_str() == "spirit-process-main")
+    );
+
+    let verdict = ApprovalVerdict {
+        question: questions[0].identifier.clone(),
+        decision: ApprovalDecision::ApproveSuggestedAnswer,
+        answered_by: SubscriberName::new("psyche"),
+    };
+    let (accepted, meta_reply) = send_mentci_with_criome_meta(
+        &criome,
+        &mentci,
+        &mentci_socket,
+        MentciRequest::AnswerQuestion(verdict),
+    );
+    assert!(matches!(accepted, MentciReply::VerdictAccepted(_)));
+    let meta_signal_criome::Output::ParkedRequestAnswered(answered) = meta_reply else {
+        panic!("expected criome ParkedRequestAnswered, got {meta_reply:?}");
+    };
+    assert_eq!(answered.identifier, parked[1].identifier);
+    assert_eq!(
+        answered.outcome,
+        signal_criome::ParkedRequestOutcome::Approved
+    );
+    assert_eq!(
+        answered.audit_source,
+        signal_criome::ApprovalAuditSource::Manual
+    );
+
+    let fetched_after_answer = send_mentci_with_criome_meta(
+        &criome,
+        &mentci,
+        &mentci_socket,
+        MentciRequest::FetchParkedRequests(all_parked_requests()),
+    )
+    .0;
+    let MentciReply::ParkedRequestsFetched(fetched_after_answer) = fetched_after_answer else {
+        panic!("expected ParkedRequestsFetched after answer, got {fetched_after_answer:?}");
+    };
+    assert!(fetched_after_answer.requests().is_empty());
+
+    mentci.shutdown().expect("shutdown mentci");
+    criome.shutdown().expect("shutdown criome");
 }
 
 #[test]
@@ -414,24 +763,24 @@ fn mentci_observe_picks_up_parked_criome_client_approval_request() {
         panic!("expected AuthorizationPending, got {pending:?}");
     };
 
-    let observed = thread::scope(|scope| {
-        let criome_meta_server =
-            scope.spawn(|| criome.serve_next_meta().expect("serve parked list"));
-        let mentci_server = scope.spawn(|| mentci.serve_next().expect("serve observe"));
-        let reply = send_mentci(
-            &mentci_socket,
-            MentciRequest::ObserveInterfaceState(signal_mentci::InterfaceStateObservation {
-                subscriber: SubscriberName::new("mentci-egui"),
-                interest: InterfaceInterest::PendingQuestions,
-            }),
-        );
-        assert!(matches!(
-            criome_meta_server.join().expect("join parked list"),
-            meta_signal_criome::Output::ParkedAuthorizationSnapshot(_)
-        ));
-        mentci_server.join().expect("join observe server");
-        reply
-    });
+    let (observed, observe_meta_replies) = send_mentci_with_criome_meta_replies(
+        &criome,
+        &mentci,
+        &mentci_socket,
+        MentciRequest::ObserveInterfaceState(signal_mentci::InterfaceStateObservation {
+            subscriber: SubscriberName::new("mentci-egui"),
+            interest: InterfaceInterest::PendingQuestions,
+        }),
+        2,
+    );
+    assert!(matches!(
+        observe_meta_replies[0],
+        meta_signal_criome::Output::ParkedAuthorizationSnapshot(_)
+    ));
+    assert!(matches!(
+        observe_meta_replies[1],
+        meta_signal_criome::Output::ParkedRequestsFetched(_)
+    ));
 
     let parked = ParkedAuthorization::from_evaluation(pending.request_slot, evaluation);
     let expected_question = ApprovalQuestion {
@@ -511,24 +860,24 @@ fn mentci_observes_spirit_signal_authorization_bypassing_guardian() {
         "PROOF (a) a spirit-shaped AuthorizeSignalCall bypasses the guardian and parks in criome"
     );
 
-    let observed = thread::scope(|scope| {
-        let criome_meta_server =
-            scope.spawn(|| criome.serve_next_meta().expect("serve parked list"));
-        let mentci_server = scope.spawn(|| mentci.serve_next().expect("serve observe"));
-        let reply = send_mentci(
-            &mentci_socket,
-            MentciRequest::ObserveInterfaceState(signal_mentci::InterfaceStateObservation {
-                subscriber: SubscriberName::new("mentci-egui"),
-                interest: InterfaceInterest::PendingQuestions,
-            }),
-        );
-        assert!(matches!(
-            criome_meta_server.join().expect("join parked list"),
-            meta_signal_criome::Output::ParkedAuthorizationSnapshot(_)
-        ));
-        mentci_server.join().expect("join observe server");
-        reply
-    });
+    let (observed, observe_meta_replies) = send_mentci_with_criome_meta_replies(
+        &criome,
+        &mentci,
+        &mentci_socket,
+        MentciRequest::ObserveInterfaceState(signal_mentci::InterfaceStateObservation {
+            subscriber: SubscriberName::new("mentci-egui"),
+            interest: InterfaceInterest::PendingQuestions,
+        }),
+        2,
+    );
+    assert!(matches!(
+        observe_meta_replies[0],
+        meta_signal_criome::Output::ParkedAuthorizationSnapshot(_)
+    ));
+    assert!(matches!(
+        observe_meta_replies[1],
+        meta_signal_criome::Output::ParkedRequestsFetched(_)
+    ));
     let MentciReply::InterfaceObservationOpened(opened) = observed else {
         panic!("expected InterfaceObservationOpened, got {observed:?}");
     };
@@ -709,24 +1058,24 @@ fn mentci_closed_verdict_approves_criome_escalation_over_meta_socket() {
     assert_eq!(parked.parked()[0].request_slot, pending.request_slot);
     println!("PROOF (b) mentci bridge listed the parked criome request by slot");
 
-    let observed = thread::scope(|scope| {
-        let criome_meta_server =
-            scope.spawn(|| criome.serve_next_meta().expect("serve parked list"));
-        let mentci_server = scope.spawn(|| mentci.serve_next().expect("serve observe"));
-        let reply = send_mentci(
-            &mentci_socket,
-            MentciRequest::ObserveInterfaceState(signal_mentci::InterfaceStateObservation {
-                subscriber: SubscriberName::new("mentci-egui"),
-                interest: InterfaceInterest::PendingQuestions,
-            }),
-        );
-        assert!(matches!(
-            criome_meta_server.join().expect("join parked list"),
-            meta_signal_criome::Output::ParkedAuthorizationSnapshot(_)
-        ));
-        mentci_server.join().expect("join observe server");
-        reply
-    });
+    let (observed, observe_meta_replies) = send_mentci_with_criome_meta_replies(
+        &criome,
+        &mentci,
+        &mentci_socket,
+        MentciRequest::ObserveInterfaceState(signal_mentci::InterfaceStateObservation {
+            subscriber: SubscriberName::new("mentci-egui"),
+            interest: InterfaceInterest::PendingQuestions,
+        }),
+        2,
+    );
+    assert!(matches!(
+        observe_meta_replies[0],
+        meta_signal_criome::Output::ParkedAuthorizationSnapshot(_)
+    ));
+    assert!(matches!(
+        observe_meta_replies[1],
+        meta_signal_criome::Output::ParkedRequestsFetched(_)
+    ));
     let MentciReply::InterfaceObservationOpened(opened) = observed else {
         panic!("expected InterfaceObservationOpened, got {observed:?}");
     };

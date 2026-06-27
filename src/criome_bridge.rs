@@ -4,8 +4,10 @@ use criome::transport::CriomeMetaClient;
 use mentci_lib::CriomeVerdict;
 use meta_signal_criome::{AuthorizationApproval, AuthorizationApprovalDecision};
 use signal_criome::{
-    AuthorizationRequestSlot, CriomeDaemonConfiguration, ParkedAuthorizationObservation,
-    ParkedAuthorizationSnapshot,
+    ActiveInterceptPolicies, AuthorizationRequestSlot, CriomeDaemonConfiguration, InterceptPolicy,
+    InterceptPolicyCancellation, InterceptPolicyIdentifier, InterceptPolicyProposal,
+    ParkedAuthorizationObservation, ParkedAuthorizationSnapshot, ParkedRequestAnswer,
+    ParkedRequestQuery, ParkedRequestResolution, ParkedRequestSnapshot,
 };
 
 use crate::Result;
@@ -76,6 +78,79 @@ impl CriomeApprovalBridge {
             return Err(crate::Error::UnexpectedCriomeMetaReply);
         };
         Ok(snapshot)
+    }
+
+    pub fn create_intercept_policy(
+        &self,
+        proposal: InterceptPolicyProposal,
+    ) -> Result<InterceptPolicy> {
+        let reply = CriomeMetaClient::new(&self.meta_socket)
+            .send(meta_signal_criome::Input::CreateInterceptPolicy(proposal))?;
+        let meta_signal_criome::Output::InterceptPolicyCreated(policy) = reply else {
+            return Err(crate::Error::UnexpectedCriomeMetaReply);
+        };
+        Ok(policy)
+    }
+
+    pub fn replace_intercept_policy(
+        &self,
+        proposal: InterceptPolicyProposal,
+    ) -> Result<InterceptPolicy> {
+        let reply = CriomeMetaClient::new(&self.meta_socket)
+            .send(meta_signal_criome::Input::ReplaceInterceptPolicy(proposal))?;
+        let meta_signal_criome::Output::InterceptPolicyReplaced(policy) = reply else {
+            return Err(crate::Error::UnexpectedCriomeMetaReply);
+        };
+        Ok(policy)
+    }
+
+    pub fn cancel_intercept_policy(
+        &self,
+        cancellation: InterceptPolicyCancellation,
+    ) -> Result<InterceptPolicyIdentifier> {
+        let reply = CriomeMetaClient::new(&self.meta_socket).send(
+            meta_signal_criome::Input::CancelInterceptPolicy(cancellation),
+        )?;
+        let meta_signal_criome::Output::InterceptPolicyCancelled(identifier) = reply else {
+            return Err(crate::Error::UnexpectedCriomeMetaReply);
+        };
+        Ok(identifier)
+    }
+
+    pub fn list_intercept_policies(&self) -> Result<ActiveInterceptPolicies> {
+        let reply = CriomeMetaClient::new(&self.meta_socket).send(
+            meta_signal_criome::Input::ListInterceptPolicies(
+                meta_signal_criome::InterceptPolicyObservation::new(),
+            ),
+        )?;
+        let meta_signal_criome::Output::InterceptPoliciesListed(policies) = reply else {
+            return Err(crate::Error::UnexpectedCriomeMetaReply);
+        };
+        Ok(policies)
+    }
+
+    pub fn fetch_parked_requests(
+        &self,
+        query: ParkedRequestQuery,
+    ) -> Result<ParkedRequestSnapshot> {
+        let reply = CriomeMetaClient::new(&self.meta_socket)
+            .send(meta_signal_criome::Input::FetchParkedRequests(query))?;
+        let meta_signal_criome::Output::ParkedRequestsFetched(snapshot) = reply else {
+            return Err(crate::Error::UnexpectedCriomeMetaReply);
+        };
+        Ok(snapshot)
+    }
+
+    pub fn answer_parked_request(
+        &self,
+        answer: ParkedRequestAnswer,
+    ) -> Result<ParkedRequestResolution> {
+        let reply = CriomeMetaClient::new(&self.meta_socket)
+            .send(meta_signal_criome::Input::AnswerParkedRequest(answer))?;
+        let meta_signal_criome::Output::ParkedRequestAnswered(resolution) = reply else {
+            return Err(crate::Error::UnexpectedCriomeMetaReply);
+        };
+        Ok(resolution)
     }
 }
 
