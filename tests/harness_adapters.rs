@@ -1,7 +1,6 @@
 use std::cell::RefCell;
 use std::collections::VecDeque;
 use std::fs;
-use std::os::unix::fs::PermissionsExt;
 use std::path::Path;
 use std::rc::Rc;
 use std::time::Duration;
@@ -177,38 +176,12 @@ fn launch_request(parent: &Path) -> ClaudeCodeLaunchRequest {
     )
 }
 
-fn safe_claude_executable(parent: &Path) -> std::path::PathBuf {
-    let path = parent.join("safe-claude");
-    fs::write(
-        &path,
-        "#!/bin/sh\nexec /nix/store/example-claude-code/bin/.claude-wrapped \"$@\"\n",
-    )
-    .expect("safe claude fixture");
-    let mut permissions = fs::metadata(&path)
-        .expect("safe claude metadata")
-        .permissions();
-    permissions.set_mode(0o755);
-    fs::set_permissions(&path, permissions).expect("safe claude permissions");
-    path
-}
-
-fn unsafe_claude_executable(parent: &Path) -> std::path::PathBuf {
-    let path = parent.join("unsafe-claude");
-    fs::write(
-        &path,
-        "#!/bin/sh\narguments=(--bare)\nexec /nix/store/example-claude-code/bin/claude \"${arguments[@]}\" \"$@\"\n",
-    )
-    .expect("unsafe claude fixture");
-    let mut permissions = fs::metadata(&path)
-        .expect("unsafe claude metadata")
-        .permissions();
-    permissions.set_mode(0o755);
-    fs::set_permissions(&path, permissions).expect("unsafe claude permissions");
-    path
+fn fake_claude_command(parent: &Path) -> String {
+    parent.join("fake-claude").to_string_lossy().into_owned()
 }
 
 fn test_adapter(parent: &Path) -> ClaudeCodeAdapter {
-    ClaudeCodeAdapter::new().with_executable(safe_claude_executable(parent))
+    ClaudeCodeAdapter::new().with_command(fake_claude_command(parent))
 }
 
 fn address() -> SessionAddress {
@@ -251,8 +224,8 @@ fn assert_subscription_tui_arguments(arguments: &[String]) {
 #[test]
 fn claude_code_adapter_builds_subscription_tui_terminal_launch_plan() {
     let directory = tempfile::tempdir().expect("tempdir");
-    let executable = safe_claude_executable(directory.path());
-    let adapter = ClaudeCodeAdapter::new().with_executable(&executable);
+    let expected_command = fake_claude_command(directory.path());
+    let adapter = ClaudeCodeAdapter::new().with_command(expected_command.clone());
 
     let launch = adapter
         .launch(launch_request(directory.path()))
@@ -260,13 +233,7 @@ fn claude_code_adapter_builds_subscription_tui_terminal_launch_plan() {
     let terminal_launch = launch.terminal_launch();
     let command = terminal_launch.launch().command();
 
-    assert_eq!(
-        command.program(),
-        executable
-            .canonicalize()
-            .expect("canonical executable")
-            .to_string_lossy()
-    );
+    assert_eq!(command.program(), expected_command);
     assert_eq!(
         command.arguments(),
         &[
@@ -312,21 +279,17 @@ fn claude_code_adapter_builds_subscription_tui_terminal_launch_plan() {
 }
 
 #[test]
-fn claude_code_adapter_rejects_forbidden_subscription_tui_launcher() {
+fn claude_code_adapter_defaults_to_configured_claude_command() {
     let directory = tempfile::tempdir().expect("tempdir");
-    let executable = unsafe_claude_executable(directory.path());
-    let adapter = ClaudeCodeAdapter::new().with_executable(&executable);
-
-    let error = adapter
+    let launch = ClaudeCodeAdapter::new()
         .launch(launch_request(directory.path()))
-        .expect_err("unsafe launcher rejected");
+        .expect("adapter launch");
 
-    assert!(matches!(
-        error,
-        AdapterError::ForbiddenClaudeLauncher { path, reason }
-            if path == executable.canonicalize().expect("canonical executable")
-                && reason.contains("--bare")
-    ));
+    assert_eq!(
+        launch.terminal_launch().launch().command().program(),
+        "claude"
+    );
+    assert_subscription_tui_arguments(launch.terminal_launch().launch().command().arguments());
 }
 
 #[test]

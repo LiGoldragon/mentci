@@ -1,6 +1,3 @@
-use std::env;
-use std::fs;
-use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::{Duration as StandardDuration, SystemTime, UNIX_EPOCH};
@@ -26,39 +23,29 @@ const CLAUDE_CODE_ADAPTER: &str = "claude-code-terminal-adapter";
 const TERMINAL_CELL_DRIVER: &str = "terminal-cell-v1";
 const BRACKETED_PASTE_START: &[u8] = b"\x1b[200~";
 const BRACKETED_PASTE_END: &[u8] = b"\x1b[201~";
-const CLAUDE_SUBSCRIPTION_TUI_EXECUTABLE_ENV: &str = "MENTCI_CLAUDE_SUBSCRIPTION_TUI_EXECUTABLE";
-const CLAUDE_LAUNCHER_INSPECTION_LIMIT: u64 = 64 * 1024;
-const FORBIDDEN_CLAUDE_LAUNCHER_FRAGMENTS: &[&str] = &[
-    "--bare",
-    "--print",
-    "--model",
-    "--permission-mode",
-    "bypassPermissions",
-    "ANTHROPIC_API_KEY",
-    "apiKeyHelper",
-];
+const DEFAULT_CLAUDE_COMMAND: &str = "claude";
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ClaudeCodeAdapter {
-    executable: ClaudeCodeSubscriptionTuiExecutable,
+    command: String,
     terminal_size: TerminalSize,
 }
 
 impl ClaudeCodeAdapter {
     pub fn new() -> Self {
         Self {
-            executable: ClaudeCodeSubscriptionTuiExecutable::discover(),
+            command: DEFAULT_CLAUDE_COMMAND.to_owned(),
             terminal_size: TerminalSize::new(36, 120),
         }
     }
 
-    pub fn with_executable(mut self, executable: impl Into<PathBuf>) -> Self {
-        self.executable = ClaudeCodeSubscriptionTuiExecutable::explicit(executable);
+    pub fn with_command(mut self, command: impl Into<String>) -> Self {
+        self.command = command.into();
         self
     }
 
-    pub fn resolved_executable(&self) -> Result<PathBuf, AdapterError> {
-        self.executable.resolve()
+    pub fn command(&self) -> &str {
+        self.command.as_str()
     }
 
     pub fn launch(
@@ -66,12 +53,8 @@ impl ClaudeCodeAdapter {
         request: ClaudeCodeLaunchRequest,
     ) -> Result<NamedHarnessLaunch, AdapterError> {
         self.validate_launch(&request)?;
-        let executable = self.resolved_executable()?;
         let terminal_launch = TerminalLaunch::new(
-            TerminalCommand::new(
-                executable.to_string_lossy().into_owned(),
-                self.arguments(&request),
-            ),
+            TerminalCommand::new(self.command.clone(), self.arguments(&request)),
             self.terminal_size,
         )
         .with_working_directory(TerminalWorkingDirectory::new(
@@ -184,138 +167,6 @@ impl ClaudeCodeAdapter {
         }
         DriverSandboxPrivacy::new(flags)
     }
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct ClaudeCodeSubscriptionTuiExecutable {
-    selection: ClaudeCodeExecutableSelection,
-}
-
-impl ClaudeCodeSubscriptionTuiExecutable {
-    pub fn discover() -> Self {
-        Self {
-            selection: ClaudeCodeExecutableSelection::Discover,
-        }
-    }
-
-    pub fn explicit(path: impl Into<PathBuf>) -> Self {
-        Self {
-            selection: ClaudeCodeExecutableSelection::Explicit(path.into()),
-        }
-    }
-
-    pub fn resolve(&self) -> Result<PathBuf, AdapterError> {
-        match &self.selection {
-            ClaudeCodeExecutableSelection::Explicit(path) => Self::validate_selected(path),
-            ClaudeCodeExecutableSelection::Discover => Self::discover_selected(),
-        }
-    }
-
-    fn discover_selected() -> Result<PathBuf, AdapterError> {
-        if let Some(path) = env::var_os(CLAUDE_SUBSCRIPTION_TUI_EXECUTABLE_ENV) {
-            return Self::validate_selected(Path::new(&path));
-        }
-
-        let profile_claude = Self::find_on_path("claude")?;
-        let wrapper = Self::inspect_text(&profile_claude)?;
-        let Some(direct_executable) = Self::direct_subscription_tui_target(&wrapper) else {
-            return Err(AdapterError::ClaudeLauncherUnavailable {
-                reason: format!(
-                    "PATH claude resolved to {:?}, but Mentci could not discover a direct Claude subscription TUI executable; set {CLAUDE_SUBSCRIPTION_TUI_EXECUTABLE_ENV}",
-                    profile_claude
-                ),
-            });
-        };
-        Self::validate_selected(&direct_executable)
-    }
-
-    fn validate_selected(path: &Path) -> Result<PathBuf, AdapterError> {
-        let executable =
-            fs::canonicalize(path).map_err(|source| AdapterError::ClaudeLauncherIo {
-                path: path.to_path_buf(),
-                message: source.to_string(),
-            })?;
-        let metadata =
-            fs::metadata(&executable).map_err(|source| AdapterError::ClaudeLauncherIo {
-                path: executable.clone(),
-                message: source.to_string(),
-            })?;
-        if !metadata.is_file() {
-            return Err(AdapterError::ClaudeLauncherUnavailable {
-                reason: format!("Claude subscription TUI executable is not a file: {executable:?}"),
-            });
-        }
-
-        let text = Self::inspect_text(&executable)?;
-        if let Some(fragment) = FORBIDDEN_CLAUDE_LAUNCHER_FRAGMENTS
-            .iter()
-            .find(|fragment| text.contains(**fragment))
-        {
-            return Err(AdapterError::ForbiddenClaudeLauncher {
-                path: executable,
-                reason: format!(
-                    "selected Claude launcher contains forbidden subscription-proof fragment {fragment:?}"
-                ),
-            });
-        }
-        Ok(executable)
-    }
-
-    fn find_on_path(name: &str) -> Result<PathBuf, AdapterError> {
-        let Some(paths) = env::var_os("PATH") else {
-            return Err(AdapterError::ClaudeLauncherUnavailable {
-                reason: "PATH is unset; set MENTCI_CLAUDE_SUBSCRIPTION_TUI_EXECUTABLE".to_owned(),
-            });
-        };
-        for directory in env::split_paths(&paths) {
-            let candidate = directory.join(name);
-            if candidate.is_file() {
-                return Ok(candidate);
-            }
-        }
-        Err(AdapterError::ClaudeLauncherUnavailable {
-            reason: "claude was not found on PATH; set MENTCI_CLAUDE_SUBSCRIPTION_TUI_EXECUTABLE"
-                .to_owned(),
-        })
-    }
-
-    fn inspect_text(path: &Path) -> Result<String, AdapterError> {
-        let file = fs::File::open(path).map_err(|source| AdapterError::ClaudeLauncherIo {
-            path: path.to_path_buf(),
-            message: source.to_string(),
-        })?;
-        let mut bytes = Vec::new();
-        file.take(CLAUDE_LAUNCHER_INSPECTION_LIMIT)
-            .read_to_end(&mut bytes)
-            .map_err(|source| AdapterError::ClaudeLauncherIo {
-                path: path.to_path_buf(),
-                message: source.to_string(),
-            })?;
-        String::from_utf8(bytes).map_err(|source| AdapterError::ForbiddenClaudeLauncher {
-            path: path.to_path_buf(),
-            reason: format!("selected Claude launcher is not inspectable UTF-8 text: {source}"),
-        })
-    }
-
-    fn direct_subscription_tui_target(wrapper: &str) -> Option<PathBuf> {
-        wrapper
-            .lines()
-            .filter(|line| line.trim_start().starts_with("exec "))
-            .flat_map(|line| line.split_whitespace())
-            .map(|token| token.trim_matches('"').trim_matches('\''))
-            .find(|token| {
-                token.starts_with('/')
-                    && token.ends_with("/bin/claude")
-                    && token.contains("claude-code")
-            })
-            .map(PathBuf::from)
-    }
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-enum ClaudeCodeExecutableSelection {
-    Discover,
-    Explicit(PathBuf),
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -1008,13 +859,4 @@ pub enum AdapterError {
 
     #[error("jj sandbox initialization failed at {path:?}: {status}")]
     SandboxInitialization { path: PathBuf, status: String },
-
-    #[error("Claude subscription TUI launcher unavailable: {reason}")]
-    ClaudeLauncherUnavailable { reason: String },
-
-    #[error("Claude subscription TUI launcher io at {path:?}: {message}")]
-    ClaudeLauncherIo { path: PathBuf, message: String },
-
-    #[error("forbidden Claude subscription TUI launcher at {path:?}: {reason}")]
-    ForbiddenClaudeLauncher { path: PathBuf, reason: String },
 }

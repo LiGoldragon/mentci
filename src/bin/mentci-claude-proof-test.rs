@@ -124,8 +124,7 @@ mod proof {
 
         pub fn run(self) -> Result<(), ProofError> {
             let adapter = ClaudeCodeAdapter::new();
-            let claude_executable = adapter.resolved_executable()?;
-            let claude_version = CommandRunner::new(claude_executable.to_string_lossy())
+            let claude_version = CommandRunner::new(adapter.command())
                 .argument("--version")
                 .run_in(Path::new("/tmp"))?;
 
@@ -133,15 +132,15 @@ mod proof {
                 let report = BlockedProofReport::new(
                     self.witness_path,
                     claude_version,
-                    "validated Claude subscription TUI executable is unavailable",
+                    "normal claude command is unavailable",
                 );
                 report.write()?;
                 println!(
-                    "MentciClaudeProofBlocked witness={} prerequisite=claude-subscription-tui",
+                    "MentciClaudeProofBlocked witness={} prerequisite=normal-claude-command",
                     report.path().display()
                 );
                 return Err(ProofError::Blocked(
-                    "validated Claude subscription TUI executable is unavailable".to_owned(),
+                    "normal claude command is unavailable".to_owned(),
                 ));
             }
 
@@ -412,7 +411,7 @@ mod proof {
 
         fn render(&self) -> String {
             format!(
-                "# Mentci real Claude proof witness\n\nstatus: blocked\nmissing_prerequisite: {}\n\n## Detection\nclaude_version_program: {}\nclaude_version_arguments: {:?}\nclaude_version_status: {}\nclaude_version_stdout: {}\nclaude_version_stderr: {}\n\n## Required Proof Not Run\nThe real terminal-cell proof did not run because the normal interactive `claude` TUI was unavailable. This proof must use the user's Claude subscription session in a terminal cell; it must not use `--bare`, `--print`, an Anthropic API key, or `apiKeyHelper`.\n",
+                "# Mentci real Claude proof witness\n\nstatus: blocked\nmissing_prerequisite: {}\n\n## Detection\nclaude_version_program: {}\nclaude_version_arguments: {:?}\nclaude_version_status: {}\nclaude_version_stdout: {}\nclaude_version_stderr: {}\n\n## Required Proof Not Run\nThe real terminal-cell proof did not run because the normal interactive `claude` command was unavailable. This proof must use the user's configured Claude subscription TUI in a terminal cell. Mentci must not add `--bare`, `--print`, Anthropic API-key plumbing, or `apiKeyHelper` assumptions.\n",
                 self.prerequisite,
                 self.claude_version.program,
                 self.claude_version.arguments,
