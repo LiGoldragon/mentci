@@ -22,9 +22,8 @@ use signal_harness::{AdapterExitStatus, AdapterStallReason, HarnessEvent, Messag
 
 const EPHEMERAL_SANDBOX_MARKER: &str = ".mentci-ephemeral-jj-sandbox";
 const PRIMARY_WORKSPACE: &str = "/home/li/primary";
+const KITTY_ENTER_KEY: &[u8] = b"\x1b[13u";
 const EPHEMERAL_SANDBOX_PREFIX: &str = "mentci-jj-proof-";
-const BRACKETED_PASTE_START: &[u8] = b"\x1b[200~";
-const BRACKETED_PASTE_END: &[u8] = b"\x1b[201~";
 const FORBIDDEN_CLAUDE_SUBSCRIPTION_TUI_ARGUMENTS: &[&str] =
     &["--bare", "--print", "--permission-mode"];
 
@@ -189,14 +188,14 @@ fn address() -> SessionAddress {
 }
 
 fn framed_tui_input(text: impl AsRef<str>) -> Vec<u8> {
-    let text = text.as_ref();
-    let mut bytes = Vec::with_capacity(
-        BRACKETED_PASTE_START.len() + text.len() + BRACKETED_PASTE_END.len() + 1,
-    );
-    bytes.extend_from_slice(BRACKETED_PASTE_START);
+    let text = text
+        .as_ref()
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ");
+    let mut bytes = Vec::with_capacity(text.len() + KITTY_ENTER_KEY.len());
     bytes.extend_from_slice(text.as_bytes());
-    bytes.extend_from_slice(BRACKETED_PASTE_END);
-    bytes.push(b'\r');
+    bytes.extend_from_slice(KITTY_ENTER_KEY);
     bytes
 }
 
@@ -384,9 +383,8 @@ fn claude_code_adapter_selects_haiku_with_subscription_tui_model_argument() {
         "Haiku selection should use Claude's launch-time model argument: {:?}",
         command.arguments()
     );
-    assert!(initial_input.bytes().starts_with(BRACKETED_PASTE_START));
     assert!(
-        text.contains("Initial task:\nshow jj status and wait for the next turn"),
+        text.contains("Initial task: show jj status and wait for the next turn"),
         "initial prompt should still be the interactive payload: {text:?}"
     );
     assert!(
@@ -434,11 +432,10 @@ fn claude_code_adapter_frames_initial_prompt_and_feed_for_interactive_tui() {
         .feed(HarnessFeed::new("continue the sandboxed task"))
         .expect("feed");
 
-    assert!(initial_input.bytes().starts_with(BRACKETED_PASTE_START));
-    assert!(initial_input.bytes().ends_with(b"\x1b[201~\r"));
+    assert!(initial_input.bytes().ends_with(KITTY_ENTER_KEY));
     assert!(
         String::from_utf8_lossy(initial_input.bytes())
-            .contains("Initial task:\nshow jj status and wait for the next turn")
+            .contains("Initial task: show jj status and wait for the next turn")
     );
     assert_eq!(
         feed.bytes(),
@@ -766,10 +763,7 @@ fn terminal_cell_runtime_accepts_adapter_feed_without_invoking_external_claude_c
     assert_eq!(first.reason(), &StopReason::IdleTimeout);
     assert_eq!(second.reason(), &StopReason::IdleTimeout);
     assert!(
-        second
-            .transcript()
-            .to_string_lossy()
-            .contains("adapter:\u{1b}[200~two\u{1b}[201~"),
+        second.transcript().to_string_lossy().contains("two^[[13u"),
         "real terminal-cell transcript did not include second adapter feed: {:?}",
         second.transcript().to_string_lossy()
     );

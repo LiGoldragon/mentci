@@ -26,7 +26,7 @@ mod proof {
         ClaudeCodeAdapter, ClaudeCodeArtifactObservation, ClaudeCodeLaunchRequest,
         ClaudeCodeModelCommand, EphemeralJjRepository, HarnessFeed, HarnessPrompt,
     };
-    use mentci::harness_liveness::{CloseRequest, CloseSignal, TerminalCellDriver};
+    use mentci::harness_liveness::{CloseRequest, CloseSignal, StopReason, TerminalCellDriver};
     use mentci::harness_sessions::{
         InMemoryHarnessSessionDirectory, NamedHarnessSessions, SessionAddress,
     };
@@ -37,7 +37,7 @@ mod proof {
     const WITNESS_PATH: &str = "MENTCI_REAL_CLAUDE_WITNESS";
     const KEEP_SANDBOX: &str = "MENTCI_KEEP_REAL_CLAUDE_PROOF_SANDBOX";
     const PROOF_FILE: &str = "mentci-proof.txt";
-    const PROOF_FILE_CONTENT: &str = "mentci primary-0bax terminal-cell proof\n";
+    const PROOF_FILE_CONTENT: &str = "mentci primary-0bax terminal-cell proof";
     const COMMIT_MESSAGE: &str = "mentci proof task";
     const READY_PROMPT_MARKER: &str = "MENTCI_PROOF_PROMPT_MARKER_READY";
     const TURN_ONE_PROMPT_MARKER: &str = "MENTCI_PROOF_PROMPT_MARKER_TURN1";
@@ -171,6 +171,7 @@ mod proof {
                     "{READY_PROMPT_MARKER}: Turn 0 only: reply exactly MENTCI_PROOF_READY and wait for the next Mentci feed. Do not inspect any repository yet."
                 )),
             )
+            .without_initial_prompt()
             .with_model_command(ClaudeCodeModelCommand::haiku());
             let named_launch = adapter.launch(launch_request)?;
             let terminal_launch = named_launch.terminal_launch();
@@ -198,11 +199,42 @@ mod proof {
                 NamedHarnessSessions::new(InMemoryHarnessSessionDirectory::new(), driver);
 
             sessions.launch(named_launch)?;
-            artifact_observation.wait_for_markers(
-                READY_PROMPT_MARKER,
-                "MENTCI_PROOF_READY",
-                Duration::from_secs(90),
+            let launch_read = sessions.read(&address)?;
+            if matches!(launch_read.reason(), StopReason::TerminalExit(_)) {
+                return Err(ProofError::TerminalExitedBeforeArtifacts(
+                    TranscriptSnippet::new(launch_read.transcript().bytes()).summary(),
+                ));
+            }
+            let launch_read_reason = format!("{:?}", launch_read.reason());
+            let launch_read_summary =
+                TranscriptSnippet::new(launch_read.transcript().bytes()).tail_summary();
+            sessions.feed(
+                &address,
+                adapter.feed(HarnessFeed::new(format!(
+                    "{READY_PROMPT_MARKER}: Turn 0 only: reply exactly MENTCI_PROOF_READY and wait for the next Mentci feed. Do not inspect any repository yet."
+                )))?,
             )?;
+            let ready_feed_read = sessions.read(&address)?;
+            if matches!(ready_feed_read.reason(), StopReason::TerminalExit(_)) {
+                return Err(ProofError::TerminalExitedBeforeArtifacts(
+                    TranscriptSnippet::new(ready_feed_read.transcript().bytes()).summary(),
+                ));
+            }
+            let ready_feed_summary =
+                TranscriptSnippet::new(ready_feed_read.transcript().bytes()).tail_summary();
+            let combined_terminal_summary =
+                format!("launch={launch_read_summary}; ready-feed={ready_feed_summary}");
+            artifact_observation
+                .wait_for_markers(
+                    READY_PROMPT_MARKER,
+                    "MENTCI_PROOF_READY",
+                    Duration::from_secs(90),
+                )
+                .map_err(|error| ProofError::ArtifactTimeoutAfterLaunchRead {
+                    launch_read_reason,
+                    launch_read_summary: combined_terminal_summary,
+                    artifact_error: error.to_string(),
+                })?;
             sessions.feed(
                 &address,
                 adapter.feed(HarnessFeed::new(format!(
@@ -562,6 +594,12 @@ mod proof {
         fn summary(&self) -> String {
             self.text.chars().take(600).collect()
         }
+
+        fn tail_summary(&self) -> String {
+            let mut tail = self.text.chars().rev().take(1000).collect::<Vec<_>>();
+            tail.reverse();
+            tail.into_iter().collect()
+        }
     }
 
     struct CloseInputSummary<'a> {
@@ -617,6 +655,20 @@ mod proof {
 
         #[error("jj commit witness missing expected message; log output was {0:?}")]
         MissingCommitWitness(String),
+
+        #[error(
+            "Claude terminal exited before artifacts were observed; transcript summary was {0:?}"
+        )]
+        TerminalExitedBeforeArtifacts(String),
+
+        #[error(
+            "Claude artifact wait failed after terminal read {launch_read_reason}; transcript summary was {launch_read_summary:?}; artifact error was {artifact_error}"
+        )]
+        ArtifactTimeoutAfterLaunchRead {
+            launch_read_reason: String,
+            launch_read_summary: String,
+            artifact_error: String,
+        },
 
         #[error("forbidden Claude subscription TUI launch arguments: {0:?}")]
         ForbiddenLaunchArguments(Vec<String>),

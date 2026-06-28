@@ -1,6 +1,6 @@
 use std::path::{Path, PathBuf};
 use std::process::Command;
-use std::time::{Duration as StandardDuration, SystemTime, UNIX_EPOCH};
+use std::time::{Duration as StandardDuration, Instant as StandardInstant, SystemTime, UNIX_EPOCH};
 
 use harness as harness_runtime;
 use signal_harness as harness_contract;
@@ -22,9 +22,8 @@ const PRIMARY_WORKSPACE: &str = "/home/li/primary";
 const EPHEMERAL_SANDBOX_MARKER: &str = ".mentci-ephemeral-jj-sandbox";
 const CLAUDE_CODE_ADAPTER: &str = "claude-code-terminal-adapter";
 const TERMINAL_CELL_DRIVER: &str = "terminal-cell-v1";
-const BRACKETED_PASTE_START: &[u8] = b"\x1b[200~";
-const BRACKETED_PASTE_END: &[u8] = b"\x1b[201~";
 const DEFAULT_CLAUDE_COMMAND: &str = "claude";
+const KITTY_ENTER_KEY: &[u8] = b"\x1b[13u";
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ClaudeCodeAdapter {
@@ -61,8 +60,11 @@ impl ClaudeCodeAdapter {
         .with_working_directory(TerminalWorkingDirectory::new(
             request.sandbox().working_directory().to_path_buf(),
         ));
-        let launch_request = LaunchRequest::new(terminal_launch)
-            .with_initial_input(self.initial_input(&request))
+        let mut launch_request = LaunchRequest::new(terminal_launch);
+        if request.send_initial_prompt() {
+            launch_request = launch_request.with_initial_input(self.initial_input(&request));
+        }
+        let launch_request = launch_request
             .with_liveness(LivenessPolicy::new(
                 self.stop_conditions(request.preflight_launch().stop_conditions()),
             ))
@@ -375,6 +377,37 @@ impl ClaudeCodeArtifactObservation {
             .wait_for_markers_with_report(prompt_marker, final_marker, timeout)
             .map_err(AdapterError::from_claude_artifact)
     }
+
+    pub fn wait_for_assistant_end_turn(
+        &self,
+        timeout: StandardDuration,
+    ) -> Result<(), AdapterError> {
+        let deadline = StandardInstant::now() + timeout;
+        let mut watcher = self
+            .observer
+            .event_watcher()
+            .map_err(AdapterError::from_claude_artifact)?;
+        loop {
+            if watcher
+                .snapshot()
+                .map_err(AdapterError::from_claude_artifact)?
+                .recovered_turn()
+                .has_stop_reason_end_turn()
+            {
+                return Ok(());
+            }
+            let now = StandardInstant::now();
+            let Some(remaining) = deadline.checked_duration_since(now) else {
+                return Err(AdapterError::ClaudeArtifactObservation {
+                    message: "claude artifact observation timed out waiting for assistant end_turn"
+                        .to_owned(),
+                });
+            };
+            watcher
+                .wait_for_next_snapshot(remaining)
+                .map_err(AdapterError::from_claude_artifact)?;
+        }
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -574,6 +607,7 @@ pub struct ClaudeCodeLaunchRequest {
     sandbox: EphemeralJjRepository,
     prompt: HarnessPrompt,
     model_command: Option<ClaudeCodeModelCommand>,
+    send_initial_prompt: bool,
 }
 
 impl ClaudeCodeLaunchRequest {
@@ -589,11 +623,17 @@ impl ClaudeCodeLaunchRequest {
             sandbox,
             prompt,
             model_command: None,
+            send_initial_prompt: true,
         }
     }
 
     pub fn with_model_command(mut self, command: ClaudeCodeModelCommand) -> Self {
         self.model_command = Some(command);
+        self
+    }
+
+    pub fn without_initial_prompt(mut self) -> Self {
+        self.send_initial_prompt = false;
         self
     }
 
@@ -615,6 +655,10 @@ impl ClaudeCodeLaunchRequest {
 
     pub fn model_command(&self) -> Option<&ClaudeCodeModelCommand> {
         self.model_command.as_ref()
+    }
+
+    pub fn send_initial_prompt(&self) -> bool {
+        self.send_initial_prompt
     }
 
     fn into_preflight_launch(self) -> MentciPreflightLaunch {
@@ -693,13 +737,10 @@ impl InteractiveTerminalInput {
     }
 
     fn into_bytes(self) -> Vec<u8> {
-        let mut bytes = Vec::with_capacity(
-            BRACKETED_PASTE_START.len() + self.text.len() + BRACKETED_PASTE_END.len() + b"\r".len(),
-        );
-        bytes.extend_from_slice(BRACKETED_PASTE_START);
-        bytes.extend_from_slice(self.text.as_bytes());
-        bytes.extend_from_slice(BRACKETED_PASTE_END);
-        bytes.push(b'\r');
+        let text = self.text.split_whitespace().collect::<Vec<_>>().join(" ");
+        let mut bytes = Vec::with_capacity(text.len() + KITTY_ENTER_KEY.len());
+        bytes.extend_from_slice(text.as_bytes());
+        bytes.extend_from_slice(KITTY_ENTER_KEY);
         bytes
     }
 }
