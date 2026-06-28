@@ -20,11 +20,11 @@ mod proof {
     use std::fs;
     use std::path::{Path, PathBuf};
     use std::process::{Command, Output};
-    use std::time::{SystemTime, UNIX_EPOCH};
+    use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
     use mentci::harness_adapters::{
-        ClaudeCodeAdapter, ClaudeCodeLaunchRequest, ClaudeCodeModelCommand, EphemeralJjRepository,
-        HarnessFeed, HarnessPrompt,
+        ClaudeCodeAdapter, ClaudeCodeArtifactObservation, ClaudeCodeLaunchRequest,
+        ClaudeCodeModelCommand, EphemeralJjRepository, HarnessFeed, HarnessPrompt,
     };
     use mentci::harness_liveness::{CloseRequest, CloseSignal, TerminalCellDriver};
     use mentci::harness_sessions::{
@@ -39,11 +39,13 @@ mod proof {
     const PROOF_FILE: &str = "mentci-proof.txt";
     const PROOF_FILE_CONTENT: &str = "mentci primary-0bax terminal-cell proof\n";
     const COMMIT_MESSAGE: &str = "mentci proof task";
+    const READY_PROMPT_MARKER: &str = "MENTCI_PROOF_PROMPT_MARKER_READY";
+    const TURN_ONE_PROMPT_MARKER: &str = "MENTCI_PROOF_PROMPT_MARKER_TURN1";
+    const TURN_TWO_PROMPT_MARKER: &str = "MENTCI_PROOF_PROMPT_MARKER_TURN2";
     const PRIMARY_WORKSPACE: &str = "/home/li/primary";
     const FORBIDDEN_ARGUMENTS: &[&str] = &[
         "--bare",
         "--print",
-        "--model",
         "--permission-mode",
         "bypassPermissions",
     ];
@@ -88,12 +90,15 @@ mod proof {
         initial_prompt_summary: String,
         forbidden_arguments_seen: Vec<String>,
         preflight_launch: String,
-        first_read_reason: String,
-        first_read_snippet: String,
-        second_read_reason: String,
-        second_read_snippet: String,
-        third_read_reason: String,
-        third_read_snippet: String,
+        artifact_observation_strategy: String,
+        artifact_file_event_count: u64,
+        artifact_polling_fallback_count: u64,
+        artifact_session_identifier: String,
+        artifact_model: String,
+        artifact_tool_call_count: usize,
+        artifact_tool_result_count: usize,
+        artifact_file_edit_count: usize,
+        artifact_stop_reason_end_turn: bool,
         close_signal: String,
         close_input: String,
         proof_file_content: String,
@@ -162,9 +167,9 @@ mod proof {
                 preflight.launch.clone(),
                 workspace.scaffold.clone(),
                 workspace.sandbox.clone(),
-                HarnessPrompt::new(
-                    "Turn 0 only: reply exactly MENTCI_PROOF_READY and wait for the next Mentci feed. Do not inspect any repository yet.",
-                ),
+                HarnessPrompt::new(format!(
+                    "{READY_PROMPT_MARKER}: Turn 0 only: reply exactly MENTCI_PROOF_READY and wait for the next Mentci feed. Do not inspect any repository yet."
+                )),
             )
             .with_model_command(ClaudeCodeModelCommand::haiku());
             let named_launch = adapter.launch(launch_request)?;
@@ -186,28 +191,43 @@ mod proof {
             let close_input = CloseInputSummary::new(&close_request).summary();
             let address =
                 SessionAddress::handle(SessionHandle::new("primary-0bax-claude-proof-session"));
+            let artifact_observation = ClaudeCodeArtifactObservation::from_launch(&named_launch)?;
             let driver =
                 TerminalCellDriver::<mentci::harness_liveness::TerminalCellLauncher>::default();
             let mut sessions =
                 NamedHarnessSessions::new(InMemoryHarnessSessionDirectory::new(), driver);
 
             sessions.launch(named_launch)?;
-            let first_read = sessions.read(&address)?;
+            artifact_observation.wait_for_markers(
+                READY_PROMPT_MARKER,
+                "MENTCI_PROOF_READY",
+                Duration::from_secs(90),
+            )?;
             sessions.feed(
                 &address,
-                adapter.feed(HarnessFeed::new(
-                    "Turn 1: work only inside the current directory. Run pwd and jj status. Create mentci-proof.txt with exactly `mentci primary-0bax terminal-cell proof`. Reply with MENTCI_PROOF_TURN1_DONE.",
-                ))?,
+                adapter.feed(HarnessFeed::new(format!(
+                    "{TURN_ONE_PROMPT_MARKER}: Turn 1: work only inside the current directory. Run pwd and jj status. Create mentci-proof.txt with exactly `mentci primary-0bax terminal-cell proof`. Reply with MENTCI_PROOF_TURN1_DONE."
+                )))?,
             )?;
-            let second_read = sessions.read(&address)?;
+            artifact_observation.wait_for_markers(
+                TURN_ONE_PROMPT_MARKER,
+                "MENTCI_PROOF_TURN1_DONE",
+                Duration::from_secs(90),
+            )?;
             sessions.feed(
                 &address,
-                adapter.feed(HarnessFeed::new(
-                    "Turn 2: run jj status, commit the proof file with exactly `jj commit -m 'mentci proof task'`, then run `jj log -r @- --no-graph -T 'description'`. Do not push. Reply with MENTCI_PROOF_TURN2_DONE.",
-                ))?,
+                adapter.feed(HarnessFeed::new(format!(
+                    "{TURN_TWO_PROMPT_MARKER}: Turn 2: run jj status, commit the proof file with exactly `jj commit -m 'mentci proof task'`, then run `jj log -r @- --no-graph -T 'description'`. Do not push. Reply with MENTCI_PROOF_TURN2_DONE."
+                )))?,
             )?;
-            let third_read = sessions.read(&address)?;
+            let artifact_report = artifact_observation.wait_for_markers(
+                TURN_TWO_PROMPT_MARKER,
+                "MENTCI_PROOF_TURN2_DONE",
+                Duration::from_secs(90),
+            )?;
             let close_outcome = sessions.close(&address, close_request)?;
+            let artifact_snapshot = artifact_report.snapshot();
+            let recovered_turn = artifact_snapshot.recovered_turn();
 
             let proof_file_content =
                 fs::read_to_string(workspace.sandbox.working_directory().join(PROOF_FILE))?;
@@ -252,15 +272,18 @@ mod proof {
                 initial_prompt_summary,
                 forbidden_arguments_seen,
                 preflight_launch: preflight.launch.to_nota(),
-                first_read_reason: format!("{:?}", first_read.reason()),
-                first_read_snippet: TranscriptSnippet::new(first_read.transcript().bytes())
-                    .around("MENTCI_PROOF_READY"),
-                second_read_reason: format!("{:?}", second_read.reason()),
-                second_read_snippet: TranscriptSnippet::new(second_read.transcript().bytes())
-                    .around("MENTCI_PROOF_TURN1_DONE"),
-                third_read_reason: format!("{:?}", third_read.reason()),
-                third_read_snippet: TranscriptSnippet::new(third_read.transcript().bytes())
-                    .around("MENTCI_PROOF_TURN2_DONE"),
+                artifact_observation_strategy: format!("{:?}", artifact_report.strategy()),
+                artifact_file_event_count: artifact_report.file_event_count(),
+                artifact_polling_fallback_count: artifact_report.polling_fallback_count(),
+                artifact_session_identifier: artifact_snapshot
+                    .session_identifier()
+                    .unwrap_or("unknown")
+                    .to_owned(),
+                artifact_model: recovered_turn.model().unwrap_or("unknown").to_owned(),
+                artifact_tool_call_count: recovered_turn.tool_calls().len(),
+                artifact_tool_result_count: recovered_turn.tool_results().len(),
+                artifact_file_edit_count: recovered_turn.file_edits().len(),
+                artifact_stop_reason_end_turn: recovered_turn.has_stop_reason_end_turn(),
                 close_signal: format!("{:?}", close_outcome.reason()),
                 close_input,
                 proof_file_content,
@@ -329,7 +352,7 @@ mod proof {
   Persistent
   (SandboxedJjTask PrimaryForbidden PrivateScopeClosed)
   [(IdleTimeout 45) (TurnCap 8) CompletionSignal]
-  [(WorkSurface sandboxed-jj-task) (ForbiddenPath /home/li/primary) (RequiredWitness real-claude-terminal-cell) (RequiredWitness subscription-claude-tui) (ImplementationBoundary claude-adapter-only)])"#
+  [(WorkSurface sandboxed-jj-task) (ForbiddenPath /home/li/primary) (RequiredWitness real-claude-terminal-cell) (RequiredWitness claude-artifact-observation) (ImplementationBoundary claude-adapter-only)])"#
         }
     }
 
@@ -344,7 +367,7 @@ mod proof {
 
         fn render(&self) -> String {
             format!(
-                "# Mentci real Claude proof witness\n\nstatus: passed\nsandbox_path: {}\nscaffold_path: {}\nsandbox_removed: {}\nprimary_unchanged: {}\n\n## Claude\nversion_status: {}\nversion_stdout: {}\nsubscription_tui: normal interactive claude\nmodel_command: {}\n\n## Launch\nargv_program: {}\nargv_arguments: {:?}\nforbidden_arguments_seen: {:?}\nclose_input: {}\ninitial_prompt_summary: {}\n\n## Preflight\n{}\n\n## Transcript\nfirst_read_reason: {}\nfirst_read_snippet:\n{}\n\nsecond_read_reason: {}\nsecond_read_snippet:\n{}\n\nthird_read_reason: {}\nthird_read_snippet:\n{}\n\nclose_signal: {}\n\n## Jj Task\nproof_file_content: {:?}\njj_status_after_task_status: {}\njj_status_after_task_stdout: {}\njj_log_after_task_status: {}\njj_log_after_task_stdout: {}\n\n## Primary Guard\nprimary_before_status: {}\nprimary_before_stdout: {}\nprimary_after_status: {}\nprimary_after_stdout: {}\n",
+                "# Mentci real Claude proof witness\n\nstatus: passed\nsandbox_path: {}\nscaffold_path: {}\nsandbox_removed: {}\nprimary_unchanged: {}\n\n## Claude\nversion_status: {}\nversion_stdout: {}\nsubscription_tui: normal interactive claude\nmodel_argument: {}\n\n## Launch\nargv_program: {}\nargv_arguments: {:?}\nforbidden_arguments_seen: {:?}\nclose_input: {}\ninitial_prompt_summary: {}\n\n## Preflight\n{}\n\n## Artifact Observation\nstrategy: {}\nfile_event_count: {}\npolling_fallback_count: {}\nsession_identifier: {}\nmodel: {}\ntool_call_count: {}\ntool_result_count: {}\nfile_edit_count: {}\nstop_reason_end_turn: {}\n\nclose_signal: {}\n\n## Jj Task\nproof_file_content: {:?}\njj_status_after_task_status: {}\njj_status_after_task_stdout: {}\njj_log_after_task_status: {}\njj_log_after_task_stdout: {}\n\n## Primary Guard\nprimary_before_status: {}\nprimary_before_stdout: {}\nprimary_after_status: {}\nprimary_after_stdout: {}\n",
                 self.sandbox_path.display(),
                 self.scaffold_path.display(),
                 self.sandbox_removed,
@@ -358,12 +381,15 @@ mod proof {
                 self.close_input,
                 self.initial_prompt_summary,
                 self.preflight_launch,
-                self.first_read_reason,
-                self.first_read_snippet,
-                self.second_read_reason,
-                self.second_read_snippet,
-                self.third_read_reason,
-                self.third_read_snippet,
+                self.artifact_observation_strategy,
+                self.artifact_file_event_count,
+                self.artifact_polling_fallback_count,
+                self.artifact_session_identifier,
+                self.artifact_model,
+                self.artifact_tool_call_count,
+                self.artifact_tool_result_count,
+                self.artifact_file_edit_count,
+                self.artifact_stop_reason_end_turn,
                 self.close_signal,
                 self.proof_file_content,
                 self.jj_status_after_task.status,
@@ -535,16 +561,6 @@ mod proof {
 
         fn summary(&self) -> String {
             self.text.chars().take(600).collect()
-        }
-
-        fn around(&self, marker: &str) -> String {
-            if let Some(index) = self.text.find(marker) {
-                let start = index.saturating_sub(600);
-                let end = self.text.len().min(index + marker.len() + 600);
-                self.text[start..end].to_owned()
-            } else {
-                self.text.chars().rev().take(1200).collect::<String>()
-            }
         }
     }
 

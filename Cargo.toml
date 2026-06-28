@@ -13,6 +13,7 @@ terminal-cell-runtime = ["dep:terminal-cell"]
 
 [dependencies]
 criome             = { git = "https://github.com/LiGoldragon/criome", branch = "main" }
+harness            = { git = "https://github.com/LiGoldragon/harness", branch = "main" }
 kameo              = { git = "https://github.com/LiGoldragon/kameo.git", branch = "main", default-features = false, features = ["macros", "tracing"] }
 meta-signal-criome = { git = "https://github.com/LiGoldragon/meta-signal-criome", branch = "main" }
 meta-signal-mentci = { git = "https://github.com/LiGoldragon/meta-signal-mentci", branch = "main" }

@@ -6,8 +6,8 @@ use std::rc::Rc;
 use std::time::Duration;
 
 use mentci::harness_adapters::{
-    AdapterError, ClaudeCodeAdapter, ClaudeCodeLaunchRequest, ClaudeCodeModelCommand,
-    ClaudeCodeTranscriptCursor, EphemeralJjRepository, HarnessFeed, HarnessPrompt,
+    AdapterError, ClaudeCodeAdapter, ClaudeCodeArtifactObservation, ClaudeCodeLaunchRequest,
+    ClaudeCodeModelCommand, EphemeralJjRepository, HarnessFeed, HarnessPrompt,
 };
 use mentci::harness_liveness::{
     CloseReport, CloseRequest, CloseSignal, DriverError, StopReason, TerminalCellDriver,
@@ -26,7 +26,7 @@ const EPHEMERAL_SANDBOX_PREFIX: &str = "mentci-jj-proof-";
 const BRACKETED_PASTE_START: &[u8] = b"\x1b[200~";
 const BRACKETED_PASTE_END: &[u8] = b"\x1b[201~";
 const FORBIDDEN_CLAUDE_SUBSCRIPTION_TUI_ARGUMENTS: &[&str] =
-    &["--bare", "--print", "--model", "--permission-mode"];
+    &["--bare", "--print", "--permission-mode"];
 
 #[derive(Clone)]
 struct FakeLauncher {
@@ -200,6 +200,39 @@ fn framed_tui_input(text: impl AsRef<str>) -> Vec<u8> {
     bytes
 }
 
+fn write_claude_artifacts(
+    home: &Path,
+    working_directory: &Path,
+    prompt_marker: &str,
+    final_marker: &str,
+    tool_marker: &str,
+) {
+    let encoded_directory = working_directory.to_string_lossy().replace('/', "-");
+    let project = home
+        .join(".claude")
+        .join("projects")
+        .join(encoded_directory);
+    let sessions = home.join(".claude").join("sessions");
+    fs::create_dir_all(&project).expect("project artifact directory");
+    fs::create_dir_all(&sessions).expect("session artifact directory");
+    let directory = working_directory.to_string_lossy();
+    let jsonl = format!(
+        r#"{{"type":"user","cwd":"{directory}","sessionId":"test-session","timestamp":"2026-06-28T15:37:04.727Z","message":{{"content":[{{"type":"text","text":"{prompt_marker}"}}]}}}}
+{{"type":"assistant","cwd":"{directory}","sessionId":"test-session","timestamp":"2026-06-28T15:37:08.737Z","message":{{"model":"claude-haiku-4-5-20251001","content":[{{"type":"tool_use","id":"toolu_1","name":"Write","input":{{"file_path":"README.md","content":"proof"}}}}]}}}}
+{{"type":"user","cwd":"{directory}","sessionId":"test-session","timestamp":"2026-06-28T15:37:09.383Z","message":{{"content":[{{"type":"tool_result","tool_use_id":"toolu_1","content":"{tool_marker}","is_error":false}}]}}}}
+{{"type":"assistant","cwd":"{directory}","sessionId":"test-session","timestamp":"2026-06-28T15:37:14.411Z","permissionMode":"bypassPermissions","message":{{"model":"claude-haiku-4-5-20251001","stop_reason":"end_turn","content":[{{"type":"text","text":"{final_marker}"}}]}}}}
+"#
+    );
+    fs::write(project.join("test-session.jsonl"), jsonl).expect("jsonl artifact");
+    fs::write(
+        sessions.join("123.json"),
+        format!(
+            r#"{{"pid":123,"sessionId":"test-session","cwd":"{directory}","status":"idle","permissionMode":"bypassPermissions"}}"#
+        ),
+    )
+    .expect("session artifact");
+}
+
 fn assert_subscription_tui_arguments(arguments: &[String]) {
     for forbidden in FORBIDDEN_CLAUDE_SUBSCRIPTION_TUI_ARGUMENTS {
         assert!(
@@ -237,6 +270,7 @@ fn claude_code_adapter_builds_subscription_tui_terminal_launch_plan() {
     assert_eq!(
         command.arguments(),
         &[
+            "--dangerously-skip-permissions".to_owned(),
             "--add-dir".to_owned(),
             directory
                 .path()
@@ -325,7 +359,7 @@ fn claude_code_adapter_does_not_require_harness_model_identifier() {
 }
 
 #[test]
-fn claude_code_adapter_selects_haiku_inside_subscription_tui_without_launch_argument() {
+fn claude_code_adapter_selects_haiku_with_subscription_tui_model_argument() {
     let directory = tempfile::tempdir().expect("tempdir");
     let adapter = test_adapter(directory.path());
 
@@ -343,20 +377,17 @@ fn claude_code_adapter_selects_haiku_inside_subscription_tui_without_launch_argu
 
     assert_subscription_tui_arguments(command.arguments());
     assert!(
-        !command
+        command
             .arguments()
-            .iter()
-            .any(|argument| argument.contains("haiku") || argument.contains("opus")),
-        "model choice must stay out of Claude launch argv: {:?}",
+            .windows(2)
+            .any(|window| window[0] == "--model" && window[1] == "haiku"),
+        "Haiku selection should use Claude's launch-time model argument: {:?}",
         command.arguments()
     );
-    assert!(
-        initial_input.bytes().starts_with(b"/model haiku\r"),
-        "Haiku selection should be a Claude TUI command before the prompt: {text:?}"
-    );
+    assert!(initial_input.bytes().starts_with(BRACKETED_PASTE_START));
     assert!(
         text.contains("Initial task:\nshow jj status and wait for the next turn"),
-        "initial prompt should still follow the model command: {text:?}"
+        "initial prompt should still be the interactive payload: {text:?}"
     );
     assert!(
         !text.to_ascii_lowercase().contains("opus"),
@@ -519,54 +550,107 @@ fn adapter_feed_drives_persistent_session_over_multiple_turns() {
 }
 
 #[test]
-fn claude_code_adapter_scrapes_transcript_deltas_without_print_json() {
+fn claude_code_adapter_observes_artifacts_from_terminal_launch_working_directory() {
+    let directory = tempfile::tempdir().expect("tempdir");
+    let home = directory.path().join("home");
     let adapter = ClaudeCodeAdapter::new();
-    let first_transcript =
-        TranscriptCapture::from_bytes(b"Claude TUI opened\nMENTCI_PROOF_READY\n".to_vec());
-
-    let first_delta =
-        adapter.transcript_delta(ClaudeCodeTranscriptCursor::default(), &first_transcript);
-    let second_transcript = TranscriptCapture::from_bytes(
-        b"Claude TUI opened\nMENTCI_PROOF_READY\nMENTCI_PROOF_TURN1_DONE\n".to_vec(),
+    let launch = adapter
+        .launch(
+            launch_request(directory.path()).with_model_command(ClaudeCodeModelCommand::haiku()),
+        )
+        .expect("adapter launch");
+    let working_directory = launch
+        .terminal_launch()
+        .launch()
+        .working_directory()
+        .expect("working directory")
+        .as_path()
+        .to_path_buf();
+    write_claude_artifacts(
+        &home,
+        &working_directory,
+        "PROMPT_MARKER_MENTCI_ARTIFACT",
+        "FINAL_MARKER_MENTCI_ARTIFACT",
+        "TOOL_MARKER_MENTCI_ARTIFACT",
     );
-    let second_delta = adapter.transcript_delta(first_delta.next_cursor(), &second_transcript);
 
-    assert!(first_delta.contains_text("MENTCI_PROOF_READY"));
+    let observation = ClaudeCodeArtifactObservation::with_home_and_launch(&home, &launch)
+        .expect("artifact observation");
+    let report = observation
+        .wait_for_markers(
+            "PROMPT_MARKER_MENTCI_ARTIFACT",
+            "FINAL_MARKER_MENTCI_ARTIFACT",
+            Duration::from_secs(1),
+        )
+        .expect("artifact markers");
+
     assert_eq!(
-        first_delta.next_cursor().offset(),
-        first_transcript.bytes().len()
+        observation.observer().current_working_directory(),
+        working_directory
     );
-    assert_eq!(second_delta.bytes(), b"MENTCI_PROOF_TURN1_DONE\n");
-    assert!(second_delta.contains_text("MENTCI_PROOF_TURN1_DONE"));
+    assert_eq!(
+        report.snapshot().recovered_turn().model(),
+        Some("claude-haiku-4-5-20251001")
+    );
+    assert_eq!(
+        report.snapshot().recovered_turn().tool_calls()[0].name(),
+        "Write"
+    );
+    assert!(
+        report.snapshot().recovered_turn().tool_results()[0]
+            .contains_text("TOOL_MARKER_MENTCI_ARTIFACT")
+    );
 }
 
 #[test]
-fn claude_code_adapter_maps_tui_transcript_to_provider_neutral_events() {
+fn claude_code_adapter_maps_artifact_report_to_provider_neutral_events() {
     let adapter = ClaudeCodeAdapter::new();
-    let mut mapper = adapter.event_mapper("designer");
-    let transcript = TranscriptCapture::from_bytes(
-        b"Welcome to Claude Code\ncwd: /tmp/mentci\nThinking...\nClaude needs permission to run Bash(jj st). Allow? Yes / No\nMENTCI_PROOF_TURN1_DONE\n".to_vec(),
+    let directory = tempfile::tempdir().expect("tempdir");
+    let home = directory.path().join("home");
+    let launch = adapter
+        .launch(
+            launch_request(directory.path()).with_model_command(ClaudeCodeModelCommand::haiku()),
+        )
+        .expect("adapter launch");
+    let working_directory = launch
+        .terminal_launch()
+        .launch()
+        .working_directory()
+        .expect("working directory")
+        .as_path()
+        .to_path_buf();
+    write_claude_artifacts(
+        &home,
+        &working_directory,
+        "PROMPT_MARKER_MENTCI_EVENT",
+        "FINAL_MARKER_MENTCI_EVENT",
+        "TOOL_MARKER_MENTCI_EVENT",
     );
-    let delta = adapter.transcript_delta(ClaudeCodeTranscriptCursor::default(), &transcript);
+    let report = ClaudeCodeArtifactObservation::with_home_and_launch(&home, &launch)
+        .expect("artifact observation")
+        .wait_for_markers(
+            "PROMPT_MARKER_MENTCI_EVENT",
+            "FINAL_MARKER_MENTCI_EVENT",
+            Duration::from_secs(1),
+        )
+        .expect("artifact markers");
+    let mut mapper = adapter.event_mapper("designer");
+    let events = mapper.artifact_report(&report, MessageSlot::new(42));
 
-    let events = mapper.transcript_delta(&delta, MessageSlot::new(42));
-
-    assert!(matches!(events[0], HarnessEvent::AdapterOutput(_)));
-    assert!(matches!(events[1], HarnessEvent::AdapterReady(_)));
-    assert!(matches!(events[2], HarnessEvent::AdapterProgress(_)));
-    let HarnessEvent::AdapterConfirmationNeeded(confirmation) = &events[3] else {
-        panic!("permission prompt should surface as generic confirmation-needed");
+    let HarnessEvent::AdapterOutput(output) = &events[0] else {
+        panic!("artifact report should surface as generic output");
     };
-    assert_eq!(confirmation.harness.as_str(), "designer");
-    assert_eq!(confirmation.sequence.into_u64(), 4);
-    assert_eq!(confirmation.interaction_id, "claude-confirmation-4");
-    assert!(confirmation.prompt.contains("Allow? Yes / No"));
-    assert_eq!(confirmation.options, ["yes".to_owned(), "no".to_owned()]);
-    let HarnessEvent::AdapterCompletion(completion) = &events[4] else {
-        panic!("turn completion marker should map to generic completion");
+    assert!(output.text.contains("claude-haiku-4-5-20251001"));
+    assert!(output.text.contains("tool_calls=1"));
+    let HarnessEvent::AdapterProgress(progress) = &events[1] else {
+        panic!("tool calls should surface as generic progress");
+    };
+    assert_eq!(progress.status, "1 Claude tool calls observed");
+    let HarnessEvent::AdapterCompletion(completion) = &events[2] else {
+        panic!("end_turn should map to generic completion");
     };
     assert_eq!(completion.message_slot.into_u64(), 42);
-    assert_eq!(completion.sequence.into_u64(), 5);
+    assert_eq!(completion.sequence.into_u64(), 3);
 }
 
 #[test]

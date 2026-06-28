@@ -2,6 +2,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::{Duration as StandardDuration, SystemTime, UNIX_EPOCH};
 
+use harness as harness_runtime;
 use signal_harness as harness_contract;
 use thiserror::Error;
 
@@ -113,7 +114,8 @@ impl ClaudeCodeAdapter {
     }
 
     fn arguments(&self, request: &ClaudeCodeLaunchRequest) -> Vec<String> {
-        vec![
+        let mut arguments = vec![
+            "--dangerously-skip-permissions".to_owned(),
             "--add-dir".to_owned(),
             request.scaffold_path().to_string_lossy().into_owned(),
             "--name".to_owned(),
@@ -123,7 +125,11 @@ impl ClaudeCodeAdapter {
                 .lane_name()
                 .as_str()
                 .to_owned(),
-        ]
+        ];
+        if let Some(command) = request.model_command() {
+            command.append_arguments(&mut arguments);
+        }
+        arguments
     }
 
     fn initial_input(&self, request: &ClaudeCodeLaunchRequest) -> TerminalFeed {
@@ -137,9 +143,6 @@ impl ClaudeCodeAdapter {
         prompt.push_str(&request.preflight_launch().to_nota());
         prompt.push_str("\n");
         let mut input = TerminalInputSequence::new();
-        if let Some(command) = request.model_command() {
-            input.push_model_command(command);
-        }
         input.push_interactive(InteractiveTerminalInput::new(prompt));
         input.into_terminal_feed()
     }
@@ -202,6 +205,14 @@ impl ClaudeCodeEventMapper {
         message_slot: harness_contract::MessageSlot,
     ) -> Vec<harness_contract::HarnessEvent> {
         ClaudeCodeTranscriptText::from_delta(delta).events(self, message_slot)
+    }
+
+    pub fn artifact_report(
+        &mut self,
+        report: &harness_runtime::ClaudeArtifactWaitReport,
+        message_slot: harness_contract::MessageSlot,
+    ) -> Vec<harness_contract::HarnessEvent> {
+        ClaudeCodeArtifactReport::new(report).events(self, message_slot)
     }
 
     pub fn read_outcome(
@@ -313,6 +324,101 @@ impl ClaudeCodeEventMapper {
         let sequence = harness_contract::AdapterEventSequence::new(self.next_sequence);
         self.next_sequence = self.next_sequence.saturating_add(1);
         sequence
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct ClaudeCodeArtifactObservation {
+    observer: harness_runtime::ClaudeArtifactObserver,
+}
+
+impl ClaudeCodeArtifactObservation {
+    pub fn from_launch(launch: &NamedHarnessLaunch) -> Result<Self, AdapterError> {
+        let home = std::env::var_os("HOME")
+            .map(PathBuf::from)
+            .unwrap_or_else(|| PathBuf::from("."));
+        Self::with_home_and_launch(home, launch)
+    }
+
+    pub fn with_home_and_launch(
+        home_directory: impl Into<PathBuf>,
+        launch: &NamedHarnessLaunch,
+    ) -> Result<Self, AdapterError> {
+        let working_directory = launch
+            .terminal_launch()
+            .launch()
+            .working_directory()
+            .ok_or_else(|| AdapterError::UnsupportedCapability {
+                capability:
+                    "Claude artifact observation requires a terminal launch working directory"
+                        .to_owned(),
+            })?;
+        Ok(Self {
+            observer: harness_runtime::ClaudeArtifactObserver::with_home(
+                home_directory,
+                working_directory.as_path(),
+            ),
+        })
+    }
+
+    pub fn observer(&self) -> &harness_runtime::ClaudeArtifactObserver {
+        &self.observer
+    }
+
+    pub fn wait_for_markers(
+        &self,
+        prompt_marker: &str,
+        final_marker: &str,
+        timeout: StandardDuration,
+    ) -> Result<harness_runtime::ClaudeArtifactWaitReport, AdapterError> {
+        self.observer
+            .wait_for_markers_with_report(prompt_marker, final_marker, timeout)
+            .map_err(AdapterError::from_claude_artifact)
+    }
+}
+
+#[derive(Clone, Debug)]
+struct ClaudeCodeArtifactReport<'a> {
+    report: &'a harness_runtime::ClaudeArtifactWaitReport,
+}
+
+impl<'a> ClaudeCodeArtifactReport<'a> {
+    fn new(report: &'a harness_runtime::ClaudeArtifactWaitReport) -> Self {
+        Self { report }
+    }
+
+    fn events(
+        &self,
+        mapper: &mut ClaudeCodeEventMapper,
+        message_slot: harness_contract::MessageSlot,
+    ) -> Vec<harness_contract::HarnessEvent> {
+        let mut events = vec![mapper.output(self.summary())];
+        let turn = self.report.snapshot().recovered_turn();
+        if !turn.tool_calls().is_empty() {
+            events.push(mapper.progress(format!(
+                "{} Claude tool calls observed",
+                turn.tool_calls().len()
+            )));
+        }
+        if turn.has_stop_reason_end_turn() {
+            events.push(mapper.completion(message_slot));
+        }
+        events
+    }
+
+    fn summary(&self) -> String {
+        let snapshot = self.report.snapshot();
+        let turn = snapshot.recovered_turn();
+        format!(
+            "Claude artifact observation strategy={:?} session={} model={} tool_calls={} tool_results={} file_edits={} stop_reason_end_turn={}",
+            self.report.strategy(),
+            snapshot.session_identifier().unwrap_or("unknown"),
+            turn.model().unwrap_or("unknown"),
+            turn.tool_calls().len(),
+            turn.tool_results().len(),
+            turn.file_edits().len(),
+            turn.has_stop_reason_end_turn()
+        )
     }
 }
 
@@ -524,7 +630,7 @@ pub struct ClaudeCodeModelCommand {
 impl ClaudeCodeModelCommand {
     pub fn haiku() -> Self {
         Self {
-            text: "/model haiku".to_owned(),
+            text: "haiku".to_owned(),
         }
     }
 
@@ -532,9 +638,9 @@ impl ClaudeCodeModelCommand {
         self.text.as_str()
     }
 
-    fn append_to(&self, bytes: &mut Vec<u8>) {
-        bytes.extend_from_slice(self.text.as_bytes());
-        bytes.push(b'\r');
+    fn append_arguments(&self, arguments: &mut Vec<String>) {
+        arguments.push("--model".to_owned());
+        arguments.push(self.text.clone());
     }
 }
 
@@ -606,10 +712,6 @@ struct TerminalInputSequence {
 impl TerminalInputSequence {
     fn new() -> Self {
         Self { bytes: Vec::new() }
-    }
-
-    fn push_model_command(&mut self, command: &ClaudeCodeModelCommand) {
-        command.append_to(&mut self.bytes);
     }
 
     fn push_interactive(&mut self, input: InteractiveTerminalInput) {
@@ -859,4 +961,15 @@ pub enum AdapterError {
 
     #[error("jj sandbox initialization failed at {path:?}: {status}")]
     SandboxInitialization { path: PathBuf, status: String },
+
+    #[error("Claude artifact observation failed: {message}")]
+    ClaudeArtifactObservation { message: String },
+}
+
+impl AdapterError {
+    fn from_claude_artifact(error: harness_runtime::Error) -> Self {
+        Self::ClaudeArtifactObservation {
+            message: error.to_string(),
+        }
+    }
 }
