@@ -506,7 +506,7 @@ impl CriomeParkedApproval {
         let explanation = self.explanation_with_context(&mut context);
         signal_mentci::QuestionProposal::new(
             ApprovalSource::CriomeEscalation(self.parked.request_slot.clone()),
-            PromptText::new(format!("Authorize criome request {slot}")),
+            PromptText::new(format!("Authorize component request {slot}")),
             Some(AnswerText::new("approve")),
             explanation,
             context,
@@ -518,7 +518,7 @@ impl CriomeParkedApproval {
             let object = &evaluation.object;
             context.extend([
                 QuestionContext {
-                    label: ContextLabel::new("criome-kind"),
+                    label: ContextLabel::new("component-authorization-kind"),
                     body: ContextBody::new("authorization-evaluation"),
                 },
                 QuestionContext {
@@ -536,13 +536,13 @@ impl CriomeParkedApproval {
                 },
             ]);
             return ExplanationText::new(
-                "criome parked an authorization evaluation in ClientApproval mode",
+                "criome parked a component authorization evaluation in ClientApproval mode",
             );
         }
         if let Some(authorization) = self.parked.signal_authorization() {
             context.extend([
                 QuestionContext {
-                    label: ContextLabel::new("criome-kind"),
+                    label: ContextLabel::new("component-authorization-kind"),
                     body: ContextBody::new("signal-call-authorization"),
                 },
                 QuestionContext {
@@ -572,10 +572,12 @@ impl CriomeParkedApproval {
                 ));
             }
             return ExplanationText::new(
-                "criome parked a signal-call authorization in ClientApproval mode",
+                "criome parked a component signal-call authorization in ClientApproval mode",
             );
         }
-        ExplanationText::new("criome parked an authorization request without a projected payload")
+        ExplanationText::new(
+            "criome parked a component authorization request without a projected payload",
+        )
     }
 }
 
@@ -594,8 +596,8 @@ impl CriomeParkedInterception {
         let target = self.parked.context.target_key.as_str().to_owned();
         let mut context = vec![
             QuestionContext {
-                label: ContextLabel::new("criome-kind"),
-                body: ContextBody::new("parked-spirit-request"),
+                label: ContextLabel::new("component-authorization-kind"),
+                body: ContextBody::new("parked-component-request"),
             },
             QuestionContext {
                 label: ContextLabel::new("parked-request"),
@@ -625,9 +627,11 @@ impl CriomeParkedInterception {
         context.extend(Self::spirit_context_rows(&self.parked.context));
         signal_mentci::QuestionProposal::new(
             ApprovalSource::CriomeInterception(self.parked.identifier),
-            PromptText::new(format!("Authorize Spirit {operation} for {target}")),
+            PromptText::new(format!(
+                "Authorize component operation {operation} for target {target}"
+            )),
             Some(AnswerText::new("approve")),
-            ExplanationText::new("criome parked a Spirit operation matched by intercept policy"),
+            ExplanationText::new("criome parked a component operation matched by intercept policy"),
             context,
         )
     }
@@ -637,15 +641,15 @@ impl CriomeParkedInterception {
     ) -> Vec<QuestionContext> {
         vec![
             QuestionContext {
-                label: ContextLabel::new("spirit-target"),
+                label: ContextLabel::new("component-target"),
                 body: ContextBody::new(spirit_context.target_key.as_str()),
             },
             QuestionContext {
-                label: ContextLabel::new("spirit-operation"),
+                label: ContextLabel::new("component-operation"),
                 body: ContextBody::new(spirit_context.operation_name.as_str()),
             },
             QuestionContext {
-                label: ContextLabel::new("raw-spirit-payload"),
+                label: ContextLabel::new("component-raw-payload"),
                 body: ContextBody::new(spirit_context.raw_payload.as_str()),
             },
         ]

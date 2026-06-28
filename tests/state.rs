@@ -173,10 +173,12 @@ fn absorbing_signal_call_parked_authorization_projects_question_context() {
     );
     assert_eq!(
         question.proposal.explanation,
-        ExplanationText::new("criome parked a signal-call authorization in ClientApproval mode")
+        ExplanationText::new(
+            "criome parked a component signal-call authorization in ClientApproval mode"
+        )
     );
     assert!(question.proposal.context().iter().any(|context| {
-        context.label == ContextLabel::new("criome-kind")
+        context.label == ContextLabel::new("component-authorization-kind")
             && context.body == ContextBody::new("signal-call-authorization")
     }));
     assert!(question.proposal.context().iter().any(|context| {
