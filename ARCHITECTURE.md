@@ -3,6 +3,12 @@
 Mentci is a first-class component daemon that hosts the programmable approval
 surface for the local criome.
 
+## 0.5 · Direction
+
+Mentci is the human approval organ for the local per-Unix-user criome. It is a daemon because the programmable UI state is daemon-owned state: every TUI, CLI, editor integration, status bar, popup, and agentic client renders the same canonical state and submits events back to the daemon. Clients do not own approval logic; they subscribe to projected state and send typed responses.
+
+Mentci also grows toward prompt-to-work routing: a prompt enters Mentci, a first-pass API preflight analyzes it, and Mentci opens a persistent named harness session through a terminal-cell driver it can keep feeding and reading. The first proof runs on a sandboxed jj task, not on primary. See the "Possible Future Design" section for the target architecture.
+
 ## Engines
 
 Signal is external and lives in the two contract repos:
