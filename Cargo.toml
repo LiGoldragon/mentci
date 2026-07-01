@@ -12,18 +12,18 @@ default = []
 terminal-cell-runtime = ["dep:terminal-cell"]
 
 [dependencies]
-criome             = { git = "https://github.com/LiGoldragon/criome", branch = "main" }
+criome             = { git = "https://github.com/LiGoldragon/criome", branch = "criome-authorization-push" }
 kameo              = { git = "https://github.com/LiGoldragon/kameo.git", branch = "main", default-features = false, features = ["macros", "tracing"] }
-meta-signal-criome = { git = "https://github.com/LiGoldragon/meta-signal-criome", branch = "main" }
+meta-signal-criome = { git = "https://github.com/LiGoldragon/meta-signal-criome", branch = "criome-authorization-push" }
 meta-signal-mentci = { git = "https://github.com/LiGoldragon/meta-signal-mentci", branch = "main" }
-mentci-lib         = { git = "https://github.com/LiGoldragon/mentci-lib", branch = "main", features = ["nota-text"] }
+mentci-lib         = { git = "https://github.com/LiGoldragon/mentci-lib", branch = "criome-authorization-push", features = ["nota-text"] }
 nota               = { package = "nota", git = "https://github.com/LiGoldragon/nota-next.git", branch = "main" }
 rkyv               = { version = "0.8", default-features = false, features = ["std", "bytecheck", "little_endian", "pointer_width_32", "unaligned"] }
-signal-criome      = { git = "https://github.com/LiGoldragon/signal-criome", branch = "main" }
+signal-criome      = { git = "https://github.com/LiGoldragon/signal-criome", branch = "criome-authorization-push" }
 signal-frame       = { git = "https://github.com/LiGoldragon/signal-frame", branch = "main" }
 signal-harness     = { git = "https://github.com/LiGoldragon/signal-harness.git", branch = "main", default-features = false }
 signal-introspect  = { git = "https://github.com/LiGoldragon/signal-introspect.git", branch = "main", features = ["nota-text"] }
-signal-mentci      = { git = "https://github.com/LiGoldragon/signal-mentci", branch = "main", features = ["nota-text"] }
+signal-mentci      = { git = "https://github.com/LiGoldragon/signal-mentci", branch = "criome-authorization-push", features = ["nota-text"] }
 signal-persona     = { git = "https://github.com/LiGoldragon/signal-persona.git", branch = "main" }
 terminal-cell      = { git = "https://github.com/LiGoldragon/terminal-cell", branch = "main", optional = true }
 thiserror          = "2"
