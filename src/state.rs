@@ -8,8 +8,9 @@ use signal_mentci::{
     AnswerProposal, AnswerProposalAdmitted, AnswerText, ApprovalDecision, ApprovalQuestion,
     ApprovalSource, ApprovalVerdict, ContextBody, ContextLabel, CriomeAccess, ExplanationText,
     InterfaceInterest, InterfaceMutation, InterfaceObservationOpened, InterfaceProjection,
-    InterfaceState, InterfaceStateObservation, MentciReply, MentciRequest, NotificationText,
-    PaneContent, PendingQuestionsView, ProjectedInterfaceState, PromptText, ProposalDigest,
+    InterfaceState, InterfaceStateObservation, MentciReply, MentciRequest, NotificationSlice,
+    NotificationText, PaneContent, PendingQuestionsView, ProjectedInterfaceState, PromptText,
+    ProposalDigest,
     ProposalIdentifier, QuestionContext, QuestionIdentifier, QuestionPresented, Rejection,
     RejectionReason, RevisionCounter, StatusText, SubscriptionToken, TimestampNanos,
     UpdateAccepted,
@@ -363,7 +364,9 @@ impl State {
                 InterfaceProjection::StatusProjection(self.status.clone())
             }
             InterfaceInterest::Notifications => {
-                InterfaceProjection::NotificationProjection(self.notification.clone())
+                InterfaceProjection::NotificationProjection(NotificationSlice::from_current(
+                    self.notification.clone(),
+                ))
             }
             InterfaceInterest::PendingQuestions => InterfaceProjection::PendingQuestionsProjection(
                 PendingQuestionsView::from_questions(self.pending_questions.clone()),
