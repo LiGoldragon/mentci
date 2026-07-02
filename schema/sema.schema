@@ -44,8 +44,8 @@
 ;; The persisted record families live in the namespace block as
 ;; (Family { record … table … key … }) declarations. Named struct fields use
 ;; the current positional grammar: `field_name.TypeName` names a plain-typed
-;; field; `(FieldRole (Optional X))` / `(FieldRole (Vector X))` names an
-;; applied-type field with a PascalCase role differentiator; a bare PascalCase
+;; field; `field_name.(Optional X)` / `field_name.(Vector X)` names an
+;; applied-type field with a dot-bound role differentiator; a bare PascalCase
 ;; type is an anonymous positional field.
 
 ;; (1) imports — empty: standalone (Woe 4 defers cross-import).
@@ -159,9 +159,9 @@
   QuestionProposal {
     source.ApprovalSource
     prompt.PromptText
-    (SuggestedAnswer (Optional AnswerText))
+    SuggestedAnswer.(Optional AnswerText)
     explanation.ExplanationText
-    (Context (Vector QuestionContext))
+    Context.(Vector QuestionContext)
   }
 
   ;; ApprovalQuestion — the daemon-stored question: the minted identifier plus
@@ -209,9 +209,9 @@
   InterfaceState {
     revision.RevisionCounter
     status.StatusText
-    (Notification (Optional NotificationText))
-    (Panes (Vector PaneContent))
-    (PendingQuestions (Vector ApprovalQuestion))
+    Notification.(Optional NotificationText)
+    Panes.(Vector PaneContent)
+    PendingQuestions.(Vector ApprovalQuestion)
   }
 
   ;; InterfaceInterest — the projection a subscription is entitled to (operator
@@ -342,7 +342,7 @@
     interest.InterfaceInterest
   }
   SubscriptionRoster {
-    (Subscriptions (Vector ActiveSubscriptionView))
+    Subscriptions.(Vector ActiveSubscriptionView)
   }
 
   ;; A read-side singleton marker: reads that take no key still take one

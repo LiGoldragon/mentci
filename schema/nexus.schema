@@ -38,8 +38,8 @@
 ;; applications; the namespace block holds every declaration. Named struct
 ;; fields use the current positional grammar: a bare PascalCase type is an
 ;; anonymous positional field; `field_name.TypeName` names a plain-typed field;
-;; `(FieldRole (Optional X))` / `(FieldRole (Vector X))` names an applied-type
-;; field with a PascalCase role differentiator.
+;; `field_name.(Optional X)` / `field_name.(Vector X)` names an applied-type
+;; field with a dot-bound role differentiator.
 
 ;; (1) imports — empty: standalone (Woe 4 defers cross-import).
 {}
@@ -113,9 +113,9 @@
   QuestionProposal {
     source.ApprovalSource
     prompt.PromptText
-    (SuggestedAnswer (Optional AnswerText))
+    SuggestedAnswer.(Optional AnswerText)
     explanation.ExplanationText
-    (Context (Vector QuestionContext))
+    Context.(Vector QuestionContext)
   }
 
   ;; ApprovalQuestion — the daemon-stored question: the minted identifier plus
@@ -199,9 +199,9 @@
   InterfaceState {
     revision.RevisionCounter
     status.StatusText
-    (Notification (Optional NotificationText))
-    (Panes (Vector PaneContent))
-    (PendingQuestions (Vector ApprovalQuestion))
+    Notification.(Optional NotificationText)
+    Panes.(Vector PaneContent)
+    PendingQuestions.(Vector ApprovalQuestion)
   }
 
   ;; ProjectedInterfaceState — the filtered render the Nexus fans to a
@@ -221,7 +221,7 @@
   ]
 
   PendingQuestionsView {
-    (VisibleQuestions (Vector ApprovalQuestion))
+    VisibleQuestions.(Vector ApprovalQuestion)
   }
 
   ;; -------------------------------------------------------------------
@@ -234,9 +234,9 @@
   ;; -------------------------------------------------------------------
   CriomeEscalationRequest {
     prompt.PromptText
-    (SuggestedAnswer (Optional AnswerText))
+    SuggestedAnswer.(Optional AnswerText)
     explanation.ExplanationText
-    (Context (Vector QuestionContext))
+    Context.(Vector QuestionContext)
   }
 
   ;; -------------------------------------------------------------------
@@ -396,7 +396,7 @@
 
   NoArgument { }
   SubscriptionRoster {
-    (Subscriptions (Vector SubscriptionReceipt))
+    Subscriptions.(Vector SubscriptionReceipt)
   }
 
   ;; -------------------------------------------------------------------
@@ -471,6 +471,6 @@
   ;; move, no deliveries, no client render.
   InterfaceFanOut {
     revision.RevisionCounter
-    (Deliveries (Vector InterfaceDelivery))
+    Deliveries.(Vector InterfaceDelivery)
   }
 }
