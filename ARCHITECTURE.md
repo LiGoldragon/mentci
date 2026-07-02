@@ -7,7 +7,7 @@ surface for the local criome.
 
 Mentci is the human approval organ for the local per-Unix-user criome. It is a daemon because the programmable UI state is daemon-owned state: every TUI, CLI, editor integration, status bar, popup, and agentic client renders the same canonical state and submits events back to the daemon. Clients do not own approval logic; they subscribe to projected state and send typed responses.
 
-Mentci also grows toward prompt-to-work routing: a prompt enters Mentci, a first-pass API preflight analyzes it, and Mentci opens a persistent named harness session through a terminal-cell driver it can keep feeding and reading. The first proof runs on a sandboxed jj task, not on primary. See the "Possible Future Design" section for the target architecture.
+Mentci also grows toward prompt-to-work routing, but as one of three components and not the owner of the flow: a prompt enters Mentci, `orchestrate` decides whether to reuse or create a session and opens it, and `harness` runs and observes that session through terminal-cell. Mentci itself stays user-interface ingress and egress only — it holds no provider, session-choice, or process-liveness logic. The first proof runs on a sandboxed jj task, not on primary. See the "Possible Future Design" section for the target architecture.
 
 ## Engines
 
@@ -84,235 +84,149 @@ events beyond request/reply, and turning observe-triggered parked-authorization
 pickup into a continuous subscription/push loop. Those are integration gaps
 around the runtime slice, not blockers to the contract-shaped daemon boot.
 
-## Possible Future Design — Prompt-To-Bead-Weave Harness Sessions
+## Possible Future Design — Prompt-To-Work Sessions Across Mentci, Orchestrate, and Harness
 
-This section is target architecture for the next thin slice, not current daemon
-behavior. Mentci becomes the entry surface for aligned prompts that should turn
-into a weave of BEADS jobs and a running agent harness session.
+This section is accepted target architecture for the next slice, not current daemon
+behavior. It supersedes the earlier "Prompt-To-Bead-Weave Harness Sessions"
+direction, which placed the terminal-cell driver and the harness adapters inside
+Mentci, made `orchestrate` an address-only lane registry, and kept no harness daemon
+in the loop. The psyche accepted the opposite ownership split, so that older
+direction is retired.
 
-The slice stays harness-agnostic. A prompt enters Mentci, a cheap contained API
-preflight model analyzes the prompt, and the preflight emits fixed-schema NOTA
-that names the scaffold identity, minimal scaffold/context pointers to
-mount, session identity, persistent harness session request,
-sandbox/privacy flags, and typed stop conditions. The preflight is the routing
-and prompt-building engine; it is not a deterministic rule router. Thinness is
-intentional: the scaffold includes only the minimal support plus
-`skills/skills.nota`, and the session agent expands its own context from there.
+The detailed typed message and durable record schemas for this design are not
+duplicated here. They live in the accepted design spec in the primary workspace at
+`agent-outputs/MentciOrchestrateSessionFlow/Design-SessionFlowSpec.md` (with its
+adversarial review alongside). This section records the durable direction and
+boundaries; the spec carries the wire and store detail an implementer needs.
 
-The fixed preflight launch schema is the NOTA contract artifact at
-`schema/preflight-launch.nota.md`. It is the canonical schema surface for
-scaffold identity and version, scaffold/context pointers, session identity,
-persistent-session request, sandbox/privacy posture, typed stop conditions, and
-residual launch constraints. Adapter identity, terminal-cell driver identity,
-provider model identifiers, and terminal launch policy are downstream
-adapter/session launch-plan details, not fields in this front-door packet.
+### Three ownership regions
 
-The session is persistent, named, and addressable. `orchestrate` lanes own the
-lane name, lane metadata, addressing, and session lookup. The terminal-cell
-driver owns process liveness: process handle, send/read loop, idle timeout,
-close signal, and stalled-output detection. Harness adapters plug into that one
-driver. Claude Code, Codex, pi, and open-ended shells are current adapter
-identity examples, not generic contract semantics.
+A prompt becomes running agent work by crossing three components, each owning one
+concern and nothing more:
 
-The first proof domain is a sandboxed jj task. It must not run against primary.
-The proof value is the working slice and the failure modes it exposes; no
-rigorous savings metric is required for the first pass. Scaffold identities are
-versioned in the first schema, while reuse and caching mechanics stay deferred
-until the thin slice exists.
+- **Mentci — user interface, message ingress and egress only.** Mentci accepts a
+  prompt from a client, forwards it, and renders the live session back to the
+  client. It holds no provider, launch, session-choice, or liveness logic; it does
+  not distinguish Claude from any other harness, and it never spawns or drives a
+  process. Any work-surface or hard-constraint values that ride with a prompt are
+  opaque routing hints Mentci forwards verbatim — Mentci does not compute launch or
+  sandbox posture.
+- **Orchestrate — session choose, create, reuse, archive, and owner of the durable
+  session store.** Orchestrate decides whether a prompt continues an existing
+  session or starts a new one, allocates a harness instance, opens the session on
+  it, and records the session in a durable store modeled on its existing `Worktree`
+  record. Session archive and garbage collection are orchestrate-owned and
+  stop-driven. Orchestrate owns the session identity; it is not an address-only
+  registry.
+- **Harness — Claude launch, observe, and close, driven through terminal-cell.**
+  Harness builds the launch command, drives the process through the external
+  `terminal-cell` PTY primitive, observes the running session, and closes it.
+  Liveness — the send and read loop, idle and stall detection, exit — lives in
+  harness, not in Mentci. The provider-neutral adapter that turns a launch request
+  into argv and classifies transcript output into neutral events lives here too.
 
-### Persistent Harness Session Addressing Contract
+`terminal-cell` stays a generic PTY primitive underneath harness; it is not harness-
+or provider-specific.
 
-This is the contract between Mentci's prompt-to-work surface, `orchestrate`
-lanes, and the terminal-cell driver. It defines identity and lookup only; it is
-not a backend integration plan and it does not make `orchestrate` the owner of
-process liveness.
+### Session routing — the closed model call
 
-Mentci requests a named harness session by sending `orchestrate` a
-session-address request derived from the preflight output:
+A cheap, contained model call reads each incoming prompt and decides prompt to
+existing-versus-new session, emitting a fixed-schema plan (scaffold pointers,
+session identity, stop conditions, sandbox posture). This is the engine formerly
+called "preflight"; it is renamed **session routing** (`SessionRouter` /
+`RouteSession` / `SessionRoutingPlan`) and owned by orchestrate. The rename is
+deliberate: "preflight" named *when* the call ran (at Mentci's front door); the
+honest name is *what* it does — route a prompt to a session decision. It is a
+closed, fixed-schema model call, distinct from the open-ended AI that runs inside a
+harness. It also composes cleanly against the per-turn **message router** — the
+deferred path that delivers subsequent turns into a live session: the session router
+runs once per prompt-to-session, the message router once per turn.
 
-```nota
-;; Pseudo-NOTA for documentation, not the wire schema.
-(HarnessSessionAddressRequest <session-identity> <persistent-session> <launch-metadata> <sandbox-privacy>)
-;;   session-identity  : (SessionIdentity <lane-name> <lane-metadata> <addressable-handle> <lookup-path>)
-;;   lane-metadata     : (LaneMetadata <discipline> <session-intent> <harness-kind> <adapter-kind> <scaffold-identity> <scaffold-version>)
-;;   persistent-session: (PersistentSession <requested> <harness-kind> <adapter-kind> <driver-kind>)
-;;   launch-metadata   : adapter/session-owned metadata outside MentciPreflightLaunch
-```
+### Typed message flow and instance addressing
 
-`session-identity` is the durable address. `persistent-session` is the launch
-request that says Mentci wants a long-lived harness session. They stay separate:
-an address can be stored, matched, diagnosed, or retired without interpreting
-the persistence boolean as identity.
+The three components talk over their typed signal contracts, producers pushing and
+consumers subscribing rather than polling:
 
-`orchestrate` owns the lane/session address record:
+1. A client submits a prompt to Mentci over `signal-mentci`.
+2. Mentci forwards it to orchestrate over `signal-orchestrate` (a new
+   Mentci-to-orchestrate dependency that does not exist today).
+3. Orchestrate runs the session-routing model call, consults its session store,
+   decides reuse-versus-create, reserves a free harness instance, and opens the
+   session on it over `signal-harness`.
+4. Harness drives the session through terminal-cell and pushes provider-neutral
+   transcript and lifecycle events. Orchestrate subscribes to keep its store fresh;
+   Mentci subscribes to render live output. Both watch the same instance stream —
+   many watchers of one session, not many sessions on one stream.
 
-- The `lane-name` is the stable lookup key and must be derived from the session
-  intent, not from the harness provider.
-- `lane-metadata` records the discipline, session intent, harness kind, adapter
-  kind, scaffold identity, and scaffold version.
-  It records no process handle, no read/write loop state, no idle timer, and no
-  stalled-output detector.
-- The `addressable-handle` is the token Mentci returns to later callers. It is
-  an address for routing a future feed/read/close request, not proof that a
-  process is alive.
-- The `lookup-path` names the `orchestrate` lane lookup surface that can resolve
-  the handle back to the lane/session address record.
+**One session per harness instance.** A harness instance is fixed at daemon startup,
+carries one harness kind and one terminal endpoint, and hosts exactly one live
+session; its name is the whole live-session key. There is no session multiplexing
+inside an instance. Many concurrent sessions are realized as many instances drawn
+from the fixed configured pool — long, compaction-heavy runs coexist by occupying
+distinct instances, never by contending for one slot. Concurrency is bounded by the
+pool, and there is no eviction. Because distinct routes can race for the last free
+instance, orchestrate reserves an instance atomically — conditional on no other live
+session already holding it — before it opens, so two routes cannot double-book one
+instance. The durable session identity outlives any single instance: a session goes
+idle when its agent stops and later resumes on whatever instance is free.
 
-On first launch, `orchestrate` registers the lane/session address if no record
-exists. If a record already exists for the requested name with matching identity
-metadata, it returns the existing address instead of minting a duplicate. If the
-name exists with different identity metadata, the request is a typed address
-conflict and no terminal-cell process is started.
+### Session lifecycle — done when it stops, never interrupted
 
-Later Mentci operations address the session in two steps:
+The governing principle, a fixed psyche ruling, frames the whole lifecycle: **a
+session is done when it stops, and nothing may interrupt a running one.** A large
+flow may legitimately consume a great deal of context and pass through several
+compactions before it finishes; that is normal and must never trigger eviction,
+archival, or a forced handover. The consequences the design must preserve:
 
-1. Resolve the handle or lane name through `orchestrate` lane lookup.
-2. Pass the resolved terminal-cell addressing data to the terminal-cell driver
-   for live feed/read/close work.
+- A session leaves the hot set only on a harness-reported stop. There is no
+  wall-clock age sweep.
+- **Staleness is measured in context size, not elapsed time.** A session's "age" for
+  reuse and handover is the context (token) size it has accumulated, not how long it
+  has been quiet. Around 100K tokens a session is long but fully resumable; around
+  200K it is old, and the next prompt for that topic is *nudged* toward the
+  workspace's context-handover discipline — wrap up and spawn a fresh session rather
+  than resume into an ever-growing context. This is only ever a nudge, applied to an
+  already-stopped session; it never interrupts a live run, and a handover-due session
+  stays fully resumable if the flow chooses to continue.
 
-The terminal-cell driver owns liveness for the resolved session: process handle,
-send/read loop, idle timeout, close signal, stalled-output detection, and the
-adapter-level launch/read/write errors. `orchestrate` may diagnose "unknown
-address", "address conflict", or "known address is closed/retired"; it must not
-diagnose "the process is healthy" from lane metadata.
+**The context figure is the harness's own number, read passively — never
+self-calculated, never injected.** The size comes from the Claude Code statusline
+JSON payload (its `context_window` block, carrying a native past-200K flag), which
+Claude Code pushes to a passive statusline command on its own cadence. Harness
+forwards that figure into its session observations. It never sums transcript usage
+tokens itself — that transcript format is documented as internal and
+version-unstable — and it never writes a command such as `/context` into a live
+session to obtain the figure, because writing into a running session would interrupt
+a working agent, which is forbidden. Where no figure has ever been observed, the
+session is treated as of unknown size and fully reusable; no number is synthesized to
+fill the gap.
 
-Review witnesses for this contract:
+### First proof and preserved constraints
 
-- Existing-session lookup: a second request for the same lane name and matching
-  metadata returns the original addressable handle and does not start a second
-  terminal-cell process.
-- Unknown-session diagnosis: a feed/read/close request whose handle has no
-  `orchestrate` lane address record fails as an unknown address before reaching
-  the terminal-cell driver.
-- Closed-session diagnosis: a request whose address record is closed or retired
-  fails as closed at the address layer; a process that stalls, exits, or misses
-  idle timing is diagnosed by terminal-cell, not by `orchestrate`.
-- Privacy/sandbox guard: every first-proof address carries sandbox/privacy
-  metadata requiring a sandboxed jj task, forbidding `/home/li/primary` as the
-  jj working copy, and keeping private scope closed by default.
+The first proof domain is a sandboxed jj task and must never run against
+`/home/li/primary` as a jj working copy; private scope stays closed by default. The
+scaffold stays minimal — `skills/skills.nota` as the expansion index plus enough
+local context to start — and the session agent expands its own context from there.
+The proof value is the working slice and the failure modes it exposes (invalid
+routing output, missing required skills, sandbox violation, process start failure,
+idle timeout, stalled output, close failure, adapter-level launch/read/write errors);
+no savings metric is required for the first pass.
 
-### Harness Adapter Contract
+### Open decisions (not yet settled)
 
-Harness adapters are thin translation objects over one terminal-cell-backed
-driver. The adapter knows how to turn Mentci's typed launch request into the
-argv, environment, initial terminal input, later terminal input, output-event
-classification, and metadata for one harness family. The terminal-cell driver
-owns the running process and PTY lifecycle for every adapter.
+Recorded so they are not mistaken for accepted architecture; the design spec carries
+the detail and evidence:
 
-The generic adapter surface is:
-
-- **Identity and capability metadata.** The adapter reports an adapter identity,
-  a harness-kind identity, a contract version, supported launch knobs, supported
-  input modes, output event classes it can report, close modes it can request,
-  and whether the implementation is verified for the current proof slice. Known
-  registry examples include Claude Code, Codex, pi, and an open-ended shell
-  harness, but those names are examples of adapter identities only. No behavior
-  is inferred from a provider name by the generic contract.
-- **Launch command construction.** The adapter receives the scaffold path,
-  requested working directory, sandbox/privacy flags, semantic harness-session
-  model knob, environment overlay, and initial prompt object. It returns a
-  terminal launch plan: executable, argv, environment, working directory,
-  terminal size preference, and optional initial input bytes. The adapter does
-  not spawn the process; the terminal-cell driver does.
-- **Initial prompt and scaffold handoff.** The adapter receives a typed object
-  containing the user prompt, the minimal scaffold identity, mounted source
-  locators, selected skills, stop conditions, and proof constraints. It may
-  render that object into the child process' initial terminal text, a file inside
-  the scaffold, or both, but it must report which handoff path it used. The
-  rendered prompt is adapter-owned text; the typed object remains Mentci's
-  contract surface.
-- **Model knob mapping.** The adapter maps the semantic harness-session model
-  knob into whatever command-line option, environment value, prompt text, or
-  no-op its harness supports. Concrete provider model identifiers are not part
-  of this contract. Unsupported or unverified model mapping returns a typed
-  adapter error instead of guessing.
-- **Send framing.** Later Mentci input reaches the adapter as typed feed
-  objects. The adapter renders each feed to terminal bytes and names whether it
-  expects line-oriented input, raw bytes, a file handoff plus trigger text, or
-  no interactive feed support. The terminal-cell driver writes the bytes through
-  its single PTY input path.
-- **Read/event framing.** The terminal-cell driver supplies transcript deltas,
-  worker lifecycle events, terminal exit, idle timeout, stalled-output detection,
-  and close results. The adapter may classify transcript deltas into generic
-  events such as output observed, prompt requested, completion signaled, or
-  adapter diagnostic. Generic Mentci code must not depend on provider-specific
-  transcript wording; an unclassified transcript delta is still valid output.
-- **Close behavior.** The adapter declares the close request it supports:
-  graceful terminal input, interrupt, terminate, kill, or driver-default close.
-  The driver performs the close and reports terminal outcome. Adapter close
-  logic may request a rendered pre-close input sequence, but it cannot own the
-  process handle or decide liveness.
-- **Error reporting.** Adapter errors are typed by phase: unsupported
-  capability, invalid launch request, launch-plan construction failure, prompt
-  rendering failure, model mapping failure, feed rendering failure, event
-  classification failure, close request failure, and unverified adapter detail.
-  Driver errors stay driver errors: process start failure, PTY/control-socket
-  failure, write failure, read failure, idle timeout, stalled output, terminal
-  exit, and close failure.
-
-The terminal-cell driver responsibilities are centralized and adapter-neutral:
-process handle, child PTY, send/read loop, transcript capture, terminal worker
-lifecycle, idle timeout, stalled-output detection, close signal, terminal exit,
-and the final terminal outcome. The driver may expose transcript and worker
-events to an adapter for classification, but it never calls adapter-specific
-code to decide whether the process is alive.
-
-The first proof adapter for a sandboxed jj task only needs enough capability to
-construct a launch plan, hand off the typed scaffold/prompt, render one feed
-input, surface raw output plus any generic completion signal it can verify,
-request a close, and return typed adapter errors. It does not need full parity
-with every registered adapter identity, verified quota/usage parsing, concrete
-model identifier selection, or provider-specific transcript semantics.
-
-### First-Slice Acceptance Contract
-
-This contract is the acceptance gate for the thin routing slice. It names the
-observable behavior that must hold before implementation beads may treat the
-prompt-to-harness path as proven.
-
-- A prompt enters Mentci through a single explicit request path. The request
-  preserves the prompt text, the requested work surface, and any hard
-  constraints, including the requirement that the first jj proof is sandboxed
-  and never runs against primary.
-- The first pass is an API preflight. It analyzes the prompt and builds the
-  harness launch prompt and scaffold; it is not a deterministic rule router.
-- The preflight output is valid NOTA against a fixed schema. The schema carries
-  a versioned scaffold identity, minimal source locators or files to mount, a
-  session identity, a separate persistent-session request, dedicated
-  sandbox/privacy flags, and typed stop conditions. The session identity is
-  distinct from the persistent-session
-  request/boolean: lane naming, metadata, handle, and lookup are address fields,
-  not generic constraints. The stop conditions include idle timeout, turn cap,
-  and completion signal variants. The launch packet carries no provider,
-  adapter, terminal-driver, concrete model, readiness, or permission-policy
-  fields; those belong to adapter/session launch plans below Mentci.
-- The scaffold is minimal. It includes `skills/skills.nota` as the expansion
-  index and enough local context for the harness agent to start; the agent is
-  responsible for loading further skills and repo context from the index rather
-  than receiving a broad pre-read bundle.
-- Session creation is persistent, named, and addressable. A successful launch
-  registers a lane name, lane metadata, an addressable session handle, and a
-  lookup path owned by `orchestrate` lanes, following the persistent harness
-  session addressing contract above.
-- The terminal-cell driver owns liveness for every harness session: process
-  handle, send/read loop, idle timeout, close signal, and stalled-output
-  detection. Mentci can feed additional input to the named session and read
-  later output after the launch request returns.
-- Harnesses are pluggable adapters over the same terminal-cell driver. The
-  generic contract names harness kind and adapter identity, but acceptance of
-  the routing slice cannot depend on provider-specific transcript wording or
-  Claude-, Codex-, pi-, or open-ended-harness behavior outside the adapter.
-- The first proof runs against a sandboxed jj task. Acceptance requires an
-  end-to-end witness that routes prompt input through preflight output, minimal
-  scaffold creation, persistent named session launch, at least one feed/read
-  exchange, and close or idle handling without touching `/home/li/primary` as a
-  jj working copy.
-- Failure-mode capture is part of the slice. The witness records, at minimum,
-  failures for invalid preflight NOTA, missing required skills, sandbox
-  violation, harness process start failure, idle timeout, stalled output, close
-  failure, and adapter-level launch/read/write errors.
-
-Deferred from this first slice: rigorous savings metrics, scaffold
-reuse/caching mechanics, full adapter parity, concrete model identifier
-selection, and the downstream implementation of the preflight engine,
-terminal-cell driver, adapters, or proof run.
+- terminal-cell versus the archived terminal-daemon for the live proof: settled
+  intent picks terminal-cell, but reaching a working Claude TUI through
+  terminal-cell's launch surface is unproven.
+- No resume-id validity probe exists anywhere; a failed `--resume` is handled by
+  attempt-and-fall-through to a fresh launch, which must be shown to fail gracefully.
+- Provider and model vocabulary: one owner for the session record's provider kind,
+  one model type across its lifecycle (launch knob, observed, stored), and a
+  provider-neutral resume locator.
+- Harness peer naming: after this design harness has at least two ordinary peers —
+  orchestrate (opens sessions) and the deferred message-router (delivers turns) — so
+  the harness contract's "router" prose should name both explicitly.
+- Exact Claude Code statusline field spellings and their stability against the
+  installed Claude Code version.
