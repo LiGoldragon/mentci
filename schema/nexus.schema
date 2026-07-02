@@ -24,8 +24,8 @@
 ;;
 ;; STANDALONE / SELF-CONTAINED VOCABULARY. The signal-mentci payload types and
 ;; the SEMA result receipts are declared LOCALLY here rather than cross-imported.
-;; Cross-import is deferred (Woe 4): signal-criome is still on stale dot-field
-;; notation and will not lower under current positional grammar, and
+;; Cross-import is deferred by design (Woe 4): the signal-criome and
+;; signal-standard payloads are not yet wired as imports here, and
 ;; signal-standard is not yet a crate. So this schema lowers with ZERO imports
 ;; through schema_next::SchemaEngine on current schema-next main. Local types
 ;; tagged  ;; (engine boundary: …)  identify the eventual import / mirror source:
@@ -36,10 +36,10 @@
 ;; root, (4) namespace. The empty imports block reflects the zero-import
 ;; posture; the input/output roots are the Work / Action reaction-frame
 ;; applications; the namespace block holds every declaration. Named struct
-;; fields use the current positional grammar: a bare PascalCase type is an
-;; anonymous positional field; `field_name.TypeName` names a plain-typed field;
-;; `field_name.(Optional X)` / `field_name.(Vector X)` names an applied-type
-;; field with a dot-bound role differentiator.
+;; fields use the current positional grammar: a bare PascalCase type is a field
+;; whose role is derived from the referenced type name; `field_name.TypeName`
+;; names a plain-typed field; `field_name.(Optional X)` / `field_name.(Vector X)`
+;; names an applied-type field with a dot-bound role differentiator.
 
 ;; (1) imports — empty: standalone (Woe 4 defers cross-import).
 {}
@@ -107,15 +107,25 @@
     body.ContextBody
   }
 
+  ;; SuggestedAnswer / Context — the shared question-content payload types. Both
+  ;; QuestionProposal and CriomeEscalationRequest carry the same optional
+  ;; suggested answer and the same context vector, so they are declared ONCE here
+  ;; as named types and referenced bare in each record. (A composite dot-field
+  ;; SuggestedAnswer.(Optional AnswerText) synthesizes a per-record named type;
+  ;; declaring the two records' shared roles inline would synthesize the same
+  ;; name twice. Naming the shared type once is the single-source form.)
+  SuggestedAnswer (Optional AnswerText)
+  Context (Vector QuestionContext)
+
   ;; QuestionProposal — the content a PresentQuestion carries, WITHOUT identity.
   ;; The DAEMON mints the QuestionIdentifier on AdmitQuestion (operator 421 §2);
   ;; external agents never choose local SEMA row identity.
   QuestionProposal {
     source.ApprovalSource
     prompt.PromptText
-    SuggestedAnswer.(Optional AnswerText)
+    SuggestedAnswer
     explanation.ExplanationText
-    Context.(Vector QuestionContext)
+    Context
   }
 
   ;; ApprovalQuestion — the daemon-stored question: the minted identifier plus
@@ -213,10 +223,20 @@
     projection.InterfaceProjection
   }
 
+  ;; NotificationSlice — the current-notification slice a NotificationProjection
+  ;; carries. A variant payload must ALWAYS appear in the text form, so the
+  ;; "no current notification" case is the explicit Empty member, not
+  ;; (Optional NotificationText). This is the shipped strict form (signal-mentci
+  ;; d4672363); a projection slice never rides an optional-variant payload.
+  NotificationSlice [
+    Empty
+    (Present NotificationText)
+  ]
+
   InterfaceProjection [
     (FullProjection InterfaceState)
     (StatusProjection StatusText)
-    (NotificationProjection (Optional NotificationText))
+    (NotificationProjection NotificationSlice)
     (PendingQuestionsProjection PendingQuestionsView)
   ]
 
@@ -234,9 +254,9 @@
   ;; -------------------------------------------------------------------
   CriomeEscalationRequest {
     prompt.PromptText
-    SuggestedAnswer.(Optional AnswerText)
+    SuggestedAnswer
     explanation.ExplanationText
-    Context.(Vector QuestionContext)
+    Context
   }
 
   ;; -------------------------------------------------------------------

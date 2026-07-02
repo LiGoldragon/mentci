@@ -42,11 +42,13 @@
 ;; the input root is `[WriteInput ReadInput]` and the output root is
 ;; `[WriteOutput ReadOutput]` — the same four-roster shape the spirit SEMA uses.
 ;; The persisted record families live in the namespace block as
-;; (Family { record … table … key … }) declarations. Named struct fields use
-;; the current positional grammar: `field_name.TypeName` names a plain-typed
-;; field; `field_name.(Optional X)` / `field_name.(Vector X)` names an
-;; applied-type field with a dot-bound role differentiator; a bare PascalCase
-;; type is an anonymous positional field.
+;; (Family { record.RecordName table.table_name key.KeyKind }) declarations —
+;; the record / table / key roles are dot-bound, the same dot-field grammar the
+;; struct bodies use. Named struct fields use the current positional grammar:
+;; `field_name.TypeName` names a plain-typed field; `field_name.(Optional X)` /
+;; `field_name.(Vector X)` names an applied-type field with a dot-bound role
+;; differentiator; a bare PascalCase type is a field whose role is derived from
+;; the referenced type name.
 
 ;; (1) imports — empty: standalone (Woe 4 defers cross-import).
 {}
@@ -242,7 +244,7 @@
     identifier.QuestionIdentifier
     question.ApprovalQuestion
   }
-  PendingQuestionsFamily (Family { record PendingQuestion table pending_questions key Identified })
+  PendingQuestionsFamily (Family { record.PendingQuestion table.pending_questions key.Identified })
 
   ;; DecisionRecord — the recorded verdict on a question, keyed by the same
   ;; question identifier. A question moves from pending to decided when its
@@ -253,7 +255,7 @@
     answered_by.SubscriberName
     decided_at.TimestampNanos
   }
-  DecisionsFamily (Family { record DecisionRecord table decisions key Identified })
+  DecisionsFamily (Family { record.DecisionRecord table.decisions key.Identified })
 
   ;; AnswerProposalRecord — an edited-answer proposal admitted as a NEW object on
   ;; the normal authorization path (operator 421 / Q2), keyed by its
@@ -268,7 +270,7 @@
     digest.ProposalDigest
     proposed_at.TimestampNanos
   }
-  AnswerProposalsFamily (Family { record AnswerProposalRecord table answer_proposals key Identified })
+  AnswerProposalsFamily (Family { record.AnswerProposalRecord table.answer_proposals key.Identified })
 
   ;; ActiveSubscription — one open state subscription, keyed by its DAEMON-MINTED
   ;; token (operator 421 §3). The active subscription registry: who is observing
@@ -280,7 +282,7 @@
     interest.InterfaceInterest
     opened_at.TimestampNanos
   }
-  SubscriptionsFamily (Family { record ActiveSubscription table subscriptions key Identified })
+  SubscriptionsFamily (Family { record.ActiveSubscription table.subscriptions key.Identified })
 
   ;; RevisionRecord — the InterfaceState revision counter (the single state
   ;; head). Keyed by a singleton marker so there is exactly one row. PLAIN
@@ -292,7 +294,7 @@
     revision.RevisionCounter
     updated_at.TimestampNanos
   }
-  RevisionFamily (Family { record RevisionRecord table revision key Identified })
+  RevisionFamily (Family { record.RevisionRecord table.revision key.Identified })
 
   ;; -------------------------------------------------------------------
   ;; Operation payloads and receipts.
