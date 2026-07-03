@@ -173,10 +173,17 @@ idle when its agent stops and later resumes on whatever instance is free.
 ### Session lifecycle — done when it stops, never interrupted
 
 The governing principle, a fixed psyche ruling, frames the whole lifecycle: **a
-session is done when it stops, and nothing may interrupt a running one.** A large
-flow may legitimately consume a great deal of context and pass through several
-compactions before it finishes; that is normal and must never trigger eviction,
-archival, or a forced handover. The consequences the design must preserve:
+session is done when it stops, and nothing may interrupt a running one.**
+**"Interrupt" has a precise meaning: forcibly stopping a working agent mid-work —
+not any injected message.** Guidance, query, and steering messages sent into a
+session are not interrupts and are permitted, including injecting `/context` to
+read the accumulated size and delivering the ~200K handover nudge; neither forcibly
+stops the agent, and the run stays free to keep working. What the principle forbids
+is a forced stop — eviction, archival, or forced handover — of a run that has not
+itself stopped. A large flow may legitimately consume a great deal of context and
+pass through several compactions before it finishes; that is normal and must never
+trigger eviction, archival, or a forced handover. The consequences the design must
+preserve:
 
 - A session leaves the hot set only on a harness-reported stop. There is no
   wall-clock age sweep.
@@ -190,16 +197,19 @@ archival, or a forced handover. The consequences the design must preserve:
   stays fully resumable if the flow chooses to continue.
 
 **The context figure is the harness's own number, read passively — never
-self-calculated, never injected.** The size comes from the Claude Code statusline
-JSON payload (its `context_window` block, carrying a native past-200K flag), which
-Claude Code pushes to a passive statusline command on its own cadence. Harness
-forwards that figure into its session observations. It never sums transcript usage
-tokens itself — that transcript format is documented as internal and
-version-unstable — and it never writes a command such as `/context` into a live
-session to obtain the figure, because writing into a running session would interrupt
-a working agent, which is forbidden. Where no figure has ever been observed, the
-session is treated as of unknown size and fully reusable; no number is synthesized to
-fill the gap.
+self-calculated.** Its **primary** source is the Claude Code statusline JSON payload
+(its `context_window` block, carrying a native past-200K flag), which Claude Code
+pushes to a passive, structured statusline command on its own cadence. That
+statusline figure is primary and stays primary, because it is the only source that
+reports while the agent is actively working mid-turn. Harness forwards that figure
+into its session observations. It never sums transcript usage tokens itself — that
+transcript format is documented as internal and version-unstable. Injecting
+`/context` into a session is a permitted **at-rest-only fallback**: it is a query
+message, not an interrupt, but it renders a usable figure only when the session is
+idle (between turns), so it is scoped to at-rest sessions — inject `/context` and
+parse its rendered output when the primary statusline figure is missing for an idle
+session. Where no figure has ever been observed, the session is treated as of unknown
+size and fully reusable; no number is synthesized to fill the gap.
 
 ### First proof and preserved constraints
 
