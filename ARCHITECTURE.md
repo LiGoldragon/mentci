@@ -7,7 +7,7 @@ surface for the local criome.
 
 Mentci is the human approval organ for the local per-Unix-user criome. It is a daemon because the programmable UI state is daemon-owned state: every TUI, CLI, editor integration, status bar, popup, and agentic client renders the same canonical state and submits events back to the daemon. Clients do not own approval logic; they subscribe to projected state and send typed responses.
 
-Mentci also grows toward prompt-to-work routing, but as one of three components and not the owner of the flow: a prompt enters Mentci, `orchestrate` decides whether to reuse or create a session and opens it, and `harness` runs and observes that session through terminal-cell. Mentci itself stays user-interface ingress and egress only — it holds no provider, session-choice, or process-liveness logic. The first proof runs on a sandboxed jj task, not on primary. See the "Possible Future Design" section for the target architecture.
+Mentci also grows toward prompt-to-work routing, but as one of three components and not the owner of the flow: a prompt enters Mentci, `orchestrate` decides whether to reuse or create a session and opens it, and `harness` runs Claude **headless** and observes it. Mentci is the **view** onto that headless session — user-interface ingress and egress only, holding no provider, session-choice, or process-liveness logic. The harness process and terminal-cell beneath it are dumb infrastructure; a terminal-cell attach is an optional convenience for a raw terminal, not the required host through which the session must run. The first proof runs on a sandboxed jj task, not on primary. See the "Possible Future Design" section for the target architecture.
 
 ## Engines
 
@@ -87,62 +87,85 @@ around the runtime slice, not blockers to the contract-shaped daemon boot.
 ## Possible Future Design — Prompt-To-Work Sessions Across Mentci, Orchestrate, and Harness
 
 This section is accepted target architecture for the next slice, not current daemon
-behavior. It supersedes the earlier "Prompt-To-Bead-Weave Harness Sessions"
-direction, which placed the terminal-cell driver and the harness adapters inside
+behavior. It supersedes two earlier framings. The first, "Prompt-To-Bead-Weave
+Harness Sessions," placed the terminal-cell driver and the harness adapters inside
 Mentci, made `orchestrate` an address-only lane registry, and kept no harness daemon
-in the loop. The psyche accepted the opposite ownership split, so that older
-direction is retired.
+in the loop. The second still treated a live terminal-cell PTY as the required host
+that harness drives and Mentci mirrors. The psyche accepted a headless split
+instead: **Claude runs headless as the engine, Mentci is the view, and the harness
+process plus terminal-cell are dumb infrastructure.** A working demo proved the
+headless engine, continuity across a full harness teardown, and self-healing resume
+end-to-end (mentci commit `7a0c8e44`), so both older framings are retired.
 
 The detailed typed message and durable record schemas for this design are not
 duplicated here. They live in the accepted design spec in the primary workspace at
 `agent-outputs/MentciOrchestrateSessionFlow/Design-SessionFlowSpec.md` (with its
-adversarial review alongside). This section records the durable direction and
-boundaries; the spec carries the wire and store detail an implementer needs.
+adversarial review and headless-demo evidence alongside). This section records the
+durable direction and boundaries; the spec carries the wire, store, and
+headless-invocation detail an implementer needs.
 
 ### Three ownership regions
 
 A prompt becomes running agent work by crossing three components, each owning one
 concern and nothing more:
 
-- **Mentci — user interface, message ingress and egress only.** Mentci accepts a
-  prompt from a client, forwards it, and renders the live session back to the
-  client. It holds no provider, launch, session-choice, or liveness logic; it does
-  not distinguish Claude from any other harness, and it never spawns or drives a
-  process. Any work-surface or hard-constraint values that ride with a prompt are
-  opaque routing hints Mentci forwards verbatim — Mentci does not compute launch or
-  sandbox posture.
+- **Mentci — the view; user-interface message ingress and egress only.** Mentci
+  accepts a prompt from a client, forwards it, and renders the running session back
+  to the client as its view. It holds no provider, launch, session-choice, or
+  liveness logic; it does not distinguish Claude from any other harness, and it
+  never spawns or drives a process. Any work-surface or hard-constraint values that
+  ride with a prompt are opaque routing hints Mentci forwards verbatim — Mentci does
+  not compute launch or sandbox posture. The view is not tied to one window: the
+  design does not foreclose several Mentci windows rendering the same canonical
+  session across multiple monitors, though multi-window rendering is not built yet.
 - **Orchestrate — session choose, create, reuse, archive, and owner of the durable
-  session store.** Orchestrate decides whether a prompt continues an existing
-  session or starts a new one, allocates a harness instance, opens the session on
-  it, and records the session in a durable store modeled on its existing `Worktree`
-  record. Session archive and garbage collection are orchestrate-owned and
-  stop-driven. Orchestrate owns the session identity; it is not an address-only
-  registry.
-- **Harness — Claude launch, observe, and close, driven through terminal-cell.**
-  Harness builds the launch command, drives the process through the external
-  `terminal-cell` PTY primitive, observes the running session, and closes it.
-  Liveness — the send and read loop, idle and stall detection, exit — lives in
-  harness, not in Mentci. The provider-neutral adapter that turns a launch request
-  into argv and classifies transcript output into neutral events lives here too.
+  session store.** Orchestrate decides whether a prompt continues an existing session
+  or starts a new one, opens the session, and records it in a durable store modeled
+  on its existing `Worktree` record. The store's load-bearing field is the
+  **resumable session-id**: that id, together with the session's stable working
+  directory, is the durable carrier of a session across turns — not a live process.
+  Session archive and garbage collection are orchestrate-owned and stop-driven.
+  Orchestrate owns the session identity; it is not an address-only registry.
+- **Harness — runs Claude headless, observes, and closes; ephemeral.** Harness builds
+  the launch, runs Claude in headless mode as the engine, observes the streamed
+  events and the transcript, and closes. It need not stay running between turns: once
+  a turn is done the harness is free to tear down entirely, because the session
+  survives as its resumable id in orchestrate's store (see the lifecycle section).
+  The provider-neutral adapter that turns a launch request into a headless invocation
+  and classifies output into neutral events lives here too.
 
-`terminal-cell` stays a generic PTY primitive underneath harness; it is not harness-
-or provider-specific.
+The harness process and `terminal-cell` beneath it are **dumb infrastructure**, not
+the seat of the session. `terminal-cell` stays a generic PTY primitive; attaching a
+live terminal-cell view to a running session is an **optional convenience** for a
+human who wants a raw terminal, no longer the required host through which the session
+must run. Headless is the default engine path.
 
-### Session routing — the closed model call
+### Prompt treatment — a future meta-phase
 
-A cheap, contained model call reads each incoming prompt and decides prompt to
-existing-versus-new session, emitting a fixed-schema plan (scaffold pointers,
-session identity, stop conditions, sandbox posture). This is the engine formerly
-called "preflight"; it is renamed **session routing** (`SessionRouter` /
-`RouteSession` / `SessionRoutingPlan`) and owned by orchestrate. The rename is
-deliberate: "preflight" named *when* the call ran (at Mentci's front door); the
-honest name is *what* it does — route a prompt to a session decision. It is a
-closed, fixed-schema model call, distinct from the open-ended AI that runs inside a
-harness. It also composes cleanly against the per-turn **message router** — the
-deferred path that delivers subsequent turns into a live session: the session router
-runs once per prompt-to-session, the message router once per turn.
+Before a prompt reaches a session it will pass through **prompt treatment**: a future
+meta-stage that reads an incoming prompt and decides what to do with it. This is
+direction, not built work — nothing here specs it out. Prompt treatment is expected
+to hold several sub-treatments:
 
-### Typed message flow and instance addressing
+- **Session routing** — the closed, fixed-schema model call that decides
+  prompt-to-existing-versus-new-session and emits a launch plan (scaffold pointers,
+  session identity, stop conditions, sandbox posture). This is the engine formerly
+  called "preflight"; the rename is deliberate — "preflight" named *when* the call
+  ran (at Mentci's front door), and the honest name is *what* it does — but it is now
+  understood as **one sub-treatment of prompt treatment**, not the whole front door.
+  It is a closed model call, distinct from the open-ended AI that runs inside a
+  harness, and it composes against a per-turn **message router** (the deferred path
+  that delivers subsequent turns into a live session): the session router runs once
+  per prompt-to-session, the message router once per turn.
+- **Intent detection**, and a **summarized feed** of each prompt into a long-lived
+  meta / dialogue session kept synced across all sessions, are further sub-treatments
+  the psyche has floated.
+
+Only session routing is carried in the design spec. The wider prompt-treatment
+meta-phase and its other sub-treatments are recorded here as direction and are
+explicitly not designed or implemented now.
+
+### Typed message flow and instance allocation
 
 The three components talk over their typed signal contracts, producers pushing and
 consumers subscribing rather than polling:
@@ -150,27 +173,29 @@ consumers subscribing rather than polling:
 1. A client submits a prompt to Mentci over `signal-mentci`.
 2. Mentci forwards it to orchestrate over `signal-orchestrate` (a new
    Mentci-to-orchestrate dependency that does not exist today).
-3. Orchestrate runs the session-routing model call, consults its session store,
-   decides reuse-versus-create, reserves a free harness instance, and opens the
-   session on it over `signal-harness`.
-4. Harness drives the session through terminal-cell and pushes provider-neutral
-   transcript and lifecycle events. Orchestrate subscribes to keep its store fresh;
-   Mentci subscribes to render live output. Both watch the same instance stream —
-   many watchers of one session, not many sessions on one stream.
+3. Orchestrate runs prompt treatment (session routing), consults its session store,
+   decides reuse-versus-create, and opens the session by driving harness over
+   `signal-harness` — a fresh headless run for a new session, or a resume of the
+   stored session-id for a reused one.
+4. Harness runs Claude headless and pushes provider-neutral transcript and lifecycle
+   events. Orchestrate subscribes to keep its store fresh — above all the recovered
+   session-id — while Mentci subscribes to render the session as its view. Both watch
+   the same session stream: many watchers of one session, not many sessions on one
+   stream.
 
-**One session per harness instance.** A harness instance is fixed at daemon startup,
-carries one harness kind and one terminal endpoint, and hosts exactly one live
-session; its name is the whole live-session key. There is no session multiplexing
-inside an instance. Many concurrent sessions are realized as many instances drawn
-from the fixed configured pool — long, compaction-heavy runs coexist by occupying
-distinct instances, never by contending for one slot. Concurrency is bounded by the
-pool, and there is no eviction. Because distinct routes can race for the last free
-instance, orchestrate reserves an instance atomically — conditional on no other live
-session already holding it — before it opens, so two routes cannot double-book one
-instance. The durable session identity outlives any single instance: a session goes
-idle when its agent stops and later resumes on whatever instance is free.
+**A live turn runs on one harness instance, but the session is not the instance.**
+While a turn is running it occupies a single harness instance drawn from the fixed
+configured pool, and no two turns multiplex one instance. But the durable session is
+the resumable id in orchestrate's store, not the instance: between turns the harness
+may tear down completely, and the next turn resumes the same session-id — from the
+session's stable working directory — on whatever instance is free. Many concurrent
+sessions are realized as many instances; long, compaction-heavy runs coexist by
+occupying distinct instances, never by contending for one slot; concurrency is
+bounded by the pool and there is no eviction. Because distinct routes can race for
+the last free instance, orchestrate reserves an instance atomically — conditional on
+no other live turn already holding it — before it opens.
 
-### Session lifecycle — done when it stops, never interrupted
+### Session lifecycle — done when it stops, never interrupted; the session outlives the harness
 
 The governing principle, a fixed psyche ruling, frames the whole lifecycle: **a
 session is done when it stops, and nothing may interrupt a running one.**
@@ -182,11 +207,31 @@ stops the agent, and the run stays free to keep working. What the principle forb
 is a forced stop — eviction, archival, or forced handover — of a run that has not
 itself stopped. A large flow may legitimately consume a great deal of context and
 pass through several compactions before it finishes; that is normal and must never
-trigger eviction, archival, or a forced handover. The consequences the design must
-preserve:
+trigger eviction, archival, or a forced handover.
 
-- A session leaves the hot set only on a harness-reported stop. There is no
-  wall-clock age sweep.
+**The session outlives the harness.** Because Claude runs headless, the harness
+process is ephemeral: it need not stay running once a turn is done. The durable
+carrier of a session across turns is the **resumable session-id tracked in
+orchestrate's store**, not a live process. Continuing a session is *resuming that id
+with the additional prompt* — a fresh headless run against the stored id, from the
+session's stable working directory. A session between turns is therefore not "hot" in
+any process; it is a resumable id waiting for its next prompt. The headless demo
+proved this: a follow-up prompt recalled a fact from a first turn after that first
+turn's harness had fully torn down (mentci commit `7a0c8e44`).
+
+**Self-heal on a lost session.** A guidance or steering prompt may arrive for a
+session whose id the engine no longer knows — a torn-down or expired session that
+reports "no such session." That is handled by **re-resuming**: attempt the resume,
+and if the id is truly gone, mint a fresh session and run the prompt into it, updating
+the store. The lost-session error is a typed outcome that falls through to a fresh
+launch, never a failure the user sees. The demo's self-heal path proved this too.
+
+The consequences the design must preserve:
+
+- A session leaves the hot set only on a harness-reported stop; there is no
+  wall-clock age sweep. Under the headless/ephemeral model, "leaving the hot set" is
+  the ordinary end of a turn: the harness tears down and the session reverts to a
+  resumable id.
 - **Staleness is measured in context size, not elapsed time.** A session's "age" for
   reuse and handover is the context (token) size it has accumulated, not how long it
   has been quiet. Around 100K tokens a session is long but fully resumable; around
@@ -199,39 +244,58 @@ preserve:
 **The context figure is the harness's own number, read passively — never
 self-calculated.** Its **primary** source is the Claude Code statusline JSON payload
 (its `context_window` block, carrying a native past-200K flag), which Claude Code
-pushes to a passive, structured statusline command on its own cadence. That
-statusline figure is primary and stays primary, because it is the only source that
-reports while the agent is actively working mid-turn. Harness forwards that figure
-into its session observations. It never sums transcript usage tokens itself — that
-transcript format is documented as internal and version-unstable. Injecting
-`/context` into a session is a permitted **at-rest-only fallback**: it is a query
-message, not an interrupt, but it renders a usable figure only when the session is
-idle (between turns), so it is scoped to at-rest sessions — inject `/context` and
-parse its rendered output when the primary statusline figure is missing for an idle
-session. Where no figure has ever been observed, the session is treated as of unknown
-size and fully reusable; no number is synthesized to fill the gap.
+pushes to a passive, structured statusline command on its own cadence. That statusline
+figure is primary and stays primary, because it is the only source that reports while
+the agent is actively working mid-turn. Harness forwards that figure into its session
+observations. It never sums transcript usage tokens itself — that transcript format is
+documented as internal and version-unstable. Injecting `/context` into a session is a
+permitted **at-rest-only fallback**: it is a query message, not an interrupt, but it
+renders a usable figure only when the session is idle (between turns), so it is scoped
+to at-rest sessions — inject `/context` and parse its rendered output when the primary
+statusline figure is missing for an idle session. Where no figure has ever been
+observed, the session is treated as of unknown size and fully reusable; no number is
+synthesized to fill the gap.
+
+**Open item — does headless emit the statusline? (to be settled by the live-view
+build).** The context-size mechanism just above sources its figure from the Claude
+Code statusline `context_window` payload, which assumed a running TUI/statusline. The
+proven engine path is headless `claude -p`, where the statusline may never be emitted,
+while the stream-json output instead carries a per-message `usage` token breakdown. If
+headless emits no statusline, the context figure would have to come from that
+stream-json `usage` — which reopens the "never self-calculate; read the harness's own
+number" decision above, since a per-message usage total is closer to a self-sum than
+to the harness's single authoritative figure. This is left unresolved on purpose: the
+live-view build settles whether headless emits a usable statusline and, if not, which
+stream-json usage figure is authoritative. The staleness mechanism is not rewritten
+here.
 
 ### First proof and preserved constraints
 
-The first proof domain is a sandboxed jj task and must never run against
-`/home/li/primary` as a jj working copy; private scope stays closed by default. The
-scaffold stays minimal — `skills/skills.nota` as the expansion index plus enough
-local context to start — and the session agent expands its own context from there.
-The proof value is the working slice and the failure modes it exposes (invalid
-routing output, missing required skills, sandbox violation, process start failure,
-idle timeout, stalled output, close failure, adapter-level launch/read/write errors);
-no savings metric is required for the first pass.
+The first proof domain is a sandboxed jj task, run headless, and must never run
+against `/home/li/primary` as a jj working copy; private scope stays closed by
+default. The scaffold stays minimal — `skills/skills.nota` as the expansion index
+plus enough local context to start — and the session agent expands its own context
+from there. The proof value is the working slice and the failure modes it exposes
+(invalid routing output, missing required skills, sandbox violation, process start
+failure, lost/expired session, idle timeout, stalled output, close failure,
+adapter-level launch/read/write errors); no savings metric is required for the first
+pass.
 
 ### Open decisions (not yet settled)
 
 Recorded so they are not mistaken for accepted architecture; the design spec carries
 the detail and evidence:
 
-- terminal-cell versus the archived terminal-daemon for the live proof: settled
-  intent picks terminal-cell, but reaching a working Claude TUI through
-  terminal-cell's launch surface is unproven.
-- No resume-id validity probe exists anywhere; a failed `--resume` is handled by
-  attempt-and-fall-through to a fresh launch, which must be shown to fail gracefully.
+- **Headless statusline versus stream-json usage for the context figure** — see the
+  marked open item in the lifecycle section. Whether headless `claude -p` emits a
+  usable statusline, and if not which stream-json `usage` figure is authoritative, is
+  to be settled by the live-view build; the staleness mechanism is not rewritten in
+  the meantime.
+- The optional live terminal-cell attach view: settled intent makes terminal-cell an
+  optional convenience rather than the required host, so reaching a working attached
+  terminal view through terminal-cell's launch surface (versus the archived
+  terminal-daemon) is unproven and only matters for that optional view, not for the
+  headless engine path.
 - Provider and model vocabulary: one owner for the session record's provider kind,
   one model type across its lifecycle (launch knob, observed, stored), and a
   provider-neutral resume locator.
@@ -239,4 +303,5 @@ the detail and evidence:
   orchestrate (opens sessions) and the deferred message-router (delivers turns) — so
   the harness contract's "router" prose should name both explicitly.
 - Exact Claude Code statusline field spellings and their stability against the
-  installed Claude Code version.
+  installed Claude Code version (relevant only if headless is found to emit the
+  statusline at all).
