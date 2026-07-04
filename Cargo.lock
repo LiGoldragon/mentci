@@ -142,7 +142,7 @@ dependencies = [
 [[package]]
 name = "criome"
 version = "0.4.3"
-source = "git+https://github.com/LiGoldragon/criome?branch=drop-next#42ce3086a37e28654626988d7e25d055aa00b7a0"
+source = "git+https://github.com/LiGoldragon/criome?branch=drop-next#cf92deca79f01979ad15c314084fd690c1b30543"
 dependencies = [
  "blake3",
  "blst",
@@ -504,7 +504,7 @@ dependencies = [
 [[package]]
 name = "mentci-lib"
 version = "0.1.0"
-source = "git+https://github.com/LiGoldragon/mentci-lib?branch=drop-next#73bb4981716b2573876dbedb16355819e0c30a8f"
+source = "git+https://github.com/LiGoldragon/mentci-lib?branch=drop-next#8f49ebc40b9ff56d17f43063453a6f6a789339b0"
 dependencies = [
  "meta-signal-criome",
  "meta-signal-mentci",
@@ -518,7 +518,7 @@ dependencies = [
 [[package]]
 name = "meta-signal-criome"
 version = "0.3.0"
-source = "git+https://github.com/LiGoldragon/meta-signal-criome?branch=drop-next#4087b9996e9a647c7ff4b4b3dcf9af51ec284274"
+source = "git+https://github.com/LiGoldragon/meta-signal-criome?branch=drop-next#2de0ad4f56327bd7cc7dc558cd1551a0ee6ae7e6"
 dependencies = [
  "nota",
  "rkyv",
@@ -531,7 +531,7 @@ dependencies = [
 [[package]]
 name = "meta-signal-mentci"
 version = "0.1.0"
-source = "git+https://github.com/LiGoldragon/meta-signal-mentci?branch=drop-next#1c1ea8f9c680e1ececefadb8960a1606a008425f"
+source = "git+https://github.com/LiGoldragon/meta-signal-mentci?branch=drop-next#a0edf48e57e751e1122afb940c39ea3be0d1ed6b"
 dependencies = [
  "nota",
  "rkyv",
@@ -892,7 +892,7 @@ dependencies = [
 [[package]]
 name = "schema-rust"
 version = "0.5.3"
-source = "git+https://github.com/LiGoldragon/schema-rust.git?branch=drop-next#af814e757cd84fb0b3b8cce9c0623f69b6d99b5c"
+source = "git+https://github.com/LiGoldragon/schema-rust.git?branch=drop-next#67b91f5a6a70eced5854f27c7af8b39ace7e2d88"
 dependencies = [
  "nota",
  "prettyplease",
@@ -1030,7 +1030,7 @@ checksum = "f8fadd59c855ef2080decdef8ff161eb6661b86933c9d82e5ba29dc602a55aba"
 [[package]]
 name = "signal-criome"
 version = "0.6.0"
-source = "git+https://github.com/LiGoldragon/signal-criome?branch=drop-next#d021b352ec93ec9059b42e3499adc063d6d3fc41"
+source = "git+https://github.com/LiGoldragon/signal-criome?branch=drop-next#4c1aa76ac647899db3c60b380f0642cdd10019b9"
 dependencies = [
  "blake3",
  "blst",
@@ -1087,7 +1087,7 @@ dependencies = [
 [[package]]
 name = "signal-harness"
 version = "0.3.0"
-source = "git+https://github.com/LiGoldragon/signal-harness.git?branch=drop-next#a2d15efcb8348d9493e0dc35935358011b2b716a"
+source = "git+https://github.com/LiGoldragon/signal-harness.git?branch=drop-next#55764d42ae9cdb4451e33da7395e59840b36b2fd"
 dependencies = [
  "nota",
  "rkyv",
@@ -1130,7 +1130,7 @@ dependencies = [
 [[package]]
 name = "signal-introspect"
 version = "0.1.0"
-source = "git+https://github.com/LiGoldragon/signal-introspect.git?branch=drop-next#f4554aee986f470001aa44684c062d1049cfa7cd"
+source = "git+https://github.com/LiGoldragon/signal-introspect.git?branch=drop-next#8e21781c45156811bbcdfbd3700e5f5b6978449d"
 dependencies = [
  "nota",
  "rkyv",
@@ -1144,7 +1144,7 @@ dependencies = [
 [[package]]
 name = "signal-mentci"
 version = "0.2.0"
-source = "git+https://github.com/LiGoldragon/signal-mentci?branch=drop-next#6ea1dca986a4e5918b5e135110f0ac235d7590c5"
+source = "git+https://github.com/LiGoldragon/signal-mentci?branch=drop-next#c64d7e432924cf75dd7ccf3e43dd5fc26b9e9691"
 dependencies = [
  "nota",
  "rkyv",
@@ -1157,7 +1157,7 @@ dependencies = [
 [[package]]
 name = "signal-message"
 version = "0.3.0"
-source = "git+https://github.com/LiGoldragon/signal-message.git?branch=drop-next#8f2ad02bf9fc5a8dbbae016b7c3bee1a2c8653f5"
+source = "git+https://github.com/LiGoldragon/signal-message.git?branch=drop-next#d16630469312c28071df5aa6feb5a862c9bbfe9d"
 dependencies = [
  "nota",
  "rkyv",
@@ -1169,7 +1169,7 @@ dependencies = [
 [[package]]
 name = "signal-persona"
 version = "0.2.0"
-source = "git+https://github.com/LiGoldragon/signal-persona.git?branch=drop-next#97f630a0bad0ca368d9ced267d47e26b1729be15"
+source = "git+https://github.com/LiGoldragon/signal-persona.git?branch=drop-next#1a4b232a99563f27245c38952457bedca4dfa66a"
 dependencies = [
  "nota",
  "rkyv",
@@ -1189,7 +1189,7 @@ dependencies = [
 [[package]]
 name = "signal-terminal"
 version = "0.2.2"
-source = "git+https://github.com/LiGoldragon/signal-terminal.git?branch=drop-next#632c51f34a21886bcbb01137311c8be276e6402a"
+source = "git+https://github.com/LiGoldragon/signal-terminal.git?branch=drop-next#41ef8763f5bba50394fd5c5b71fa3de60afe264e"
 dependencies = [
  "nota",
  "rkyv",
@@ -1253,7 +1253,7 @@ dependencies = [
 [[package]]
 name = "terminal-cell"
 version = "0.1.0"
-source = "git+https://github.com/LiGoldragon/terminal-cell?branch=drop-next#4676a60673a580ecc8d28e938f3c46bfbf1f5927"
+source = "git+https://github.com/LiGoldragon/terminal-cell?branch=drop-next#d879672da92c5776811bac9ff211e0c1e514168b"
 dependencies = [
  "crossterm",
  "kameo",
