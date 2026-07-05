@@ -142,7 +142,7 @@ dependencies = [
 [[package]]
 name = "criome"
 version = "0.4.3"
-source = "git+https://github.com/LiGoldragon/criome?branch=drop-next#06c508e77c5e3dd106d065f99bf12f9a2fa079cd"
+source = "git+https://github.com/LiGoldragon/criome?branch=main#06c508e77c5e3dd106d065f99bf12f9a2fa079cd"
 dependencies = [
  "blake3",
  "blst",
@@ -152,7 +152,7 @@ dependencies = [
  "rustix 1.1.4",
  "sema-engine",
  "signal-criome",
- "signal-frame 0.3.0 (git+https://github.com/LiGoldragon/signal-frame?branch=drop-next)",
+ "signal-frame 0.3.0 (git+https://github.com/LiGoldragon/signal-frame?branch=main)",
  "thiserror 2.0.18",
  "tokio",
  "triad-runtime",
@@ -490,7 +490,7 @@ dependencies = [
  "nota",
  "rkyv",
  "signal-criome",
- "signal-frame 0.3.0 (git+https://github.com/LiGoldragon/signal-frame?branch=drop-next)",
+ "signal-frame 0.3.0 (git+https://github.com/LiGoldragon/signal-frame?branch=main)",
  "signal-harness",
  "signal-introspect",
  "signal-mentci",
@@ -504,13 +504,13 @@ dependencies = [
 [[package]]
 name = "mentci-lib"
 version = "0.1.0"
-source = "git+https://github.com/LiGoldragon/mentci-lib?branch=drop-next#114bd4489fdc0686af18fec45ad92169b3b400ee"
+source = "git+https://github.com/LiGoldragon/mentci-lib?branch=main#114bd4489fdc0686af18fec45ad92169b3b400ee"
 dependencies = [
  "meta-signal-criome",
  "meta-signal-mentci",
  "nota",
  "signal-criome",
- "signal-frame 0.3.0 (git+https://github.com/LiGoldragon/signal-frame?branch=drop-next)",
+ "signal-frame 0.3.0 (git+https://github.com/LiGoldragon/signal-frame?branch=main)",
  "signal-mentci",
  "thiserror 2.0.18",
 ]
@@ -518,25 +518,25 @@ dependencies = [
 [[package]]
 name = "meta-signal-criome"
 version = "0.3.0"
-source = "git+https://github.com/LiGoldragon/meta-signal-criome?branch=drop-next#37e4b427be02ce2a8145bf0ebbc2751d81a32861"
+source = "git+https://github.com/LiGoldragon/meta-signal-criome?branch=main#37e4b427be02ce2a8145bf0ebbc2751d81a32861"
 dependencies = [
  "nota",
  "rkyv",
  "schema-rust",
  "signal-criome",
- "signal-frame 0.3.0 (git+https://github.com/LiGoldragon/signal-frame?branch=drop-next)",
+ "signal-frame 0.3.0 (git+https://github.com/LiGoldragon/signal-frame?branch=main)",
  "thiserror 2.0.18",
 ]
 
 [[package]]
 name = "meta-signal-mentci"
 version = "0.1.0"
-source = "git+https://github.com/LiGoldragon/meta-signal-mentci?branch=drop-next#009a198360d7c8f4327af1dac4353e91b11f7770"
+source = "git+https://github.com/LiGoldragon/meta-signal-mentci?branch=main#009a198360d7c8f4327af1dac4353e91b11f7770"
 dependencies = [
  "nota",
  "rkyv",
  "schema-rust",
- "signal-frame 0.3.0 (git+https://github.com/LiGoldragon/signal-frame?branch=drop-next)",
+ "signal-frame 0.3.0 (git+https://github.com/LiGoldragon/signal-frame?branch=main)",
  "thiserror 2.0.18",
 ]
 
@@ -867,7 +867,7 @@ checksum = "b39cdef0fa800fc44525c84ccb54a029961a8215f9619753635a9c0d2538d46d"
 [[package]]
 name = "schema"
 version = "0.2.0"
-source = "git+https://github.com/LiGoldragon/schema.git?branch=drop-next#a393c8c822cea737d7ed8e823eae7d821ea19bf2"
+source = "git+https://github.com/LiGoldragon/schema.git?branch=main#a393c8c822cea737d7ed8e823eae7d821ea19bf2"
 dependencies = [
  "blake3",
  "nota",
@@ -879,7 +879,7 @@ dependencies = [
 [[package]]
 name = "schema-cc"
 version = "0.1.0"
-source = "git+https://github.com/LiGoldragon/schema.git?branch=drop-next#a393c8c822cea737d7ed8e823eae7d821ea19bf2"
+source = "git+https://github.com/LiGoldragon/schema.git?branch=main#a393c8c822cea737d7ed8e823eae7d821ea19bf2"
 dependencies = [
  "nota",
  "prettyplease",
@@ -892,7 +892,7 @@ dependencies = [
 [[package]]
 name = "schema-rust"
 version = "0.5.3"
-source = "git+https://github.com/LiGoldragon/schema-rust.git?branch=drop-next#72c71ffc558fee0d29c5b0517013de46e0307597"
+source = "git+https://github.com/LiGoldragon/schema-rust.git?branch=main#72c71ffc558fee0d29c5b0517013de46e0307597"
 dependencies = [
  "nota",
  "prettyplease",
@@ -1030,26 +1030,26 @@ checksum = "f8fadd59c855ef2080decdef8ff161eb6661b86933c9d82e5ba29dc602a55aba"
 [[package]]
 name = "signal-criome"
 version = "0.6.0"
-source = "git+https://github.com/LiGoldragon/signal-criome?branch=drop-next#b4bfeecef41a05a6a93b7909976ab5312a17fa46"
+source = "git+https://github.com/LiGoldragon/signal-criome?branch=main#b4bfeecef41a05a6a93b7909976ab5312a17fa46"
 dependencies = [
  "blake3",
  "blst",
  "nota",
  "rkyv",
  "schema-rust",
- "signal-frame 0.3.0 (git+https://github.com/LiGoldragon/signal-frame?branch=drop-next)",
+ "signal-frame 0.3.0 (git+https://github.com/LiGoldragon/signal-frame?branch=main)",
  "thiserror 2.0.18",
 ]
 
 [[package]]
 name = "signal-frame"
 version = "0.3.0"
-source = "git+https://github.com/LiGoldragon/signal-frame?branch=drop-next#44d22a07e75e6d2ff13581a5bb84d47c6ef35e97"
+source = "git+https://github.com/LiGoldragon/signal-frame?branch=main#44d22a07e75e6d2ff13581a5bb84d47c6ef35e97"
 dependencies = [
  "nota",
  "paste",
  "rkyv",
- "signal-frame-macros 0.1.1 (git+https://github.com/LiGoldragon/signal-frame?branch=drop-next)",
+ "signal-frame-macros 0.1.1 (git+https://github.com/LiGoldragon/signal-frame?branch=main)",
  "thiserror 2.0.18",
 ]
 
@@ -1067,7 +1067,7 @@ dependencies = [
 [[package]]
 name = "signal-frame-macros"
 version = "0.1.1"
-source = "git+https://github.com/LiGoldragon/signal-frame?branch=drop-next#44d22a07e75e6d2ff13581a5bb84d47c6ef35e97"
+source = "git+https://github.com/LiGoldragon/signal-frame?branch=main#44d22a07e75e6d2ff13581a5bb84d47c6ef35e97"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -1087,11 +1087,11 @@ dependencies = [
 [[package]]
 name = "signal-harness"
 version = "0.3.0"
-source = "git+https://github.com/LiGoldragon/signal-harness.git?branch=drop-next#4d9f5879ead06ccbf9221b0f5bef5c055b9acd9f"
+source = "git+https://github.com/LiGoldragon/signal-harness.git?branch=main#4d9f5879ead06ccbf9221b0f5bef5c055b9acd9f"
 dependencies = [
  "nota",
  "rkyv",
- "signal-frame 0.3.0 (git+https://github.com/LiGoldragon/signal-frame?branch=drop-next)",
+ "signal-frame 0.3.0 (git+https://github.com/LiGoldragon/signal-frame?branch=main)",
  "signal-persona",
  "thiserror 2.0.18",
 ]
@@ -1130,11 +1130,11 @@ dependencies = [
 [[package]]
 name = "signal-introspect"
 version = "0.1.0"
-source = "git+https://github.com/LiGoldragon/signal-introspect.git?branch=drop-next#3218655d675fefa1cb549286ed03f25fc2a67013"
+source = "git+https://github.com/LiGoldragon/signal-introspect.git?branch=main#3218655d675fefa1cb549286ed03f25fc2a67013"
 dependencies = [
  "nota",
  "rkyv",
- "signal-frame 0.3.0 (git+https://github.com/LiGoldragon/signal-frame?branch=drop-next)",
+ "signal-frame 0.3.0 (git+https://github.com/LiGoldragon/signal-frame?branch=main)",
  "signal-message",
  "signal-persona",
  "thiserror 2.0.18",
@@ -1144,37 +1144,37 @@ dependencies = [
 [[package]]
 name = "signal-mentci"
 version = "0.2.0"
-source = "git+https://github.com/LiGoldragon/signal-mentci?branch=drop-next#a1792c99ea5cb8f25bf547a7b26a5a1b0b669f53"
+source = "git+https://github.com/LiGoldragon/signal-mentci?branch=main#a1792c99ea5cb8f25bf547a7b26a5a1b0b669f53"
 dependencies = [
  "nota",
  "rkyv",
  "schema-rust",
  "signal-criome",
- "signal-frame 0.3.0 (git+https://github.com/LiGoldragon/signal-frame?branch=drop-next)",
+ "signal-frame 0.3.0 (git+https://github.com/LiGoldragon/signal-frame?branch=main)",
  "thiserror 2.0.18",
 ]
 
 [[package]]
 name = "signal-message"
 version = "0.3.0"
-source = "git+https://github.com/LiGoldragon/signal-message.git?branch=drop-next#0bd080fcd739bde92dbb76b83a6084541a31675a"
+source = "git+https://github.com/LiGoldragon/signal-message.git?branch=main#0bd080fcd739bde92dbb76b83a6084541a31675a"
 dependencies = [
  "nota",
  "rkyv",
  "schema-rust",
- "signal-frame 0.3.0 (git+https://github.com/LiGoldragon/signal-frame?branch=drop-next)",
+ "signal-frame 0.3.0 (git+https://github.com/LiGoldragon/signal-frame?branch=main)",
  "thiserror 2.0.18",
 ]
 
 [[package]]
 name = "signal-persona"
 version = "0.2.0"
-source = "git+https://github.com/LiGoldragon/signal-persona.git?branch=drop-next#9de82cd3a11270dd3c38ed507553c78ea703b25f"
+source = "git+https://github.com/LiGoldragon/signal-persona.git?branch=main#9de82cd3a11270dd3c38ed507553c78ea703b25f"
 dependencies = [
  "nota",
  "rkyv",
  "schema-rust",
- "signal-frame 0.3.0 (git+https://github.com/LiGoldragon/signal-frame?branch=drop-next)",
+ "signal-frame 0.3.0 (git+https://github.com/LiGoldragon/signal-frame?branch=main)",
 ]
 
 [[package]]
@@ -1189,12 +1189,12 @@ dependencies = [
 [[package]]
 name = "signal-terminal"
 version = "0.2.2"
-source = "git+https://github.com/LiGoldragon/signal-terminal.git?branch=drop-next#00f4cae37523424e01b53617882d96c586d69b3c"
+source = "git+https://github.com/LiGoldragon/signal-terminal.git?branch=main#00f4cae37523424e01b53617882d96c586d69b3c"
 dependencies = [
  "nota",
  "rkyv",
  "schema-rust",
- "signal-frame 0.3.0 (git+https://github.com/LiGoldragon/signal-frame?branch=drop-next)",
+ "signal-frame 0.3.0 (git+https://github.com/LiGoldragon/signal-frame?branch=main)",
  "thiserror 2.0.18",
 ]
 
@@ -1253,7 +1253,7 @@ dependencies = [
 [[package]]
 name = "terminal-cell"
 version = "0.1.0"
-source = "git+https://github.com/LiGoldragon/terminal-cell?branch=drop-next#da570acc3656ac5fb5097479092f6d26e9a6fb88"
+source = "git+https://github.com/LiGoldragon/terminal-cell?branch=main#da570acc3656ac5fb5097479092f6d26e9a6fb88"
 dependencies = [
  "crossterm",
  "kameo",
@@ -1262,7 +1262,7 @@ dependencies = [
  "regex",
  "rkyv",
  "schema-rust",
- "signal-frame 0.3.0 (git+https://github.com/LiGoldragon/signal-frame?branch=drop-next)",
+ "signal-frame 0.3.0 (git+https://github.com/LiGoldragon/signal-frame?branch=main)",
  "signal-hook",
  "signal-terminal",
  "thiserror 2.0.18",
@@ -1405,12 +1405,12 @@ dependencies = [
 [[package]]
 name = "triad-runtime"
 version = "0.6.1"
-source = "git+https://github.com/LiGoldragon/triad-runtime.git?branch=drop-next#f9a6a7c8ab50dbd5b5a8ef7bfd7ea8c9acb713e1"
+source = "git+https://github.com/LiGoldragon/triad-runtime.git?branch=main#f9a6a7c8ab50dbd5b5a8ef7bfd7ea8c9acb713e1"
 dependencies = [
  "kameo",
  "rkyv",
  "rustix 1.1.4",
- "signal-frame 0.3.0 (git+https://github.com/LiGoldragon/signal-frame?branch=drop-next)",
+ "signal-frame 0.3.0 (git+https://github.com/LiGoldragon/signal-frame?branch=main)",
  "thiserror 2.0.18",
  "tokio",
 ]
