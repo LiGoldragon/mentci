@@ -33,7 +33,7 @@
 ;;
 ;; STANDALONE / SELF-CONTAINED VOCABULARY. All record types are declared
 ;; locally; this schema lowers with ZERO imports through
-;; schema_next::SchemaEngine on current schema-next main. Cross-import of the
+;; schema::SchemaEngine on current schema main. Cross-import of the
 ;; signal-mentci payload types is deferred (Woe 4); local types tagged
 ;; ;; (engine boundary: signal-mentci)  identify the eventual mirror source.
 ;;

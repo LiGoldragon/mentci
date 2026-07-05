@@ -27,7 +27,7 @@
 ;; Cross-import is deferred by design (Woe 4): the signal-criome and
 ;; signal-standard payloads are not yet wired as imports here, and
 ;; signal-standard is not yet a crate. So this schema lowers with ZERO imports
-;; through schema_next::SchemaEngine on current schema-next main. Local types
+;; through schema::SchemaEngine on current schema main. Local types
 ;; tagged  ;; (engine boundary: …)  identify the eventual import / mirror source:
 ;; signal-mentci for the request payloads, sema.schema for the state receipts,
 ;; signal-criome / signal-standard for the escalation origin and standard socket.
