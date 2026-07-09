@@ -118,8 +118,8 @@ impl IntrospectionPane {
     fn new(body: impl Into<String>) -> Self {
         Self {
             content: PaneContent {
-                pane: PaneLabel::new(INTROSPECT_PANE_LABEL),
-                body: ContextBody::new(body.into()),
+                pane_label: PaneLabel::new(INTROSPECT_PANE_LABEL),
+                context_body: ContextBody::new(body.into()),
             },
         }
     }

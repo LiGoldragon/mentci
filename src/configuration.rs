@@ -70,6 +70,6 @@ impl DaemonConfiguration {
             .inner
             .component_socket(kind)
             .ok_or(Error::MissingComponentSocket { kind })?;
-        Ok(Path::new(component_socket.socket.payload().as_str()))
+        Ok(Path::new(component_socket.socket().payload().as_str()))
     }
 }

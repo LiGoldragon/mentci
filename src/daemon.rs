@@ -271,8 +271,8 @@ impl BoundDaemon {
         };
         bridge
             .fetch_parked_requests(signal_criome::ParkedRequestQuery {
-                session_slot: None,
-                target: None,
+                optional_mentci_session_slot: None,
+                optional_intercept_target_selector: None,
             })
             .map(|snapshot| snapshot.into_requests())
             .unwrap_or_default()
@@ -457,8 +457,8 @@ mod tests {
         let frame = MentciFrame::new(MentciFrameBody::Request {
             exchange: exchange(),
             request: MentciRequest::PushUpdate(InterfaceUpdate {
-                identifier: UpdateIdentifier::new("update-1"),
-                mutation: InterfaceMutation::SetStatus(StatusText::new("waiting")),
+                update_identifier: UpdateIdentifier::new("update-1"),
+                interface_mutation: InterfaceMutation::SetStatus(StatusText::new("waiting")),
             })
             .into_request(),
         });
@@ -556,8 +556,8 @@ mod tests {
         let frame = MentciFrame::new(MentciFrameBody::Request {
             exchange: exchange(),
             request: MentciRequest::ObserveInterfaceState(InterfaceStateObservation {
-                subscriber: SubscriberName::new("test-client"),
-                interest: InterfaceInterest::FullInterfaceState,
+                subscriber_name: SubscriberName::new("test-client"),
+                interface_interest: InterfaceInterest::FullInterfaceState,
             })
             .into_request(),
         });
@@ -578,13 +578,26 @@ mod tests {
             MentciFrameBody::Reply { reply, .. } => match reply {
                 Reply::Accepted { per_operation, .. } => match per_operation.into_head() {
                     SubReply::Ok(MentciReply::InterfaceObservationOpened(
-                        InterfaceObservationOpened { state, .. },
-                    )) => match state.projection {
+                        InterfaceObservationOpened {
+                            projected_interface_state,
+                            ..
+                        },
+                    )) => match projected_interface_state.interface_projection {
                         InterfaceProjection::FullProjection(full) => {
                             assert_eq!(full.panes().len(), 1);
-                            assert_eq!(full.panes()[0].pane.as_str(), "introspect");
-                            assert!(full.panes()[0].body.as_str().contains("PrototypeWitness"));
-                            assert!(full.panes()[0].body.as_str().contains("ComponentTrace"));
+                            assert_eq!(full.panes()[0].pane_label.as_str(), "introspect");
+                            assert!(
+                                full.panes()[0]
+                                    .context_body
+                                    .as_str()
+                                    .contains("PrototypeWitness")
+                            );
+                            assert!(
+                                full.panes()[0]
+                                    .context_body
+                                    .as_str()
+                                    .contains("ComponentTrace")
+                            );
                         }
                         other => panic!("expected full projection, got {other:?}"),
                     },

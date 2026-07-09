@@ -10,9 +10,8 @@ use signal_mentci::{
     InterfaceInterest, InterfaceMutation, InterfaceObservationOpened, InterfaceProjection,
     InterfaceState, InterfaceStateObservation, MentciReply, MentciRequest, NotificationSlice,
     NotificationText, PaneContent, PendingQuestionsView, ProjectedInterfaceState, PromptText,
-    ProposalDigest,
-    ProposalIdentifier, QuestionContext, QuestionIdentifier, QuestionPresented, Rejection,
-    RejectionReason, RevisionCounter, StatusText, SubscriptionToken, TimestampNanos,
+    ProposalDigest, ProposalIdentifier, QuestionContext, QuestionIdentifier, QuestionPresented,
+    Rejection, RejectionReason, RevisionCounter, StatusText, SubscriptionToken, TimestampNanos,
     UpdateAccepted,
 };
 
@@ -108,11 +107,11 @@ impl State {
                 StateApplication::reply(self.present_question(proposal))
             }
             MentciRequest::PushUpdate(update) => {
-                let identifier = update.identifier.clone();
-                self.apply_mutation(update.mutation);
+                let identifier = update.update_identifier.clone();
+                self.apply_mutation(update.interface_mutation);
                 StateApplication::reply(MentciReply::UpdateAccepted(UpdateAccepted {
-                    identifier,
-                    revision: self.current_revision(),
+                    update_identifier: identifier,
+                    revision_counter: self.current_revision(),
                 }))
             }
             MentciRequest::ObserveInterfaceState(observation) => {
@@ -153,8 +152,8 @@ impl State {
             if self.criome_request_slots.insert(approval.slot_key()) {
                 let question = self.mint_question_identifier();
                 self.pending_questions.push(ApprovalQuestion {
-                    identifier: question,
-                    proposal: approval.into_question_proposal(),
+                    question_identifier: question,
+                    question_proposal: approval.into_question_proposal(),
                 });
                 self.bump_revision();
             }
@@ -170,8 +169,8 @@ impl State {
             {
                 let question = self.mint_question_identifier();
                 self.pending_questions.push(ApprovalQuestion {
-                    identifier: question,
-                    proposal: interception.into_question_proposal(),
+                    question_identifier: question,
+                    question_proposal: interception.into_question_proposal(),
                 });
                 self.bump_revision();
             }
@@ -187,14 +186,14 @@ impl State {
     fn present_question(&mut self, proposal: signal_mentci::QuestionProposal) -> MentciReply {
         let question = self.mint_question_identifier();
         self.pending_questions.push(ApprovalQuestion {
-            identifier: question.clone(),
-            proposal,
+            question_identifier: question.clone(),
+            question_proposal: proposal,
         });
         self.bump_revision();
         MentciReply::QuestionPresented(QuestionPresented {
-            question,
-            revision: self.current_revision(),
-            accepted_at: self.current_time(),
+            question_identifier: question,
+            revision_counter: self.current_revision(),
+            timestamp_nanos: self.current_time(),
         })
     }
 
@@ -208,18 +207,18 @@ impl State {
                 let _ = self.set_pane(content);
             }
             InterfaceMutation::ClearPane(pane) => {
-                self.panes.retain(|content| content.pane != pane);
+                self.panes.retain(|content| content.pane_label != pane);
             }
             InterfaceMutation::PresentApprovalQuestion(proposal) => {
                 let question = self.mint_question_identifier();
                 self.pending_questions.push(ApprovalQuestion {
-                    identifier: question,
-                    proposal,
+                    question_identifier: question,
+                    question_proposal: proposal,
                 });
             }
             InterfaceMutation::WithdrawApprovalQuestion(identifier) => {
                 self.pending_questions
-                    .retain(|question| question.identifier != identifier);
+                    .retain(|question| question.question_identifier != identifier);
             }
         }
         self.bump_revision();
@@ -232,10 +231,10 @@ impl State {
     ) -> MentciReply {
         let token = self.mint_subscription_token();
         self.subscriptions
-            .insert(token.as_str().to_owned(), observation.interest);
+            .insert(token.as_str().to_owned(), observation.interface_interest);
         MentciReply::InterfaceObservationOpened(InterfaceObservationOpened {
-            token,
-            state: self.project(observation.interest, context),
+            subscription_token: token,
+            projected_interface_state: self.project(observation.interface_interest, context),
         })
     }
 
@@ -244,32 +243,32 @@ impl State {
         verdict: ApprovalVerdict,
         context: StateApplicationContext,
     ) -> StateApplication {
-        if matches!(verdict.decision, ApprovalDecision::Defer) {
+        if matches!(verdict.approval_decision, ApprovalDecision::Defer) {
             return StateApplication::reply(MentciReply::VerdictAccepted(
                 signal_mentci::VerdictAccepted {
-                    question: verdict.question,
-                    decision: verdict.decision,
-                    accepted_at: self.current_time(),
+                    question_identifier: verdict.question_identifier,
+                    approval_decision: verdict.approval_decision,
+                    timestamp_nanos: self.current_time(),
                 },
             ));
         }
         let Some(index) = self
             .pending_questions
             .iter()
-            .position(|question| question.identifier == verdict.question)
+            .position(|question| question.question_identifier == verdict.question_identifier)
         else {
             return StateApplication::reply(MentciReply::Rejection(Rejection::new(
                 RejectionReason::UnknownQuestion,
             )));
         };
         if self.pending_questions[index]
-            .proposal
-            .source
+            .question_proposal
+            .approval_source
             .criome_slot()
             .is_some()
             || self.pending_questions[index]
-                .proposal
-                .source
+                .question_proposal
+                .approval_source
                 .parked_request()
                 .is_some()
         {
@@ -280,14 +279,15 @@ impl State {
             }
         }
         let answered = self.pending_questions.remove(index);
-        let criome_effect = CriomeEffect::from_answered_question(&answered, verdict.decision);
+        let criome_effect =
+            CriomeEffect::from_answered_question(&answered, verdict.approval_decision);
         self.decisions.push(verdict.clone());
         self.bump_revision();
         StateApplication::with_criome_effect(
             MentciReply::VerdictAccepted(signal_mentci::VerdictAccepted {
-                question: verdict.question,
-                decision: verdict.decision,
-                accepted_at: self.current_time(),
+                question_identifier: verdict.question_identifier,
+                approval_decision: verdict.approval_decision,
+                timestamp_nanos: self.current_time(),
             }),
             criome_effect,
         )
@@ -297,14 +297,14 @@ impl State {
         if !self
             .pending_questions
             .iter()
-            .any(|question| question.identifier == proposal.question)
+            .any(|question| question.question_identifier == proposal.question_identifier)
         {
             return MentciReply::Rejection(Rejection::new(RejectionReason::UnknownQuestion));
         }
         let proposal_identifier = self.mint_proposal_identifier();
         let digest = ProposalDigest::new(format!(
             "answer-proposal-{}-{}",
-            proposal.question.as_str(),
+            proposal.question_identifier.as_str(),
             proposal_identifier.as_str()
         ));
         self.answer_proposals.push(AnswerProposalRecord {
@@ -314,10 +314,10 @@ impl State {
         });
         self.bump_revision();
         MentciReply::AnswerProposalAdmitted(AnswerProposalAdmitted {
-            proposal: proposal_identifier,
-            question: proposal.question,
-            digest,
-            revision: self.current_revision(),
+            proposal_identifier,
+            question_identifier: proposal.question_identifier,
+            proposal_digest: digest,
+            revision_counter: self.current_revision(),
         })
     }
 
@@ -335,13 +335,13 @@ impl State {
         match self
             .panes
             .iter_mut()
-            .find(|existing| existing.pane == content.pane)
+            .find(|existing| existing.pane_label == content.pane_label)
         {
             Some(existing) => {
                 if *existing == content {
                     return false;
                 }
-                existing.body = content.body;
+                existing.context_body = content.context_body;
                 true
             }
             None => {
@@ -363,18 +363,16 @@ impl State {
             InterfaceInterest::StatusOnly => {
                 InterfaceProjection::StatusProjection(self.status.clone())
             }
-            InterfaceInterest::Notifications => {
-                InterfaceProjection::NotificationProjection(NotificationSlice::from_current(
-                    self.notification.clone(),
-                ))
-            }
+            InterfaceInterest::Notifications => InterfaceProjection::NotificationProjection(
+                NotificationSlice::from_current(self.notification.clone()),
+            ),
             InterfaceInterest::PendingQuestions => InterfaceProjection::PendingQuestionsProjection(
                 PendingQuestionsView::from_questions(self.pending_questions.clone()),
             ),
         };
         ProjectedInterfaceState {
-            revision: self.current_revision(),
-            projection,
+            revision_counter: self.current_revision(),
+            interface_projection: projection,
         }
     }
 
@@ -415,18 +413,22 @@ impl CriomeEffect {
         answered: &ApprovalQuestion,
         decision: ApprovalDecision,
     ) -> Option<Self> {
-        if let Some(slot) = answered.proposal.source.criome_slot() {
+        if let Some(slot) = answered.question_proposal.approval_source.criome_slot() {
             return Some(Self::AuthorizationVerdict(CriomeVerdict::from_decision(
                 slot.clone(),
                 decision,
             )));
         }
-        answered.proposal.source.parked_request().map(|identifier| {
-            Self::ParkedRequestAnswer(ParkedRequestAnswer {
-                identifier: identifier.clone(),
-                decision: Self::parked_request_decision(decision),
+        answered
+            .question_proposal
+            .approval_source
+            .parked_request()
+            .map(|identifier| {
+                Self::ParkedRequestAnswer(ParkedRequestAnswer {
+                    parked_request_identifier: identifier.clone(),
+                    parked_request_decision: Self::parked_request_decision(decision),
+                })
             })
-        })
     }
 
     fn parked_request_decision(decision: ApprovalDecision) -> ParkedRequestDecision {
@@ -497,18 +499,18 @@ impl CriomeParkedApproval {
     }
 
     pub fn slot_key(&self) -> String {
-        self.parked.request_slot.payload().clone()
+        self.parked.authorization_request_slot.payload().clone()
     }
 
     pub fn into_question_proposal(self) -> signal_mentci::QuestionProposal {
-        let slot = self.parked.request_slot.payload().clone();
+        let slot = self.parked.authorization_request_slot.payload().clone();
         let mut context = vec![QuestionContext {
-            label: ContextLabel::new("criome-request-slot"),
-            body: ContextBody::new(slot.clone()),
+            context_label: ContextLabel::new("criome-request-slot"),
+            context_body: ContextBody::new(slot.clone()),
         }];
         let explanation = self.explanation_with_context(&mut context);
         signal_mentci::QuestionProposal::new(
-            ApprovalSource::CriomeEscalation(self.parked.request_slot.clone()),
+            ApprovalSource::CriomeEscalation(self.parked.authorization_request_slot.clone()),
             PromptText::new(format!("Authorize criome request {slot}")),
             Some(AnswerText::new("approve")),
             explanation,
@@ -518,23 +520,23 @@ impl CriomeParkedApproval {
 
     fn explanation_with_context(&self, context: &mut Vec<QuestionContext>) -> ExplanationText {
         if let Some(evaluation) = self.parked.evaluation() {
-            let object = &evaluation.object;
+            let object = &evaluation.authorized_object_reference;
             context.extend([
                 QuestionContext {
-                    label: ContextLabel::new("criome-kind"),
-                    body: ContextBody::new("authorization-evaluation"),
+                    context_label: ContextLabel::new("criome-kind"),
+                    context_body: ContextBody::new("authorization-evaluation"),
                 },
                 QuestionContext {
-                    label: ContextLabel::new("contract"),
-                    body: ContextBody::new(evaluation.contract.as_str()),
+                    context_label: ContextLabel::new("contract"),
+                    context_body: ContextBody::new(evaluation.contract_digest.as_str()),
                 },
                 QuestionContext {
-                    label: ContextLabel::new("object"),
-                    body: ContextBody::new(format!(
+                    context_label: ContextLabel::new("object"),
+                    context_body: ContextBody::new(format!(
                         "{:?}:{:?}:{}",
-                        object.component,
-                        object.kind,
-                        object.digest.as_str()
+                        object.component_kind,
+                        object.authorized_object_kind,
+                        object.object_digest.as_str()
                     )),
                 },
             ]);
@@ -545,31 +547,44 @@ impl CriomeParkedApproval {
         if let Some(authorization) = self.parked.signal_authorization() {
             context.extend([
                 QuestionContext {
-                    label: ContextLabel::new("criome-kind"),
-                    body: ContextBody::new("signal-call-authorization"),
+                    context_label: ContextLabel::new("criome-kind"),
+                    context_body: ContextBody::new("signal-call-authorization"),
                 },
                 QuestionContext {
-                    label: ContextLabel::new("request-digest"),
-                    body: ContextBody::new(authorization.request_digest.as_str()),
+                    context_label: ContextLabel::new("request-digest"),
+                    context_body: ContextBody::new(authorization.request_digest().as_str()),
                 },
                 QuestionContext {
-                    label: ContextLabel::new("contract"),
-                    body: ContextBody::new(authorization.contract.as_str()),
+                    context_label: ContextLabel::new("component"),
+                    context_body: ContextBody::new(format!(
+                        "{:?}",
+                        authorization.authorized_object_reference.component_kind
+                    )),
                 },
                 QuestionContext {
-                    label: ContextLabel::new("operation"),
-                    body: ContextBody::new(authorization.operation.as_str()),
+                    context_label: ContextLabel::new("object-kind"),
+                    context_body: ContextBody::new(format!(
+                        "{:?}",
+                        authorization
+                            .authorized_object_reference
+                            .authorized_object_kind
+                    )),
                 },
                 QuestionContext {
-                    label: ContextLabel::new("scope"),
-                    body: ContextBody::new(authorization.scope.as_str()),
+                    context_label: ContextLabel::new("object-digest"),
+                    context_body: ContextBody::new(
+                        authorization
+                            .authorized_object_reference
+                            .object_digest
+                            .as_str(),
+                    ),
                 },
                 QuestionContext {
-                    label: ContextLabel::new("requester"),
-                    body: ContextBody::new(format!("{:?}", authorization.requester)),
+                    context_label: ContextLabel::new("requester"),
+                    context_body: ContextBody::new(format!("{:?}", authorization.identity)),
                 },
             ]);
-            if let Some(spirit_context) = authorization.spirit_context() {
+            if let Some(spirit_context) = authorization.optional_spirit_authorization_context() {
                 context.extend(CriomeParkedInterception::spirit_context_rows(
                     spirit_context,
                 ));
@@ -588,46 +603,58 @@ impl CriomeParkedInterception {
     }
 
     pub fn identifier_key(&self) -> String {
-        self.parked.identifier.payload().clone()
+        self.parked.parked_request_identifier.payload().clone()
     }
 
     pub fn into_question_proposal(self) -> signal_mentci::QuestionProposal {
-        let identifier = self.parked.identifier.payload().clone();
-        let operation = self.parked.context.operation_name.as_str().to_owned();
-        let target = self.parked.context.target_key.as_str().to_owned();
+        let identifier = self.parked.parked_request_identifier.payload().clone();
+        let operation = self
+            .parked
+            .spirit_authorization_context
+            .spirit_operation_name
+            .as_str()
+            .to_owned();
+        let target = self
+            .parked
+            .spirit_authorization_context
+            .spirit_process_key
+            .as_str()
+            .to_owned();
         let mut context = vec![
             QuestionContext {
-                label: ContextLabel::new("criome-kind"),
-                body: ContextBody::new("parked-spirit-request"),
+                context_label: ContextLabel::new("criome-kind"),
+                context_body: ContextBody::new("parked-spirit-request"),
             },
             QuestionContext {
-                label: ContextLabel::new("parked-request"),
-                body: ContextBody::new(identifier.clone()),
+                context_label: ContextLabel::new("parked-request"),
+                context_body: ContextBody::new(identifier.clone()),
             },
             QuestionContext {
-                label: ContextLabel::new("matched-policy"),
-                body: ContextBody::new(self.parked.matched_policy.as_str()),
+                context_label: ContextLabel::new("matched-policy"),
+                context_body: ContextBody::new(self.parked.intercept_policy_identifier.as_str()),
             },
             QuestionContext {
-                label: ContextLabel::new("session-slot"),
-                body: ContextBody::new(self.parked.session_slot.as_str()),
+                context_label: ContextLabel::new("session-slot"),
+                context_body: ContextBody::new(self.parked.mentci_session_slot.as_str()),
             },
             QuestionContext {
-                label: ContextLabel::new("parked-at"),
-                body: ContextBody::new(self.parked.parked_at.payload().to_string()),
+                context_label: ContextLabel::new("parked-at"),
+                context_body: ContextBody::new(self.parked.parked_at.payload().to_string()),
             },
             QuestionContext {
-                label: ContextLabel::new("expires-at"),
-                body: ContextBody::new(self.parked.expires_at.payload().to_string()),
+                context_label: ContextLabel::new("expires-at"),
+                context_body: ContextBody::new(self.parked.expires_at.payload().to_string()),
             },
             QuestionContext {
-                label: ContextLabel::new("expiry-action"),
-                body: ContextBody::new(format!("{:?}", self.parked.expiry_action)),
+                context_label: ContextLabel::new("expiry-action"),
+                context_body: ContextBody::new(format!("{:?}", self.parked.expiry_action)),
             },
         ];
-        context.extend(Self::spirit_context_rows(&self.parked.context));
+        context.extend(Self::spirit_context_rows(
+            &self.parked.spirit_authorization_context,
+        ));
         signal_mentci::QuestionProposal::new(
-            ApprovalSource::CriomeInterception(self.parked.identifier),
+            ApprovalSource::CriomeInterception(self.parked.parked_request_identifier),
             PromptText::new(format!("Authorize Spirit {operation} for {target}")),
             Some(AnswerText::new("approve")),
             ExplanationText::new("criome parked a Spirit operation matched by intercept policy"),
@@ -640,16 +667,18 @@ impl CriomeParkedInterception {
     ) -> Vec<QuestionContext> {
         vec![
             QuestionContext {
-                label: ContextLabel::new("spirit-target"),
-                body: ContextBody::new(spirit_context.target_key.as_str()),
+                context_label: ContextLabel::new("spirit-target"),
+                context_body: ContextBody::new(spirit_context.spirit_process_key.as_str()),
             },
             QuestionContext {
-                label: ContextLabel::new("spirit-operation"),
-                body: ContextBody::new(spirit_context.operation_name.as_str()),
+                context_label: ContextLabel::new("spirit-operation"),
+                context_body: ContextBody::new(spirit_context.spirit_operation_name.as_str()),
             },
             QuestionContext {
-                label: ContextLabel::new("raw-spirit-payload"),
-                body: ContextBody::new(spirit_context.raw_payload.as_str()),
+                context_label: ContextLabel::new("raw-spirit-payload"),
+                context_body: ContextBody::new(
+                    spirit_context.raw_spirit_operation_payload.as_str(),
+                ),
             },
         ]
     }

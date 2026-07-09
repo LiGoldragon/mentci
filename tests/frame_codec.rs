@@ -21,8 +21,8 @@ fn codec_round_trips_length_prefixed_mentci_frame() {
     let frame = MentciFrame::new(MentciFrameBody::Request {
         exchange: exchange(),
         request: MentciRequest::PushUpdate(InterfaceUpdate {
-            identifier: UpdateIdentifier::new("update-1"),
-            mutation: InterfaceMutation::SetStatus(StatusText::new("waiting")),
+            update_identifier: UpdateIdentifier::new("update-1"),
+            interface_mutation: InterfaceMutation::SetStatus(StatusText::new("waiting")),
         })
         .into_request(),
     });

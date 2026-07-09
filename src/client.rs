@@ -212,9 +212,9 @@ impl ClientAnswerCommand {
     fn new(question: &str, decision: ApprovalDecision) -> Self {
         Self {
             verdict: ApprovalVerdict {
-                question: QuestionIdentifier::new(question),
-                decision,
-                answered_by: SubscriberName::new("mentci-cli"),
+                question_identifier: QuestionIdentifier::new(question),
+                approval_decision: decision,
+                subscriber_name: SubscriberName::new("mentci-cli"),
             },
         }
     }
@@ -353,8 +353,8 @@ impl ClientObservationRender {
             self.view.approval.subscription_count
         )?;
         for pane in &self.view.panes {
-            writeln!(writer, "pane {}", pane.pane.as_str())?;
-            writeln!(writer, "{}", pane.body.as_str())?;
+            writeln!(writer, "pane {}", pane.pane_label.as_str())?;
+            writeln!(writer, "{}", pane.context_body.as_str())?;
         }
         writeln!(
             writer,

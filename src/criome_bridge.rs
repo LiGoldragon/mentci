@@ -61,8 +61,8 @@ impl CriomeApprovalBridge {
         CriomeMetaClient::new(&self.meta_socket)
             .send(meta_signal_criome::Input::SubmitAuthorizationApproval(
                 AuthorizationApproval {
-                    request_slot,
-                    decision,
+                    authorization_request_slot: request_slot,
+                    authorization_approval_decision: decision,
                 },
             ))
             .map_err(Into::into)
@@ -164,8 +164,8 @@ impl CriomeApprovalSubmission {
         else {
             return false;
         };
-        recorded.request_slot == *self.verdict.request_slot()
-            && recorded.decision == self.verdict.decision()
+        recorded.authorization_request_slot == *self.verdict.request_slot()
+            && recorded.authorization_approval_decision == self.verdict.decision()
     }
 
     pub fn output(&self) -> &meta_signal_criome::Output {

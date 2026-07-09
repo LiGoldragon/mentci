@@ -73,16 +73,16 @@ impl PickupWitness {
         };
         eprintln!(
             "mentci-criome-pickup-witness-test: parked {}",
-            pending.request_slot.payload()
+            pending.authorization_request_slot.payload()
         );
     }
 
     fn evaluation() -> AuthorizationEvaluation {
         let bytes = Self::head_bytes();
         let object = AuthorizedObjectReference {
-            component: ComponentKind::Spirit,
-            digest: ObjectDigest::from_bytes(&bytes),
-            kind: AuthorizedObjectKind::Head,
+            component_kind: ComponentKind::Spirit,
+            object_digest: ObjectDigest::from_bytes(&bytes),
+            authorized_object_kind: AuthorizedObjectKind::Head,
         };
         let stamp = AttestedMoment::new(
             AttestedMomentProposition::new(
@@ -103,8 +103,8 @@ impl PickupWitness {
             Vec::new(),
         );
         AuthorizationEvaluation {
-            contract: ContractDigest::from_bytes(&bytes),
-            object,
+            contract_digest: ContractDigest::from_bytes(&bytes),
+            authorized_object_reference: object,
             evidence,
         }
     }

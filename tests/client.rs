@@ -19,8 +19,8 @@ use signal_mentci::{
 
 fn update_request() -> MentciRequest {
     MentciRequest::PushUpdate(InterfaceUpdate {
-        identifier: UpdateIdentifier::new("update-1"),
-        mutation: InterfaceMutation::SetStatus(StatusText::new("waiting")),
+        update_identifier: UpdateIdentifier::new("update-1"),
+        interface_mutation: InterfaceMutation::SetStatus(StatusText::new("waiting")),
     })
 }
 
@@ -60,16 +60,16 @@ fn question_proposal() -> QuestionProposal {
         Some(AnswerText::new("approve")),
         ExplanationText::new("agent-proposed-answer"),
         vec![QuestionContext {
-            label: ContextLabel::new("record"),
-            body: ContextBody::new("content-addressed-preimage"),
+            context_label: ContextLabel::new("record"),
+            context_body: ContextBody::new("content-addressed-preimage"),
         }],
     )
 }
 
 fn approval_question() -> ApprovalQuestion {
     ApprovalQuestion {
-        identifier: QuestionIdentifier::new("question-1"),
-        proposal: question_proposal(),
+        question_identifier: QuestionIdentifier::new("question-1"),
+        question_proposal: question_proposal(),
     }
 }
 
@@ -108,9 +108,9 @@ fn client_recognizes_answer_command_atom() {
             assert_eq!(
                 request.payloads().head(),
                 &MentciRequest::AnswerQuestion(ApprovalVerdict {
-                    question: QuestionIdentifier::new("question-1"),
-                    decision: ApprovalDecision::ApproveSuggestedAnswer,
-                    answered_by: SubscriberName::new("mentci-cli"),
+                    question_identifier: QuestionIdentifier::new("question-1"),
+                    approval_decision: ApprovalDecision::ApproveSuggestedAnswer,
+                    subscriber_name: SubscriberName::new("mentci-cli"),
                 })
             );
         }
@@ -144,8 +144,8 @@ fn observation_session_builds_request_through_shared_model() {
             assert_eq!(
                 request.payloads().head(),
                 &MentciRequest::ObserveInterfaceState(InterfaceStateObservation {
-                    subscriber: SubscriberName::new("mentci-cli"),
-                    interest: InterfaceInterest::PendingQuestions,
+                    subscriber_name: SubscriberName::new("mentci-cli"),
+                    interface_interest: InterfaceInterest::PendingQuestions,
                 })
             );
         }
@@ -158,10 +158,10 @@ fn observation_session_folds_reply_into_shared_model_and_renders_nota() {
     let mut session = ClientObservationSession::new(InterfaceInterest::PendingQuestions);
     let _ = session.request_frame().expect("request frame");
     let reply = MentciReply::InterfaceObservationOpened(InterfaceObservationOpened {
-        token: SubscriptionToken::new("subscription-1"),
-        state: ProjectedInterfaceState {
-            revision: RevisionCounter::new(7),
-            projection: InterfaceProjection::PendingQuestionsProjection(
+        subscription_token: SubscriptionToken::new("subscription-1"),
+        projected_interface_state: ProjectedInterfaceState {
+            revision_counter: RevisionCounter::new(7),
+            interface_projection: InterfaceProjection::PendingQuestionsProjection(
                 PendingQuestionsView::from_questions(vec![approval_question()]),
             ),
         },
