@@ -15,11 +15,13 @@
 ;;
 ;; What the SEMA persists, per the brief:
 ;;   - the pending ApprovalQuestions, keyed by daemon-minted identifier;
-;;   - their decisions (the recorded CLOSED verdicts);
-;;   - the edited-answer proposals admitted on the normal authorization path
-;;     (operator 421 / Q2), keyed by daemon-minted proposal identifier;
 ;;   - the active subscription registry (daemon-minted tokens + interest);
 ;;   - the InterfaceState revision counter (plain monotonic — Q3 default).
+;;
+;; Closed verdicts and admitted edited-answer proposals are request/reply and
+;; egress facts, not current workflow state. Retiring a question deletes its
+;; pending record; proposal admission returns its receipt without creating a
+;; daemon-lifetime history.
 ;;
 ;; Q3 (open psyche question) — the revision counter shape. DESIGNER
 ;; RECOMMENDATION: a PLAIN MONOTONIC RevisionCounter for a single-machine UI
@@ -71,8 +73,8 @@
   ;; -------------------------------------------------------------------
   WriteInput [
     (UpsertQuestion ApprovalQuestion)
-    (RecordDecision DecisionRecord)
-    (RecordAnswerProposal AnswerProposalRecord)
+    (RetireQuestion ApprovalVerdict)
+    (AdmitAnswerProposal AnswerProposal)
     (ApplyMutation InterfaceUpdate)
     (RegisterSubscription SubscriptionRequest)
     (DropSubscription SubscriptionToken)
@@ -86,8 +88,8 @@
 
   WriteOutput [
     (QuestionUpserted RevisionReceipt)
-    (DecisionRecorded RevisionReceipt)
-    (AnswerProposalRecorded ProposalReceipt)
+    (QuestionRetired RevisionReceipt)
+    (AnswerProposalAdmitted ProposalReceipt)
     (MutationApplied RevisionReceipt)
     (SubscriptionRegistered SubscriptionReceipt)
     (SubscriptionDropped DropReceipt)
@@ -176,8 +178,8 @@
   ;; CLOSED verdict set (Q2 RESOLVED: psyche correction + operator 421):
   ;; ApproveSuggestedAnswer + Reject + Defer. There is NO free-text / authored
   ;; answer variant — the held-out PendingAnswer carrier is DELETED. An edited
-  ;; answer is a separate admitted object (AnswerProposalRecord), approved later
-  ;; through this same closed verdict.
+  ;; answer is admitted through the normal path and acknowledged by a receipt;
+  ;; it is not retained as daemon-lifetime history.
   ApprovalDecision [
     ApproveSuggestedAnswer
     Reject
@@ -233,9 +235,9 @@
   ;; kind selects the engine registration shape: `Identified` (each record
   ;; carries its own identity field — QuestionIdentifier, SubscriptionToken,
   ;; RevisionMarker — the application-keyed case) rather than `Domain` (the
-  ;; Spirit-domain-keyed case spirit uses). These five families ARE the
-  ;; daemon's durable state; on restart the daemon self-resumes from them (the
-  ;; daemon never re-parses NOTA — it rehydrates the SEMA).
+  ;; Spirit-domain-keyed case spirit uses). These three families ARE the
+  ;; daemon's durable current state; on restart the daemon self-resumes from
+  ;; them (the daemon never re-parses NOTA — it rehydrates the SEMA).
   ;; -------------------------------------------------------------------
 
   ;; PendingQuestion — a pending ApprovalQuestion, keyed by its identifier.
@@ -245,32 +247,6 @@
     question.ApprovalQuestion
   }
   PendingQuestionsFamily (Family { record.PendingQuestion table.pending_questions key.Identified })
-
-  ;; DecisionRecord — the recorded verdict on a question, keyed by the same
-  ;; question identifier. A question moves from pending to decided when its
-  ;; DecisionRecord lands; the decision is what the verdict egress later signs.
-  DecisionRecord {
-    question.QuestionIdentifier
-    decision.ApprovalDecision
-    answered_by.SubscriberName
-    decided_at.TimestampNanos
-  }
-  DecisionsFamily (Family { record.DecisionRecord table.decisions key.Identified })
-
-  ;; AnswerProposalRecord — an edited-answer proposal admitted as a NEW object on
-  ;; the normal authorization path (operator 421 / Q2), keyed by its
-  ;; daemon-minted ProposalIdentifier. The daemon stores the typed body and the
-  ;; canonical ProposalDigest criome later approves through the closed verdict —
-  ;; never a loose answer string.
-  AnswerProposalRecord {
-    proposal.ProposalIdentifier
-    question.QuestionIdentifier
-    body.AnswerText
-    authored_by.SubscriberName
-    digest.ProposalDigest
-    proposed_at.TimestampNanos
-  }
-  AnswerProposalsFamily (Family { record.AnswerProposalRecord table.answer_proposals key.Identified })
 
   ;; ActiveSubscription — one open state subscription, keyed by its DAEMON-MINTED
   ;; token (operator 421 §3). The active subscription registry: who is observing

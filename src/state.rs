@@ -10,17 +10,14 @@ use signal_mentci::{
     InterfaceInterest, InterfaceMutation, InterfaceObservationOpened, InterfaceProjection,
     InterfaceState, InterfaceStateObservation, MentciReply, MentciRequest, NotificationSlice,
     NotificationText, PaneContent, PendingQuestionsView, ProjectedInterfaceState, PromptText,
-    ProposalDigest,
-    ProposalIdentifier, QuestionContext, QuestionIdentifier, QuestionPresented, Rejection,
-    RejectionReason, RevisionCounter, StatusText, SubscriptionToken, TimestampNanos,
+    ProposalDigest, ProposalIdentifier, QuestionContext, QuestionIdentifier, QuestionPresented,
+    Rejection, RejectionReason, RevisionCounter, StatusText, SubscriptionToken, TimestampNanos,
     UpdateAccepted,
 };
 
 #[derive(Debug, Clone)]
 pub struct State {
     pending_questions: Vec<ApprovalQuestion>,
-    decisions: Vec<ApprovalVerdict>,
-    answer_proposals: Vec<AnswerProposalRecord>,
     subscriptions: BTreeMap<String, InterfaceInterest>,
     revision: u64,
     logical_time: u64,
@@ -32,13 +29,6 @@ pub struct State {
     panes: Vec<PaneContent>,
     criome_request_slots: BTreeSet<String>,
     criome_parked_request_identifiers: BTreeSet<String>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct AnswerProposalRecord {
-    pub proposal: ProposalIdentifier,
-    pub body: AnswerProposal,
-    pub digest: ProposalDigest,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -72,8 +62,6 @@ impl Default for State {
     fn default() -> Self {
         Self {
             pending_questions: Vec::new(),
-            decisions: Vec::new(),
-            answer_proposals: Vec::new(),
             subscriptions: BTreeMap::new(),
             revision: 0,
             logical_time: 0,
@@ -281,7 +269,6 @@ impl State {
         }
         let answered = self.pending_questions.remove(index);
         let criome_effect = CriomeEffect::from_answered_question(&answered, verdict.decision);
-        self.decisions.push(verdict.clone());
         self.bump_revision();
         StateApplication::with_criome_effect(
             MentciReply::VerdictAccepted(signal_mentci::VerdictAccepted {
@@ -307,11 +294,6 @@ impl State {
             proposal.question.as_str(),
             proposal_identifier.as_str()
         ));
-        self.answer_proposals.push(AnswerProposalRecord {
-            proposal: proposal_identifier.clone(),
-            body: proposal.clone(),
-            digest: digest.clone(),
-        });
         self.bump_revision();
         MentciReply::AnswerProposalAdmitted(AnswerProposalAdmitted {
             proposal: proposal_identifier,
@@ -363,11 +345,9 @@ impl State {
             InterfaceInterest::StatusOnly => {
                 InterfaceProjection::StatusProjection(self.status.clone())
             }
-            InterfaceInterest::Notifications => {
-                InterfaceProjection::NotificationProjection(NotificationSlice::from_current(
-                    self.notification.clone(),
-                ))
-            }
+            InterfaceInterest::Notifications => InterfaceProjection::NotificationProjection(
+                NotificationSlice::from_current(self.notification.clone()),
+            ),
             InterfaceInterest::PendingQuestions => InterfaceProjection::PendingQuestionsProjection(
                 PendingQuestionsView::from_questions(self.pending_questions.clone()),
             ),

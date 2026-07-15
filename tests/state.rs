@@ -46,6 +46,13 @@ fn psyche() -> SubscriberName {
     SubscriberName::new("psyche")
 }
 
+fn projected_pending_question_count(state: &State) -> usize {
+    state
+        .full_state(StateApplicationContext::write_enabled())
+        .pending_questions()
+        .len()
+}
+
 fn signal_call_authorization() -> SignalCallAuthorization {
     SignalCallAuthorization::new(
         ObjectDigest::from_bytes(b"spirit-record-request"),
@@ -214,6 +221,50 @@ fn defer_keeps_question_open_for_later_answer_proposal() {
             revision: RevisionCounter::new(2),
         })
     );
+}
+
+#[test]
+fn repeated_answer_proposals_retain_only_open_workflows() {
+    let mut state = State::default();
+    state.apply(MentciRequest::PresentQuestion(question_proposal()));
+    state.apply(MentciRequest::PresentQuestion(question_proposal()));
+
+    for replacement in 0..128 {
+        for question in [
+            QuestionIdentifier::new("question-1"),
+            QuestionIdentifier::new("question-2"),
+        ] {
+            let defer = state.apply(MentciRequest::AnswerQuestion(ApprovalVerdict {
+                question: question.clone(),
+                decision: ApprovalDecision::Defer,
+                answered_by: psyche(),
+            }));
+            assert!(matches!(defer, MentciReply::VerdictAccepted(_)));
+
+            let reply = state.apply(MentciRequest::ProposeEditedAnswer(AnswerProposal {
+                question,
+                body: AnswerText::new(format!("replacement-nota-object-{replacement}")),
+                authored_by: psyche(),
+            }));
+            assert!(matches!(reply, MentciReply::AnswerProposalAdmitted(_)));
+        }
+    }
+
+    assert_eq!(projected_pending_question_count(&state), 2);
+
+    state.apply(MentciRequest::AnswerQuestion(ApprovalVerdict {
+        question: QuestionIdentifier::new("question-1"),
+        decision: ApprovalDecision::Reject,
+        answered_by: psyche(),
+    }));
+    assert_eq!(projected_pending_question_count(&state), 1);
+
+    state.apply(MentciRequest::AnswerQuestion(ApprovalVerdict {
+        question: QuestionIdentifier::new("question-2"),
+        decision: ApprovalDecision::ApproveSuggestedAnswer,
+        answered_by: psyche(),
+    }));
+    assert_eq!(projected_pending_question_count(&state), 0);
 }
 
 #[test]

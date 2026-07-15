@@ -158,8 +158,8 @@
   ;; AnswerProposal — "author your own answer" done correctly (operator 421 /
   ;; Q2). An edited answer is a NEW typed object admitted through the normal
   ;; authorization path, NOT a verdict variant. The Nexus AdmitAnswerProposal
-  ;; operation admits it, mints a ProposalIdentifier, and computes the canonical
-  ;; ProposalDigest criome will later approve through the SAME closed verdict.
+  ;; operation mints a ProposalIdentifier and computes the canonical
+  ;; ProposalDigest for its receipt without retaining daemon-lifetime history.
   AnswerProposal {
     question.QuestionIdentifier
     body.AnswerText
@@ -384,8 +384,8 @@
   ;; -------------------------------------------------------------------
   CommandSemaWrite [
     (UpsertQuestion ApprovalQuestion)
-    (RecordDecision ApprovalVerdict)
-    (RecordAnswerProposal AnswerProposal)
+    (RetireQuestion ApprovalVerdict)
+    (AdmitAnswerProposal AnswerProposal)
     (ApplyMutation InterfaceUpdate)
     (RegisterSubscription InterfaceObservation)
     (DropSubscription SubscriptionToken)
@@ -393,8 +393,8 @@
 
   SemaWriteOutput [
     (QuestionUpserted RevisionStamp)
-    (DecisionRecorded RevisionStamp)
-    (AnswerProposalRecorded ProposalAdmission)
+    (QuestionRetired RevisionStamp)
+    (AnswerProposalAdmitted ProposalAdmission)
     (MutationApplied RevisionStamp)
     (SubscriptionRegistered SubscriptionReceipt)
     (SubscriptionDropped SubscriptionToken)
@@ -426,9 +426,9 @@
   ;; read/write — the operations that frame, route, and fan out.
   ;;
   ;;   AdmitQuestion           — admit a pushed proposal, MINTING its id (421 §2)
-  ;;   RetireQuestion          — answer/retire a question, recording the decision
-  ;;   AdmitAnswerProposal     — admit an edited-answer proposal as a new object
-  ;;                             on the normal authorization path (421 / Q2)
+  ;;   RetireQuestion          — answer/retire a question and reclaim its state
+  ;;   AdmitAnswerProposal     — admit an edited-answer proposal and return its
+  ;;                             receipt without retaining history (421 / Q2)
   ;;   ApplyInterfaceUpdate    — apply a programmable interface mutation
   ;;   RegisterSubscriber      — register a subscription, MINTING its token (421 §3)
   ;;   DropSubscriber          — drop a subscription (retract / disconnect)
@@ -454,9 +454,9 @@
   ;; as an EffectCompleted Work.
   ;;
   ;;   QuestionAdmitted        — admitted; carries the MINTED id + revision (421 §2)
-  ;;   QuestionRetired         — retired; carries the recorded decision + revision
-  ;;   AnswerProposalAdmitted  — edited-answer proposal admitted as a new object;
-  ;;                             carries minted proposal id + canonical digest
+  ;;   QuestionRetired         — retired; carries the decision + revision
+  ;;   AnswerProposalAdmitted  — edited-answer proposal receipt carrying the
+  ;;                             minted proposal id + canonical digest
   ;;   InterfaceUpdated        — mutation applied; carries the new revision
   ;;   SubscriberRegistered    — subscription opened; carries its receipt + token
   ;;   SubscriberDropped       — subscription closed by token
