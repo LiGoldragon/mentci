@@ -235,7 +235,7 @@
   ;; RevisionMarker — the application-keyed case) rather than `Domain` (the
   ;; Spirit-domain-keyed case spirit uses). These five families ARE the
   ;; daemon's durable state; on restart the daemon self-resumes from them (the
-  ;; daemon never re-parses NOTA — it rehydrates the SEMA).
+  ;; daemon never re-parses DOTOS — it rehydrates the SEMA).
   ;; -------------------------------------------------------------------
 
   ;; PendingQuestion — a pending ApprovalQuestion, keyed by its identifier.

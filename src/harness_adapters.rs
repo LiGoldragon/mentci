@@ -134,7 +134,7 @@ impl ClaudeCodeAdapter {
         prompt.push_str("Initial task:\n");
         prompt.push_str(request.prompt().as_str());
         prompt.push_str("\nPreflight launch:\n");
-        prompt.push_str(&request.preflight_launch().to_nota());
+        prompt.push_str(&request.preflight_launch().to_dotos());
         prompt.push_str("\n");
         let mut input = TerminalInputSequence::new();
         if let Some(command) = request.model_command() {

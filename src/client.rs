@@ -3,15 +3,15 @@ use std::os::unix::net::UnixStream;
 use std::path::{Path, PathBuf};
 
 use mentci_lib::{
-    Cmd, ComponentSocketKind, EngineEvent, ObservationModel, ObservationView, RenderNota,
+    Cmd, ComponentSocketKind, EngineEvent, ObservationModel, ObservationView, RenderDotos,
     RenderOrigin, RenderedObject, SocketLiveness, UserEvent,
 };
 use signal_frame::{
     ExchangeIdentifier, ExchangeLane, LaneSequence, Reply, RequestPayload, SessionEpoch, SubReply,
 };
 use signal_mentci::{
-    ApprovalDecision, ApprovalVerdict, InterfaceInterest, MentciFrame, MentciFrameBody,
-    MentciReply, MentciRequest, NotaSource, QuestionIdentifier, SubscriberName,
+    ApprovalDecision, ApprovalVerdict, DotosSource, InterfaceInterest, MentciFrame,
+    MentciFrameBody, MentciReply, MentciRequest, QuestionIdentifier, SubscriberName,
 };
 
 use crate::frame_codec::FrameCodec;
@@ -78,7 +78,7 @@ impl ClientCommand {
         if path.is_file() {
             self.request_frame_from_path(path)
         } else {
-            self.request_frame_from_nota(argument)
+            self.request_frame_from_dotos(argument)
         }
     }
 
@@ -124,18 +124,18 @@ impl ClientCommand {
     fn request_frame_from_path(&self, path: &Path) -> Result<MentciFrame> {
         if path
             .extension()
-            .is_some_and(|extension| extension == "nota")
+            .is_some_and(|extension| extension == "dotos")
         {
             let source = std::fs::read_to_string(path)?;
-            self.request_frame_from_nota(&source)
+            self.request_frame_from_dotos(&source)
         } else {
             let bytes = std::fs::read(path)?;
             Ok(MentciFrame::decode_length_prefixed(&bytes)?)
         }
     }
 
-    fn request_frame_from_nota(&self, source: &str) -> Result<MentciFrame> {
-        let request = NotaSource::new(source).parse::<MentciRequest>()?;
+    fn request_frame_from_dotos(&self, source: &str) -> Result<MentciFrame> {
+        let request = DotosSource::new(source).parse::<MentciRequest>()?;
         Ok(MentciFrame::new(MentciFrameBody::Request {
             exchange: self.exchange(),
             request: request.into_request(),
@@ -253,7 +253,7 @@ impl ClientObservationSession {
 
     pub fn absorb_frame(&mut self, frame: MentciFrame) -> Result<ClientObservationRender> {
         let reply = Self::reply_output(frame)?;
-        let rendered = reply.render_nota(RenderOrigin::Reply);
+        let rendered = reply.render_dotos(RenderOrigin::Reply);
         match &reply {
             MentciReply::InterfaceObservationOpened(opened) => {
                 self.model.on_engine_event(EngineEvent::ObservationOpened {
@@ -308,7 +308,7 @@ impl ClientReplyRender {
     pub fn from_frame(frame: MentciFrame) -> Result<Self> {
         let reply = ClientObservationSession::reply_output(frame)?;
         Ok(Self {
-            reply: reply.render_nota(RenderOrigin::Reply),
+            reply: reply.render_dotos(RenderOrigin::Reply),
         })
     }
 

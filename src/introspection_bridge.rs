@@ -1,7 +1,7 @@
 use std::os::unix::net::UnixStream;
 use std::path::PathBuf;
 
-use nota::NotaEncode;
+use dotos::DotosEncode;
 use signal_frame::{
     ExchangeIdentifier, ExchangeLane, LaneSequence, Reply, RequestPayload, SessionEpoch, SubReply,
 };
@@ -177,42 +177,42 @@ trait IntrospectionPanePayload {
 
 impl IntrospectionPanePayload for EngineSnapshot {
     fn render_payload(&self) -> String {
-        IntrospectionPane::wrap("EngineSnapshot", self.to_nota())
+        IntrospectionPane::wrap("EngineSnapshot", self.to_dotos())
     }
 }
 
 impl IntrospectionPanePayload for ComponentSnapshot {
     fn render_payload(&self) -> String {
-        IntrospectionPane::wrap("ComponentSnapshot", self.to_nota())
+        IntrospectionPane::wrap("ComponentSnapshot", self.to_dotos())
     }
 }
 
 impl IntrospectionPanePayload for DeliveryTrace {
     fn render_payload(&self) -> String {
-        IntrospectionPane::wrap("DeliveryTrace", self.to_nota())
+        IntrospectionPane::wrap("DeliveryTrace", self.to_dotos())
     }
 }
 
 impl IntrospectionPanePayload for ComponentTrace {
     fn render_payload(&self) -> String {
-        IntrospectionPane::wrap("ComponentTrace", self.to_nota())
+        IntrospectionPane::wrap("ComponentTrace", self.to_dotos())
     }
 }
 
 impl IntrospectionPanePayload for PrototypeWitness {
     fn render_payload(&self) -> String {
-        IntrospectionPane::wrap("PrototypeWitness", self.to_nota())
+        IntrospectionPane::wrap("PrototypeWitness", self.to_dotos())
     }
 }
 
 impl IntrospectionPanePayload for IntrospectionUnimplemented {
     fn render_payload(&self) -> String {
-        IntrospectionPane::wrap("Unimplemented", self.to_nota())
+        IntrospectionPane::wrap("Unimplemented", self.to_dotos())
     }
 }
 
 impl IntrospectionPanePayload for IntrospectionDenied {
     fn render_payload(&self) -> String {
-        IntrospectionPane::wrap("Denied", self.to_nota())
+        IntrospectionPane::wrap("Denied", self.to_dotos())
     }
 }

@@ -30,9 +30,9 @@ impl DaemonCommand {
         let path = self.startup_path()?;
         if path
             .extension()
-            .is_some_and(|extension| extension == "nota")
+            .is_some_and(|extension| extension == "dotos")
         {
-            return Err(Error::StartupNotaRejected(path));
+            return Err(Error::StartupDotosRejected(path));
         }
         ConfigurationFile::new(path)
             .configuration()

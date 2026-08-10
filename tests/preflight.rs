@@ -40,7 +40,7 @@ impl PreflightApi for FakePreflightApi {
     ) -> mentci::Result<PreflightModelOutput> {
         assert_eq!(identifier.as_str(), "cheap-contained-preflight");
         assert!(prompt.as_str().contains("MentciPreflightLaunch"));
-        assert!(prompt.as_str().contains("skills/skills.nota"));
+        assert!(prompt.as_str().contains("skills/skills.dotos"));
         if self.fail_completion {
             return Err(Error::PreflightApi(
                 "contained model call failed".to_owned(),
@@ -68,9 +68,9 @@ fn request() -> PreflightRequest {
     )
 }
 
-fn valid_launch_nota() -> String {
+fn valid_launch_dotos() -> String {
     r#"(MentciPreflightLaunch
-  (mentci-prompt-scaffold 1 [skills/skills.nota] [ARCHITECTURE.md] skills/skills.nota ReuseDeferred)
+  (mentci-prompt-scaffold 1 [skills/skills.dotos] [ARCHITECTURE.md] skills/skills.dotos ReuseDeferred)
   (mentci-primary-k6va [(Bead primary-k6va) (WorkSurface sandboxed-jj-task)] primary-k6va-session orchestrate/lanes/primary-k6va)
   Persistent
   (SandboxedJjTask PrimaryForbidden PrivateScopeClosed)
@@ -81,7 +81,7 @@ fn valid_launch_nota() -> String {
 
 #[test]
 fn preflight_path_calls_api_and_validates_launch_packet() {
-    let engine = PreflightEngine::new(FakePreflightApi::new(valid_launch_nota()));
+    let engine = PreflightEngine::new(FakePreflightApi::new(valid_launch_dotos()));
 
     let launch = engine.launch(&request()).expect("valid launch");
 
@@ -92,7 +92,7 @@ fn preflight_path_calls_api_and_validates_launch_packet() {
     assert_eq!(launch.scaffold().version().value(), 1);
     assert_eq!(
         launch.scaffold().expansion_index().as_str(),
-        "skills/skills.nota"
+        "skills/skills.dotos"
     );
     assert!(matches!(
         launch.sandbox_privacy(),
@@ -112,7 +112,7 @@ fn preflight_model_slots_reject_provider_specific_identifiers() {
         WorkSurface::new("sandboxed-jj-task"),
         Vec::new(),
     );
-    let engine = PreflightEngine::new(FakePreflightApi::new(valid_launch_nota()));
+    let engine = PreflightEngine::new(FakePreflightApi::new(valid_launch_dotos()));
 
     let error = engine
         .launch(&provider_model_request)
@@ -129,7 +129,7 @@ fn preflight_model_slots_reject_provider_specific_identifiers() {
 
 #[test]
 fn preflight_rejects_generic_compression_or_missing_named_slots() {
-    let compressed = "(MentciPreflightLaunch (mentci-prompt-scaffold 1 [] [] skills/skills.nota ReuseDeferred) [] [(Constraint [session primary-k6va])])";
+    let compressed = "(MentciPreflightLaunch (mentci-prompt-scaffold 1 [] [] skills/skills.dotos ReuseDeferred) [] [(Constraint [session primary-k6va])])";
     let engine = PreflightEngine::new(FakePreflightApi::new(compressed));
 
     let error = engine
@@ -138,14 +138,14 @@ fn preflight_rejects_generic_compression_or_missing_named_slots() {
 
     assert!(matches!(
         error,
-        Error::PreflightNota(_) | Error::PreflightLaunch(_)
+        Error::PreflightDotos(_) | Error::PreflightLaunch(_)
     ));
 }
 
 #[test]
 fn preflight_rejects_route_or_harness_target_in_launch_packet() {
     let route_bearing_packet = r#"(MentciPreflightLaunch
-  (mentci-prompt-scaffold 1 [skills/skills.nota] [ARCHITECTURE.md] skills/skills.nota ReuseDeferred)
+  (mentci-prompt-scaffold 1 [skills/skills.dotos] [ARCHITECTURE.md] skills/skills.dotos ReuseDeferred)
   ([(beads skills/beads.md [claim and update the bead])]
    (cheap-contained-preflight cheap-harness-session)
    (Codex codex-terminal-adapter terminal-cell-v1)
@@ -161,7 +161,7 @@ fn preflight_rejects_route_or_harness_target_in_launch_packet() {
         .launch(&request())
         .expect_err("provider route rejected");
 
-    assert!(matches!(error, Error::PreflightNota(_)));
+    assert!(matches!(error, Error::PreflightDotos(_)));
 }
 
 #[test]
@@ -175,7 +175,7 @@ fn preflight_reports_unverified_model_before_guessing() {
         WorkSurface::new("sandboxed-jj-task"),
         Vec::new(),
     );
-    let engine = PreflightEngine::new(FakePreflightApi::new(valid_launch_nota()));
+    let engine = PreflightEngine::new(FakePreflightApi::new(valid_launch_dotos()));
 
     let error = engine
         .launch(&request)
@@ -191,7 +191,7 @@ fn preflight_reports_unverified_model_before_guessing() {
 #[test]
 fn preflight_reports_model_call_failure() {
     let engine =
-        PreflightEngine::new(FakePreflightApi::new(valid_launch_nota()).with_completion_failure());
+        PreflightEngine::new(FakePreflightApi::new(valid_launch_dotos()).with_completion_failure());
 
     let error = engine
         .launch(&request())
@@ -202,8 +202,8 @@ fn preflight_reports_model_call_failure() {
 
 #[test]
 fn preflight_rejects_scaffold_without_skills_index() {
-    let wrong_index = valid_launch_nota().replace(
-        "skills/skills.nota ReuseDeferred",
+    let wrong_index = valid_launch_dotos().replace(
+        "skills/skills.dotos ReuseDeferred",
         "reports/operator ReuseDeferred",
     );
     let engine = PreflightEngine::new(FakePreflightApi::new(wrong_index));
@@ -213,7 +213,7 @@ fn preflight_rejects_scaffold_without_skills_index() {
         .expect_err("bad scaffold rejected");
 
     assert!(
-        matches!(error, Error::PreflightLaunch(message) if message.contains("skills/skills.nota"))
+        matches!(error, Error::PreflightLaunch(message) if message.contains("skills/skills.dotos"))
     );
 }
 

@@ -250,7 +250,7 @@
   ;; raw escalation request; the Nexus FRAMES it into a QuestionProposal, then
   ;; AdmitQuestion mints the identifier (operator 421 §2 — the daemon, not the
   ;; escalating agent, owns the local question identity). Declared locally
-  ;; PENDING signal-criome's migration off stale dot-field notation.
+  ;; PENDING signal-criome's migration off stale dot-field dotostion.
   ;; -------------------------------------------------------------------
   CriomeEscalationRequest {
     prompt.PromptText

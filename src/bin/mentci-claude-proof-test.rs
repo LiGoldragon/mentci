@@ -251,7 +251,7 @@ mod proof {
                 model_command: ClaudeCodeModelCommand::haiku(),
                 initial_prompt_summary,
                 forbidden_arguments_seen,
-                preflight_launch: preflight.launch.to_nota(),
+                preflight_launch: preflight.launch.to_dotos(),
                 first_read_reason: format!("{:?}", first_read.reason()),
                 first_read_snippet: TranscriptSnippet::new(first_read.transcript().bytes())
                     .around("MENTCI_PROOF_READY"),
@@ -288,12 +288,12 @@ mod proof {
             let scaffold = base.join("scaffold");
             fs::create_dir_all(scaffold.join("skills"))?;
             fs::write(
-                scaffold.join("skills").join("skills.nota"),
+                scaffold.join("skills").join("skills.dotos"),
                 "[(Workflow beads skills/beads.md Mechanism [claim and update the bead])]\n",
             )?;
             fs::write(
                 scaffold.join("README.md"),
-                "Mentci real Claude proof scaffold. Use skills/skills.nota as the expansion index.\n",
+                "Mentci real Claude proof scaffold. Use skills/skills.dotos as the expansion index.\n",
             )?;
             let sandbox_parent = base.join("sandbox-parent");
             fs::create_dir(&sandbox_parent)?;
@@ -317,14 +317,14 @@ mod proof {
 
     impl ProofPreflight {
         fn new() -> Self {
-            let launch = MentciPreflightLaunch::validated_from_nota(Self::launch_nota())
-                .expect("proof launch NOTA stays schema-valid");
+            let launch = MentciPreflightLaunch::validated_from_dotos(Self::launch_dotos())
+                .expect("proof launch DOTOS stays schema-valid");
             Self { launch }
         }
 
-        fn launch_nota() -> &'static str {
+        fn launch_dotos() -> &'static str {
             r#"(MentciPreflightLaunch
-  (mentci-primary-0bax-proof 1 [skills/skills.nota] [README.md] skills/skills.nota ReuseDeferred)
+  (mentci-primary-0bax-proof 1 [skills/skills.dotos] [README.md] skills/skills.dotos ReuseDeferred)
   (mentci-primary-0bax [(Bead primary-0bax) (WorkSurface sandboxed-jj-task) (HarnessLabel real-claude-terminal-cell)] primary-0bax-claude-proof-session orchestrate/lanes/primary-0bax)
   Persistent
   (SandboxedJjTask PrimaryForbidden PrivateScopeClosed)

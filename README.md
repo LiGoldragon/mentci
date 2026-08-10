@@ -10,7 +10,7 @@ runtime slice:
 - `mentci-daemon` starts from one binary `meta-signal-mentci` `Configure`
   signal frame.
 - `mentci` is a thin client that sends one `signal-mentci` request, either as a
-  length-prefixed binary frame file or as NOTA text, and writes the binary reply
+  length-prefixed binary frame file or as DOTOS text, and writes the binary reply
   frame to stdout.
 - `mentci` also has one-argument readable atoms over the daemon socket:
   `observe`, `observe:full`, `observe:pending`, `observe:status`,

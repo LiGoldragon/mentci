@@ -10,9 +10,9 @@ use signal_frame::{
 };
 use signal_mentci::{
     AnswerText, ApprovalDecision, ApprovalQuestion, ApprovalSource, ApprovalVerdict, ContextBody,
-    ContextLabel, ExplanationText, InterfaceInterest, InterfaceMutation,
+    ContextLabel, DotosEncode, ExplanationText, InterfaceInterest, InterfaceMutation,
     InterfaceObservationOpened, InterfaceProjection, InterfaceStateObservation, InterfaceUpdate,
-    MentciFrame, MentciFrameBody, MentciReply, MentciRequest, NotaEncode, PendingQuestionsView,
+    MentciFrame, MentciFrameBody, MentciReply, MentciRequest, PendingQuestionsView,
     ProjectedInterfaceState, PromptText, QuestionContext, QuestionIdentifier, QuestionProposal,
     RevisionCounter, StatusText, SubscriberName, SubscriptionToken, UpdateIdentifier,
 };
@@ -119,9 +119,9 @@ fn client_recognizes_answer_command_atom() {
 }
 
 #[test]
-fn client_builds_request_frame_from_inline_nota() {
+fn client_builds_request_frame_from_inline_dotos() {
     let request = update_request();
-    let command = ClientCommand::from_arguments([request.to_nota()], "/tmp/unused-mentci.socket");
+    let command = ClientCommand::from_arguments([request.to_dotos()], "/tmp/unused-mentci.socket");
 
     let frame = command.request_frame().expect("request frame");
 
@@ -154,7 +154,7 @@ fn observation_session_builds_request_through_shared_model() {
 }
 
 #[test]
-fn observation_session_folds_reply_into_shared_model_and_renders_nota() {
+fn observation_session_folds_reply_into_shared_model_and_renders_dotos() {
     let mut session = ClientObservationSession::new(InterfaceInterest::PendingQuestions);
     let _ = session.request_frame().expect("request frame");
     let reply = MentciReply::InterfaceObservationOpened(InterfaceObservationOpened {
@@ -236,7 +236,7 @@ fn client_answer_command_answers_live_daemon_question() {
     .expect("daemon");
     let bound = daemon.bind().expect("bound daemon");
     let present = ClientCommand::from_arguments(
-        [MentciRequest::PresentQuestion(question_proposal()).to_nota()],
+        [MentciRequest::PresentQuestion(question_proposal()).to_dotos()],
         socket.clone(),
     );
     let answer = ClientCommand::from_arguments(["answer:approve:question-1"], socket.clone());
@@ -278,10 +278,10 @@ fn client_answer_command_answers_live_daemon_question() {
 }
 
 #[test]
-fn client_builds_request_frame_from_nota_file() {
+fn client_builds_request_frame_from_dotos_file() {
     let directory = tempfile::tempdir().expect("tempdir");
-    let path = directory.path().join("request.nota");
-    std::fs::write(&path, update_request().to_nota()).expect("write request");
+    let path = directory.path().join("request.dotos");
+    std::fs::write(&path, update_request().to_dotos()).expect("write request");
     let command = ClientCommand::from_arguments(
         [path.to_string_lossy().to_string()],
         "/tmp/unused-mentci.socket",

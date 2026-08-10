@@ -130,9 +130,9 @@ fn terminal_launch_with_liveness(liveness: LivenessPolicy) -> LaunchRequest {
     .with_liveness(liveness)
 }
 
-fn valid_launch_nota() -> &'static str {
+fn valid_launch_dotos() -> &'static str {
     r#"(MentciPreflightLaunch
-  (mentci-prompt-scaffold 1 [skills/skills.nota] [ARCHITECTURE.md] skills/skills.nota ReuseDeferred)
+  (mentci-prompt-scaffold 1 [skills/skills.dotos] [ARCHITECTURE.md] skills/skills.dotos ReuseDeferred)
   (mentci-primary-vxu6 [(Bead primary-vxu6) (WorkSurface sandboxed-jj-task) (HarnessLabel mentci-harness)] primary-vxu6-session orchestrate/lanes/primary-vxu6)
   Persistent
   (SandboxedJjTask PrimaryForbidden PrivateScopeClosed)
@@ -141,7 +141,7 @@ fn valid_launch_nota() -> &'static str {
 }
 
 fn launch_packet() -> MentciPreflightLaunch {
-    MentciPreflightLaunch::validated_from_nota(valid_launch_nota()).expect("valid launch packet")
+    MentciPreflightLaunch::validated_from_dotos(valid_launch_dotos()).expect("valid launch packet")
 }
 
 fn launch_metadata() -> HarnessLaunchMetadata {
@@ -172,14 +172,14 @@ fn different_harness_launch_metadata() -> HarnessLaunchMetadata {
 }
 
 fn ephemeral_launch_packet() -> MentciPreflightLaunch {
-    MentciPreflightLaunch::validated_from_nota(
-        &valid_launch_nota().replace("Persistent", "Ephemeral"),
+    MentciPreflightLaunch::validated_from_dotos(
+        &valid_launch_dotos().replace("Persistent", "Ephemeral"),
     )
     .expect("ephemeral launch packet")
 }
 
 fn conflicting_identity_launch_packet() -> MentciPreflightLaunch {
-    MentciPreflightLaunch::validated_from_nota(&valid_launch_nota().replace(
+    MentciPreflightLaunch::validated_from_dotos(&valid_launch_dotos().replace(
         "(HarnessLabel mentci-harness)",
         "(HarnessLabel different-address-target)",
     ))
@@ -187,8 +187,8 @@ fn conflicting_identity_launch_packet() -> MentciPreflightLaunch {
 }
 
 fn duplicate_handle_launch_packet() -> MentciPreflightLaunch {
-    MentciPreflightLaunch::validated_from_nota(
-        &valid_launch_nota().replace("mentci-primary-vxu6", "mentci-primary-other"),
+    MentciPreflightLaunch::validated_from_dotos(
+        &valid_launch_dotos().replace("mentci-primary-vxu6", "mentci-primary-other"),
     )
     .expect("duplicate handle packet remains valid")
 }

@@ -1,6 +1,6 @@
 [package]
 name         = "mentci"
-version      = "0.4.1"
+version      = "0.5.0"
 edition      = "2024"
 rust-version = "1.89"
 license      = "MIT OR Apache-2.0"
@@ -12,22 +12,24 @@ default = []
 terminal-cell-runtime = ["dep:terminal-cell"]
 
 [dependencies]
-criome             = { git = "https://github.com/LiGoldragon/criome", branch = "main" }
+criome             = { git = "https://github.com/LiGoldragon/criome", rev = "2eb5050808648ab928062fbb43e8dfc976bee9ce" }
 kameo              = { git = "https://github.com/LiGoldragon/kameo.git", branch = "main", default-features = false, features = ["macros", "tracing"] }
-meta-signal-criome = { git = "https://github.com/LiGoldragon/meta-signal-criome", branch = "main" }
-meta-signal-mentci = { git = "https://github.com/LiGoldragon/meta-signal-mentci", branch = "main" }
-mentci-lib         = { git = "https://github.com/LiGoldragon/mentci-lib", branch = "main", features = ["nota-text"] }
-nota               = { package = "nota", git = "https://github.com/LiGoldragon/nota.git", branch = "main" }
+meta-signal-criome = { git = "https://github.com/LiGoldragon/meta-signal-criome", rev = "1c3bd8784142c54856e031d74b897382204cec21" }
+meta-signal-mentci = { git = "https://github.com/LiGoldragon/meta-signal-mentci", rev = "cb93443d3d50716314c98e5d2d6ca4b5bd5dceba" }
+mentci-lib         = { git = "https://github.com/LiGoldragon/mentci-lib", rev = "d14f096f69509f378adbfdc0967010a7f2bf0030", features = ["dotos-text"] }
+dotos              = { package = "dotos", git = "https://github.com/LiGoldragon/dotos.git", rev = "b3c2c76fe7a18ba026ab054d1fa7162e55860b9e" }
 rkyv               = { version = "0.8", default-features = false, features = ["std", "bytecheck", "little_endian", "pointer_width_32", "unaligned"] }
-signal-criome      = { git = "https://github.com/LiGoldragon/signal-criome", branch = "main" }
-signal-frame       = { git = "https://github.com/LiGoldragon/signal-frame", branch = "main" }
+schema-rust        = { git = "https://github.com/LiGoldragon/schema-rust.git", rev = "37b7d1035a472a15081f3e2e8a93b95bf733c3ee" }
+signal-criome      = { git = "https://github.com/LiGoldragon/signal-criome", rev = "b85fe3408faa24b8439a3685396430a68bfbcb71" }
+signal-frame       = { git = "https://github.com/LiGoldragon/signal-frame", rev = "80f70d929ae6d72707052f097be2264872913983" }
 signal-harness     = { git = "https://github.com/LiGoldragon/signal-harness.git", branch = "main", default-features = false }
-signal-introspect  = { git = "https://github.com/LiGoldragon/signal-introspect.git", branch = "main", features = ["nota-text"] }
-signal-mentci      = { git = "https://github.com/LiGoldragon/signal-mentci", branch = "main", features = ["nota-text"] }
-signal-persona     = { git = "https://github.com/LiGoldragon/signal-persona.git", branch = "main" }
+signal-introspect  = { git = "https://github.com/LiGoldragon/signal-introspect.git", branch = "main", features = ["dotos-text"] }
+signal-mentci      = { git = "https://github.com/LiGoldragon/signal-mentci", rev = "bf105eac59caa43ca25f7ca263bdc7d2b9080d94", features = ["dotos-text"] }
+signal-persona     = { git = "https://github.com/LiGoldragon/signal-persona.git", rev = "2802259fb1344495b1ad3b701fe81e0b7f9df9c3" }
 terminal-cell      = { git = "https://github.com/LiGoldragon/terminal-cell", branch = "main", optional = true }
 thiserror          = "2"
 tokio              = { version = "1", features = ["io-util", "macros", "net", "rt-multi-thread", "time"] }
+triad-runtime      = { git = "https://github.com/LiGoldragon/triad-runtime.git", rev = "7d10bb9d9a08ce363a0be8cff2716103f0a326fe" }
 
 [dev-dependencies]
 tempfile = "3"

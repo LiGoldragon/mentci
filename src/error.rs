@@ -11,8 +11,8 @@ pub enum Error {
     #[error("expected exactly one Mentci request argument")]
     ClientArgumentCount,
 
-    #[error("startup argument must be a binary signal file, not NOTA: {0}")]
-    StartupNotaRejected(PathBuf),
+    #[error("startup argument must be a binary signal file, not DOTOS: {0}")]
+    StartupDotosRejected(PathBuf),
 
     #[error("read configuration {path}: {source}")]
     ConfigurationRead {
@@ -68,8 +68,8 @@ pub enum Error {
     #[error("meta-signal-mentci frame error: {0}")]
     MetaSignalMentci(#[from] meta_signal_mentci::SignalFrameError),
 
-    #[error("signal-mentci NOTA input error: {0}")]
-    SignalMentciNota(#[from] signal_mentci::NotaDecodeError),
+    #[error("signal-mentci DOTOS input error: {0}")]
+    SignalMentciDotos(#[from] signal_mentci::DotosDecodeError),
 
     #[error("actor call failed: {0}")]
     ActorCall(String),
@@ -77,8 +77,8 @@ pub enum Error {
     #[error("frame body is not a request")]
     ExpectedRequest,
 
-    #[error("preflight NOTA does not match MentciPreflightLaunch: {0}")]
-    PreflightNota(nota::NotaDecodeError),
+    #[error("preflight DOTOS does not match MentciPreflightLaunch: {0}")]
+    PreflightDotos(dotos::DotosDecodeError),
 
     #[error("preflight API failed: {0}")]
     PreflightApi(String),

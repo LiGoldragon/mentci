@@ -200,7 +200,7 @@ fn defer_keeps_question_open_for_later_answer_proposal() {
 
     let edited_answer = AnswerProposal {
         question: question_identifier(),
-        body: AnswerText::new("replacement-nota-object"),
+        body: AnswerText::new("replacement-dotos-object"),
         authored_by: psyche(),
     };
     let proposal_reply = state.apply(MentciRequest::ProposeEditedAnswer(edited_answer));
@@ -231,7 +231,7 @@ fn approving_question_closes_it_against_later_edits() {
 
     let proposal_reply = state.apply(MentciRequest::ProposeEditedAnswer(AnswerProposal {
         question: question_identifier(),
-        body: AnswerText::new("replacement-nota-object"),
+        body: AnswerText::new("replacement-dotos-object"),
         authored_by: psyche(),
     }));
 

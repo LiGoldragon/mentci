@@ -51,21 +51,21 @@ crates, not local path dependencies:
   mentci observations but has no criome write bridge. Socket paths are not
   interpreted as generic ordinary/meta positions.
 - `mentci` is the thin CLI client. It takes exactly one request input: a
-  length-prefixed binary `signal-mentci` frame file, a `.nota` request file, or
-  inline NOTA text. It connects to the local daemon socket and writes the binary
+  length-prefixed binary `signal-mentci` frame file, a `.dotos` request file, or
+  inline DOTOS text. It connects to the local daemon socket and writes the binary
   reply frame to stdout.
 - The same one-argument CLI also accepts observation atoms:
   `observe`, `observe:full`, `observe:pending`, `observe:status`, and
   `observe:notifications`. These commands still talk only to the mentci daemon
   and render the reply through `mentci-lib`'s shared `ObservationModel` and
-  `RenderNota`.
+  `RenderDotos`.
 - The CLI also accepts answer atoms:
   `answer:approve:<question>`, `answer:reject:<question>`, and
   `answer:defer:<question>`. These lower to `AnswerQuestion` on the mentci
-  socket and render the typed daemon reply as NOTA text; they do not open a
+  socket and render the typed daemon reply as DOTOS text; they do not open a
   criome socket directly.
 - The daemon speaks `signal-mentci` over Unix sockets with the shared
-  `signal-frame` envelope and generated rkyv/NOTA nouns.
+  `signal-frame` envelope and generated rkyv/DOTOS nouns.
 - `CriomeApprovalBridge` is daemon-owned. It lists criome's parked
   authorizations and submits closed decisions by `AuthorizationRequestSlot`;
   it never resubmits an `AuthorizationEvaluation` by value.
@@ -215,7 +215,7 @@ size and fully reusable; no number is synthesized to fill the gap.
 
 The first proof domain is a sandboxed jj task and must never run against
 `/home/li/primary` as a jj working copy; private scope stays closed by default. The
-scaffold stays minimal — `skills/skills.nota` as the expansion index plus enough
+scaffold stays minimal — `skills/skills.dotos` as the expansion index plus enough
 local context to start — and the session agent expands its own context from there.
 The proof value is the working slice and the failure modes it exposes (invalid
 routing output, missing required skills, sandbox violation, process start failure,

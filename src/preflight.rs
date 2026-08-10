@@ -1,5 +1,6 @@
-use nota::{
-    Delimiter, NotaBlock, NotaBodyEncoding, NotaDecode, NotaDecodeError, NotaEncode, NotaSource,
+use dotos::{
+    Delimiter, DotosBlock, DotosBodyEncoding, DotosDecode, DotosDecodeError, DotosEncode,
+    DotosSource,
 };
 
 use crate::{Error, Result};
@@ -19,7 +20,7 @@ pub struct PreflightPrompt {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct PreflightModelOutput {
-    nota: String,
+    dotos: String,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -61,7 +62,7 @@ pub enum PreflightLaunchEnvelope {
     MentciPreflightLaunch(MentciPreflightLaunch),
 }
 
-#[derive(NotaDecode, NotaEncode, Clone, Debug, Eq, PartialEq)]
+#[derive(DotosDecode, DotosEncode, Clone, Debug, Eq, PartialEq)]
 pub struct MentciPreflightLaunch {
     scaffold: ScaffoldPointer,
     session_identity: SessionIdentity,
@@ -71,7 +72,7 @@ pub struct MentciPreflightLaunch {
     constraints: Vec<LaunchConstraint>,
 }
 
-#[derive(NotaDecode, NotaEncode, Clone, Debug, Eq, PartialEq)]
+#[derive(DotosDecode, DotosEncode, Clone, Debug, Eq, PartialEq)]
 pub struct ScaffoldPointer {
     identity: ScaffoldIdentity,
     version: ScaffoldVersion,
@@ -81,13 +82,13 @@ pub struct ScaffoldPointer {
     reuse_policy: ReusePolicy,
 }
 
-#[derive(NotaDecode, NotaEncode, Clone, Debug, Eq, PartialEq)]
+#[derive(DotosDecode, DotosEncode, Clone, Debug, Eq, PartialEq)]
 pub struct ModelSelection {
     preflight_model: PreflightModelProfile,
     harness_session_model: HarnessSessionModelProfile,
 }
 
-#[derive(NotaDecode, NotaEncode, Clone, Debug, Eq, PartialEq)]
+#[derive(DotosDecode, DotosEncode, Clone, Debug, Eq, PartialEq)]
 pub struct SessionIdentity {
     lane_name: LaneName,
     lane_metadata: Vec<LaneMetadata>,
@@ -95,7 +96,7 @@ pub struct SessionIdentity {
     lookup_path: SessionLookupPath,
 }
 
-#[derive(NotaDecode, NotaEncode, Clone, Debug, Eq, PartialEq)]
+#[derive(DotosDecode, DotosEncode, Clone, Debug, Eq, PartialEq)]
 pub enum LaneMetadata {
     Bead(MetadataValue),
     Repo(MetadataValue),
@@ -103,7 +104,7 @@ pub enum LaneMetadata {
     HarnessLabel(MetadataValue),
 }
 
-#[derive(NotaDecode, NotaEncode, Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(DotosDecode, DotosEncode, Clone, Copy, Debug, Eq, PartialEq)]
 pub enum PersistentSession {
     Persistent,
     Ephemeral,
@@ -114,25 +115,25 @@ pub enum SandboxPrivacy {
     SandboxedJjTask(PrimaryScope, PrivacySurface),
 }
 
-#[derive(NotaDecode, NotaEncode, Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(DotosDecode, DotosEncode, Clone, Copy, Debug, Eq, PartialEq)]
 pub enum PrimaryScope {
     PrimaryForbidden,
 }
 
-#[derive(NotaDecode, NotaEncode, Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(DotosDecode, DotosEncode, Clone, Copy, Debug, Eq, PartialEq)]
 pub enum PrivacySurface {
     PrivateScopeClosed,
     PublicSurfaceAllowed,
 }
 
-#[derive(NotaDecode, NotaEncode, Clone, Debug, Eq, PartialEq)]
+#[derive(DotosDecode, DotosEncode, Clone, Debug, Eq, PartialEq)]
 pub enum StopCondition {
     IdleTimeout(Duration),
     TurnCap(TurnCount),
     CompletionSignal,
 }
 
-#[derive(NotaDecode, NotaEncode, Clone, Debug, Eq, PartialEq)]
+#[derive(DotosDecode, DotosEncode, Clone, Debug, Eq, PartialEq)]
 pub enum LaunchConstraint {
     WorkSurface(WorkSurface),
     RequiredArtifact(SourceLocator),
@@ -141,14 +142,14 @@ pub enum LaunchConstraint {
     ImplementationBoundary(BoundaryName),
 }
 
-#[derive(NotaDecode, NotaEncode, Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(DotosDecode, DotosEncode, Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ReusePolicy {
     ReuseDeferred,
 }
 
 macro_rules! text_newtype {
     ($name:ident) => {
-        #[derive(NotaDecode, NotaEncode, Clone, Debug, Eq, Hash, PartialEq)]
+        #[derive(DotosDecode, DotosEncode, Clone, Debug, Eq, Hash, PartialEq)]
         pub struct $name(String);
 
         impl $name {
@@ -165,7 +166,7 @@ macro_rules! text_newtype {
 
 macro_rules! integer_newtype {
     ($name:ident) => {
-        #[derive(NotaDecode, NotaEncode, Clone, Copy, Debug, Eq, Hash, PartialEq)]
+        #[derive(DotosDecode, DotosEncode, Clone, Copy, Debug, Eq, Hash, PartialEq)]
         pub struct $name(u64);
 
         impl $name {
@@ -233,14 +234,14 @@ impl PreflightRequest {
 
     pub fn api_prompt(&self) -> PreflightPrompt {
         let mut text = String::new();
-        text.push_str("Emit exactly one NOTA MentciPreflightLaunch record. ");
-        text.push_str("Use the fixed schema in schema/preflight-launch.nota.md. ");
+        text.push_str("Emit exactly one DOTOS MentciPreflightLaunch record. ");
+        text.push_str("Use the fixed schema in schema/preflight-launch.dotos.md. ");
         text.push_str("Keep required slots separate: scaffold pointer, ");
         text.push_str("SessionIdentity, PersistentSession, SandboxPrivacy, typed ");
         text.push_str("StopCondition variants, and residual LaunchConstraint only. ");
         text.push_str("Do not include provider, adapter, terminal driver, or model literals ");
         text.push_str("in the launch packet. ");
-        text.push_str("The scaffold must stay minimal and use skills/skills.nota as ");
+        text.push_str("The scaffold must stay minimal and use skills/skills.dotos as ");
         text.push_str("the expansion index. Prompt: ");
         text.push_str(&self.prompt);
         text.push_str(" Work surface: ");
@@ -256,7 +257,7 @@ impl PreflightRequest {
         text.push_str(" Hard constraints:");
         for constraint in constraints {
             text.push(' ');
-            text.push_str(&constraint.to_nota());
+            text.push_str(&constraint.to_dotos());
         }
     }
 }
@@ -268,12 +269,14 @@ impl PreflightPrompt {
 }
 
 impl PreflightModelOutput {
-    pub fn new(nota: impl Into<String>) -> Self {
-        Self { nota: nota.into() }
+    pub fn new(dotos: impl Into<String>) -> Self {
+        Self {
+            dotos: dotos.into(),
+        }
     }
 
     pub fn as_str(&self) -> &str {
-        &self.nota
+        &self.dotos
     }
 }
 
@@ -342,7 +345,7 @@ where
         )?;
         let prompt = request.api_prompt();
         let output = self.api.complete(&prompt, &preflight_identifier)?;
-        let launch = MentciPreflightLaunch::validated_from_nota(output.as_str())?;
+        let launch = MentciPreflightLaunch::validated_from_dotos(output.as_str())?;
         launch.validate_against_request(request)?;
         Ok(launch)
     }
@@ -360,10 +363,10 @@ where
 }
 
 impl MentciPreflightLaunch {
-    pub fn validated_from_nota(source: &str) -> Result<Self> {
-        let envelope = NotaSource::new(source)
+    pub fn validated_from_dotos(source: &str) -> Result<Self> {
+        let envelope = DotosSource::new(source)
             .parse::<PreflightLaunchEnvelope>()
-            .map_err(Error::PreflightNota)?;
+            .map_err(Error::PreflightDotos)?;
         let PreflightLaunchEnvelope::MentciPreflightLaunch(launch) = envelope;
         launch.validate()?;
         Ok(launch)
@@ -393,8 +396,8 @@ impl MentciPreflightLaunch {
         &self.constraints
     }
 
-    pub fn to_nota(&self) -> String {
-        PreflightLaunchEnvelope::MentciPreflightLaunch(self.clone()).to_nota()
+    pub fn to_dotos(&self) -> String {
+        PreflightLaunchEnvelope::MentciPreflightLaunch(self.clone()).to_dotos()
     }
 
     fn validate(&self) -> Result<()> {
@@ -423,20 +426,20 @@ impl MentciPreflightLaunch {
     }
 }
 
-impl NotaDecode for PreflightLaunchEnvelope {
-    fn from_nota_block(block: &nota::Block) -> std::result::Result<Self, NotaDecodeError> {
-        let body = NotaBlock::new(block).expect_body(Delimiter::Parenthesis, "PreflightLaunch")?;
+impl DotosDecode for PreflightLaunchEnvelope {
+    fn from_dotos_block(block: &dotos::Block) -> std::result::Result<Self, DotosDecodeError> {
+        let body = DotosBlock::new(block).expect_body(Delimiter::Parenthesis, "PreflightLaunch")?;
         let children = body.expect_fields("MentciPreflightLaunch", 7)?;
         let variant = children[0]
             .demote_to_string()
-            .ok_or(NotaDecodeError::ExpectedAtom {
+            .ok_or(DotosDecodeError::ExpectedAtom {
                 type_name: "MentciPreflightLaunch variant",
             })?;
         match variant {
             "MentciPreflightLaunch" => Ok(Self::MentciPreflightLaunch(
                 MentciPreflightLaunch::from_root_fields(&children[1..])?,
             )),
-            other => Err(NotaDecodeError::UnknownVariant {
+            other => Err(DotosDecodeError::UnknownVariant {
                 enum_name: "PreflightLaunch",
                 variant: other.to_owned(),
             }),
@@ -444,37 +447,37 @@ impl NotaDecode for PreflightLaunchEnvelope {
     }
 }
 
-impl NotaEncode for PreflightLaunchEnvelope {
-    fn to_nota(&self) -> String {
+impl DotosEncode for PreflightLaunchEnvelope {
+    fn to_dotos(&self) -> String {
         match self {
-            Self::MentciPreflightLaunch(launch) => launch.to_root_nota(),
+            Self::MentciPreflightLaunch(launch) => launch.to_root_dotos(),
         }
     }
 }
 
 impl MentciPreflightLaunch {
-    fn from_root_fields(fields: &[nota::Block]) -> std::result::Result<Self, NotaDecodeError> {
+    fn from_root_fields(fields: &[dotos::Block]) -> std::result::Result<Self, DotosDecodeError> {
         Ok(Self {
-            scaffold: ScaffoldPointer::from_nota_block(&fields[0])?,
-            session_identity: SessionIdentity::from_nota_block(&fields[1])?,
-            persistent_session: PersistentSession::from_nota_block(&fields[2])?,
-            sandbox_privacy: SandboxPrivacy::from_nota_block(&fields[3])?,
-            stop_conditions: Vec::<StopCondition>::from_nota_block(&fields[4])?,
-            constraints: Vec::<LaunchConstraint>::from_nota_block(&fields[5])?,
+            scaffold: ScaffoldPointer::from_dotos_block(&fields[0])?,
+            session_identity: SessionIdentity::from_dotos_block(&fields[1])?,
+            persistent_session: PersistentSession::from_dotos_block(&fields[2])?,
+            sandbox_privacy: SandboxPrivacy::from_dotos_block(&fields[3])?,
+            stop_conditions: Vec::<StopCondition>::from_dotos_block(&fields[4])?,
+            constraints: Vec::<LaunchConstraint>::from_dotos_block(&fields[5])?,
         })
     }
 
-    fn to_root_nota(&self) -> String {
-        NotaBodyEncoding::new(vec![
+    fn to_root_dotos(&self) -> String {
+        DotosBodyEncoding::new(vec![
             "MentciPreflightLaunch".to_owned(),
-            self.scaffold.to_nota(),
-            self.session_identity.to_nota(),
-            self.persistent_session.to_nota(),
-            self.sandbox_privacy.to_nota(),
-            self.stop_conditions.to_nota(),
-            self.constraints.to_nota(),
+            self.scaffold.to_dotos(),
+            self.session_identity.to_dotos(),
+            self.persistent_session.to_dotos(),
+            self.sandbox_privacy.to_dotos(),
+            self.stop_conditions.to_dotos(),
+            self.constraints.to_dotos(),
         ])
-        .to_delimited_nota(Delimiter::Parenthesis)
+        .to_delimited_dotos(Delimiter::Parenthesis)
     }
 }
 
@@ -522,9 +525,9 @@ impl ScaffoldPointer {
     }
 
     fn validate(&self) -> Result<()> {
-        if self.expansion_index.as_str() != "skills/skills.nota" {
+        if self.expansion_index.as_str() != "skills/skills.dotos" {
             return Err(Error::PreflightLaunch(
-                "scaffold expansion index must be skills/skills.nota".to_owned(),
+                "scaffold expansion index must be skills/skills.dotos".to_owned(),
             ));
         }
         if self.version.value() == 0 {
@@ -605,21 +608,21 @@ impl SandboxPrivacy {
     }
 }
 
-impl NotaDecode for SandboxPrivacy {
-    fn from_nota_block(block: &nota::Block) -> std::result::Result<Self, NotaDecodeError> {
-        let body = NotaBlock::new(block).expect_body(Delimiter::Parenthesis, "SandboxPrivacy")?;
+impl DotosDecode for SandboxPrivacy {
+    fn from_dotos_block(block: &dotos::Block) -> std::result::Result<Self, DotosDecodeError> {
+        let body = DotosBlock::new(block).expect_body(Delimiter::Parenthesis, "SandboxPrivacy")?;
         let children = body.expect_fields("SandboxPrivacy", 3)?;
         let variant = children[0]
             .demote_to_string()
-            .ok_or(NotaDecodeError::ExpectedAtom {
+            .ok_or(DotosDecodeError::ExpectedAtom {
                 type_name: "SandboxPrivacy variant",
             })?;
         match variant {
             "SandboxedJjTask" => Ok(Self::SandboxedJjTask(
-                PrimaryScope::from_nota_block(&children[1])?,
-                PrivacySurface::from_nota_block(&children[2])?,
+                PrimaryScope::from_dotos_block(&children[1])?,
+                PrivacySurface::from_dotos_block(&children[2])?,
             )),
-            other => Err(NotaDecodeError::UnknownVariant {
+            other => Err(DotosDecodeError::UnknownVariant {
                 enum_name: "SandboxPrivacy",
                 variant: other.to_owned(),
             }),
@@ -627,15 +630,15 @@ impl NotaDecode for SandboxPrivacy {
     }
 }
 
-impl NotaEncode for SandboxPrivacy {
-    fn to_nota(&self) -> String {
+impl DotosEncode for SandboxPrivacy {
+    fn to_dotos(&self) -> String {
         match self {
-            Self::SandboxedJjTask(primary_scope, privacy_surface) => NotaBodyEncoding::new(vec![
+            Self::SandboxedJjTask(primary_scope, privacy_surface) => DotosBodyEncoding::new(vec![
                 "SandboxedJjTask".to_owned(),
-                primary_scope.to_nota(),
-                privacy_surface.to_nota(),
+                primary_scope.to_dotos(),
+                privacy_surface.to_dotos(),
             ])
-            .to_delimited_nota(Delimiter::Parenthesis),
+            .to_delimited_dotos(Delimiter::Parenthesis),
         }
     }
 }

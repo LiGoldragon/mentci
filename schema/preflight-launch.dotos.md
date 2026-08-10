@@ -1,13 +1,13 @@
-# Mentci Preflight Launch NOTA Schema
+# Mentci Preflight Launch DOTOS Schema
 
-This is the fixed NOTA contract for API preflight output that launches a
+This is the fixed DOTOS contract for API preflight output that launches a
 Mentci harness session. It is a schema artifact for the prompt-to-work slice,
 not an implementation of the preflight engine, terminal-cell driver, adapter,
 or scaffold cache.
 
-The preflight output is one positional NOTA record:
+The preflight output is one positional DOTOS record:
 
-```nota
+```dotos
 (MentciPreflightLaunch <scaffold> <session-identity> <persistent-session> <sandbox-privacy> <stop-conditions> <constraints>)
 ;;   scaffold           : (ScaffoldPointer <identity> <version> <minimal-files> <minimal-context> <expansion-index> <reuse-policy>)
 ;;   session-identity   : (SessionIdentity <lane-name> <lane-metadata> <addressable-handle> <lookup-path>)
@@ -19,7 +19,7 @@ The preflight output is one positional NOTA record:
 
 ## Records
 
-```nota
+```dotos
 (ScaffoldPointer <identity> <version> <minimal-files> <minimal-context> <expansion-index> <reuse-policy>)
 ;;   identity        : ScaffoldIdentity
 ;;   version         : ScaffoldVersion
@@ -52,7 +52,7 @@ SandboxPrivacy [(SandboxedJjTask PrimaryScope PrivacySurface)]
 
 ## Closed Variant Sets
 
-```nota
+```dotos
 StopCondition [(IdleTimeout Duration) (TurnCap TurnCount) CompletionSignal]
 
 LaunchConstraint [
@@ -80,7 +80,7 @@ and stop conditions must stay in their named records.
 - `ScaffoldPointer` always carries `ScaffoldIdentity` and `ScaffoldVersion`.
   `ReuseDeferred` records that scaffold reuse and caching mechanics are not part
   of this slice.
-- `ScaffoldPointer.expansion-index` is `skills/skills.nota`. The scaffold
+- `ScaffoldPointer.expansion-index` is `skills/skills.dotos`. The scaffold
   remains minimal; agents load further skills and repo context from that index.
 
 ## Adapter And Model Boundary
@@ -97,9 +97,9 @@ adapter diagnostic instead of teaching Mentci the provider's model roster.
 
 ## Canonical Example
 
-```nota
+```dotos
 (MentciPreflightLaunch
-  (mentci-prompt-scaffold 1 [skills/skills.nota] [ARCHITECTURE.md] skills/skills.nota ReuseDeferred)
+  (mentci-prompt-scaffold 1 [skills/skills.dotos] [ARCHITECTURE.md] skills/skills.dotos ReuseDeferred)
   (mentci-primary-swvx [(Bead primary-swvx) (WorkSurface sandboxed-jj-task)] primary-swvx-session orchestrate/lanes/primary-swvx)
   Persistent
   (SandboxedJjTask PrimaryForbidden PrivateScopeClosed)
@@ -112,7 +112,7 @@ adapter diagnostic instead of teaching Mentci the provider's model roster.
 These forms are invalid because they hide first-class slots inside generic
 constraints or collapse typed variants into free text:
 
-```nota
+```dotos
 ;; Invalid: session identity and privacy are swallowed by constraints.
 (MentciPreflightLaunch <scaffold> [] [(Constraint [session primary-swvx]) (Constraint [private])])
 

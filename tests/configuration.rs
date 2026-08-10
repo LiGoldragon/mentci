@@ -61,10 +61,10 @@ fn startup_configuration_round_trips_as_meta_signal_frame() {
 }
 
 #[test]
-fn daemon_rejects_nota_startup_path() {
-    let command = DaemonCommand::from_arguments(["startup.nota"]);
+fn daemon_rejects_dotos_startup_path() {
+    let command = DaemonCommand::from_arguments(["startup.dotos"]);
     assert!(matches!(
         command.configuration(),
-        Err(Error::StartupNotaRejected(_))
+        Err(Error::StartupDotosRejected(_))
     ));
 }

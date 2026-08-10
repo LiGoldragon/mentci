@@ -10,9 +10,8 @@ use signal_mentci::{
     InterfaceInterest, InterfaceMutation, InterfaceObservationOpened, InterfaceProjection,
     InterfaceState, InterfaceStateObservation, MentciReply, MentciRequest, NotificationSlice,
     NotificationText, PaneContent, PendingQuestionsView, ProjectedInterfaceState, PromptText,
-    ProposalDigest,
-    ProposalIdentifier, QuestionContext, QuestionIdentifier, QuestionPresented, Rejection,
-    RejectionReason, RevisionCounter, StatusText, SubscriptionToken, TimestampNanos,
+    ProposalDigest, ProposalIdentifier, QuestionContext, QuestionIdentifier, QuestionPresented,
+    Rejection, RejectionReason, RevisionCounter, StatusText, SubscriptionToken, TimestampNanos,
     UpdateAccepted,
 };
 
@@ -363,11 +362,9 @@ impl State {
             InterfaceInterest::StatusOnly => {
                 InterfaceProjection::StatusProjection(self.status.clone())
             }
-            InterfaceInterest::Notifications => {
-                InterfaceProjection::NotificationProjection(NotificationSlice::from_current(
-                    self.notification.clone(),
-                ))
-            }
+            InterfaceInterest::Notifications => InterfaceProjection::NotificationProjection(
+                NotificationSlice::from_current(self.notification.clone()),
+            ),
             InterfaceInterest::PendingQuestions => InterfaceProjection::PendingQuestionsProjection(
                 PendingQuestionsView::from_questions(self.pending_questions.clone()),
             ),
