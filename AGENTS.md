@@ -18,3 +18,9 @@ local path dependencies on `signal-mentci`, `meta-signal-mentci`, or
 dependencies. The temporary PoC transport in `/tmp/mentci-poc` proved the
 shape, but production code should use the shared `mentci-lib` model and the
 generated contract nouns.
+
+## Protos estate status
+
+Stack: correct-new destination
+Status: active component, current checkout legacy-wired
+This checkout is not proof of correct-new adoption.
