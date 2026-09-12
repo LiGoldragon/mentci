@@ -13,6 +13,9 @@ Mentci is the daemon/runtime repo for the human approval surface. The external
 contracts live in `signal-mentci` and `meta-signal-mentci`; do not add local
 path dependencies to sibling signal repos.
 
+Pin every dependency by immutable git rev. A branch pin is what broke this
+repository's dependency graph; never add one back.
+
 Criome client-approval integration uses criome's parked authorization queue.
 List parked requests through criome meta, then approve, reject, or defer by
 `AuthorizationRequestSlot`. Do not resubmit `AuthorizationEvaluation` by value.

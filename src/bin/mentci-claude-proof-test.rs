@@ -251,7 +251,7 @@ mod proof {
                 model_command: ClaudeCodeModelCommand::haiku(),
                 initial_prompt_summary,
                 forbidden_arguments_seen,
-                preflight_launch: preflight.launch.to_dotos(),
+                preflight_launch: preflight.launch.to_datom_text(),
                 first_read_reason: format!("{:?}", first_read.reason()),
                 first_read_snippet: TranscriptSnippet::new(first_read.transcript().bytes())
                     .around("MENTCI_PROOF_READY"),
@@ -317,19 +317,13 @@ mod proof {
 
     impl ProofPreflight {
         fn new() -> Self {
-            let launch = MentciPreflightLaunch::validated_from_dotos(Self::launch_dotos())
-                .expect("proof launch DOTOS stays schema-valid");
+            let launch = MentciPreflightLaunch::validated_from_datom(Self::launch_datom())
+                .expect("proof launch datom stays schema-valid");
             Self { launch }
         }
 
-        fn launch_dotos() -> &'static str {
-            r#"(MentciPreflightLaunch
-  (mentci-primary-0bax-proof 1 [skills/skills.dotos] [README.md] skills/skills.dotos ReuseDeferred)
-  (mentci-primary-0bax [(Bead primary-0bax) (WorkSurface sandboxed-jj-task) (HarnessLabel real-claude-terminal-cell)] primary-0bax-claude-proof-session orchestrate/lanes/primary-0bax)
-  Persistent
-  (SandboxedJjTask PrimaryForbidden PrivateScopeClosed)
-  [(IdleTimeout 45) (TurnCap 8) CompletionSignal]
-  [(WorkSurface sandboxed-jj-task) (ForbiddenPath /home/li/primary) (RequiredWitness real-claude-terminal-cell) (RequiredWitness subscription-claude-tui) (ImplementationBoundary claude-adapter-only)])"#
+        fn launch_datom() -> &'static str {
+            "MentciPreflightLaunch.{ { { mentci-primary-0bax-proof } { 1 } [ { skills/skills.dotos } ] [ { README.md } ] { skills/skills.dotos } ReuseDeferred } { { mentci-primary-0bax } [ Bead.{ primary-0bax } WorkSurface.{ sandboxed-jj-task } HarnessLabel.{ real-claude-terminal-cell } ] { primary-0bax-claude-proof-session } { orchestrate/lanes/primary-0bax } } Persistent SandboxedJjTask.{ PrimaryForbidden PrivateScopeClosed } [ IdleTimeout.{ 45 } TurnCap.{ 8 } CompletionSignal ] [ WorkSurface.{ sandboxed-jj-task } ForbiddenPath.{ /home/li/primary } RequiredWitness.{ real-claude-terminal-cell } RequiredWitness.{ subscription-claude-tui } ImplementationBoundary.{ claude-adapter-only } ] }"
         }
     }
 

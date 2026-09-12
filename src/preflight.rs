@@ -1,9 +1,15 @@
-use dotos::{
-    Delimiter, DotosBlock, DotosBodyEncoding, DotosDecode, DotosDecodeError, DotosEncode,
-    DotosSource,
-};
+//! Preflight launch packets in canonical Datom text.
+//!
+//! The preflight model is asked for exactly one `MentciPreflightLaunch` value,
+//! written in the datom dialect. The packet is read back through
+//! [`datom_codec::Potential`] and projected out through
+//! [`protos::Textualizable`]; the type is the whole schema, and every
+//! validation below is a check on the value, never on the text.
 
-use crate::{Error, Result};
+use datom_codec::{Compositional, Datomizable};
+
+use crate::Error;
+use crate::datom_text::{actualize, textualize};
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct PreflightRequest {
@@ -20,7 +26,7 @@ pub struct PreflightPrompt {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct PreflightModelOutput {
-    dotos: String,
+    datom: String,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -42,14 +48,16 @@ pub enum ModelAvailability {
 }
 
 pub trait PreflightApi {
-    fn model_availability(&self, identifier: &VerifiedModelIdentifier)
-    -> Result<ModelAvailability>;
+    fn model_availability(
+        &self,
+        identifier: &VerifiedModelIdentifier,
+    ) -> crate::Result<ModelAvailability>;
 
     fn complete(
         &self,
         prompt: &PreflightPrompt,
         identifier: &VerifiedModelIdentifier,
-    ) -> Result<PreflightModelOutput>;
+    ) -> crate::Result<PreflightModelOutput>;
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -57,12 +65,12 @@ pub struct PreflightEngine<Api> {
     api: Api,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Compositional, Datomizable, Clone, Debug, Eq, PartialEq)]
 pub enum PreflightLaunchEnvelope {
     MentciPreflightLaunch(MentciPreflightLaunch),
 }
 
-#[derive(DotosDecode, DotosEncode, Clone, Debug, Eq, PartialEq)]
+#[derive(Compositional, Datomizable, Clone, Debug, Eq, PartialEq)]
 pub struct MentciPreflightLaunch {
     scaffold: ScaffoldPointer,
     session_identity: SessionIdentity,
@@ -72,7 +80,7 @@ pub struct MentciPreflightLaunch {
     constraints: Vec<LaunchConstraint>,
 }
 
-#[derive(DotosDecode, DotosEncode, Clone, Debug, Eq, PartialEq)]
+#[derive(Compositional, Datomizable, Clone, Debug, Eq, PartialEq)]
 pub struct ScaffoldPointer {
     identity: ScaffoldIdentity,
     version: ScaffoldVersion,
@@ -82,13 +90,13 @@ pub struct ScaffoldPointer {
     reuse_policy: ReusePolicy,
 }
 
-#[derive(DotosDecode, DotosEncode, Clone, Debug, Eq, PartialEq)]
+#[derive(Compositional, Datomizable, Clone, Debug, Eq, PartialEq)]
 pub struct ModelSelection {
     preflight_model: PreflightModelProfile,
     harness_session_model: HarnessSessionModelProfile,
 }
 
-#[derive(DotosDecode, DotosEncode, Clone, Debug, Eq, PartialEq)]
+#[derive(Compositional, Datomizable, Clone, Debug, Eq, PartialEq)]
 pub struct SessionIdentity {
     lane_name: LaneName,
     lane_metadata: Vec<LaneMetadata>,
@@ -96,7 +104,7 @@ pub struct SessionIdentity {
     lookup_path: SessionLookupPath,
 }
 
-#[derive(DotosDecode, DotosEncode, Clone, Debug, Eq, PartialEq)]
+#[derive(Compositional, Datomizable, Clone, Debug, Eq, PartialEq)]
 pub enum LaneMetadata {
     Bead(MetadataValue),
     Repo(MetadataValue),
@@ -104,36 +112,36 @@ pub enum LaneMetadata {
     HarnessLabel(MetadataValue),
 }
 
-#[derive(DotosDecode, DotosEncode, Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Compositional, Datomizable, Clone, Copy, Debug, Eq, PartialEq)]
 pub enum PersistentSession {
     Persistent,
     Ephemeral,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Compositional, Datomizable, Clone, Debug, Eq, PartialEq)]
 pub enum SandboxPrivacy {
     SandboxedJjTask(PrimaryScope, PrivacySurface),
 }
 
-#[derive(DotosDecode, DotosEncode, Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Compositional, Datomizable, Clone, Copy, Debug, Eq, PartialEq)]
 pub enum PrimaryScope {
     PrimaryForbidden,
 }
 
-#[derive(DotosDecode, DotosEncode, Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Compositional, Datomizable, Clone, Copy, Debug, Eq, PartialEq)]
 pub enum PrivacySurface {
     PrivateScopeClosed,
     PublicSurfaceAllowed,
 }
 
-#[derive(DotosDecode, DotosEncode, Clone, Debug, Eq, PartialEq)]
+#[derive(Compositional, Datomizable, Clone, Debug, Eq, PartialEq)]
 pub enum StopCondition {
     IdleTimeout(Duration),
     TurnCap(TurnCount),
     CompletionSignal,
 }
 
-#[derive(DotosDecode, DotosEncode, Clone, Debug, Eq, PartialEq)]
+#[derive(Compositional, Datomizable, Clone, Debug, Eq, PartialEq)]
 pub enum LaunchConstraint {
     WorkSurface(WorkSurface),
     RequiredArtifact(SourceLocator),
@@ -142,14 +150,14 @@ pub enum LaunchConstraint {
     ImplementationBoundary(BoundaryName),
 }
 
-#[derive(DotosDecode, DotosEncode, Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Compositional, Datomizable, Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ReusePolicy {
     ReuseDeferred,
 }
 
 macro_rules! text_newtype {
     ($name:ident) => {
-        #[derive(DotosDecode, DotosEncode, Clone, Debug, Eq, Hash, PartialEq)]
+        #[derive(Compositional, Datomizable, Clone, Debug, Eq, Hash, PartialEq)]
         pub struct $name(String);
 
         impl $name {
@@ -166,15 +174,15 @@ macro_rules! text_newtype {
 
 macro_rules! integer_newtype {
     ($name:ident) => {
-        #[derive(DotosDecode, DotosEncode, Clone, Copy, Debug, Eq, Hash, PartialEq)]
-        pub struct $name(u64);
+        #[derive(Compositional, Datomizable, Clone, Copy, Debug, Eq, Hash, PartialEq)]
+        pub struct $name(i64);
 
         impl $name {
-            pub fn new(value: u64) -> Self {
+            pub fn new(value: i64) -> Self {
                 Self(value)
             }
 
-            pub fn value(&self) -> u64 {
+            pub fn value(&self) -> i64 {
                 self.0
             }
         }
@@ -234,8 +242,8 @@ impl PreflightRequest {
 
     pub fn api_prompt(&self) -> PreflightPrompt {
         let mut text = String::new();
-        text.push_str("Emit exactly one DOTOS MentciPreflightLaunch record. ");
-        text.push_str("Use the fixed schema in schema/preflight-launch.dotos.md. ");
+        text.push_str("Emit exactly one datom MentciPreflightLaunch value. ");
+        text.push_str("Use the fixed shape in schema/preflight-launch.datom.md. ");
         text.push_str("Keep required slots separate: scaffold pointer, ");
         text.push_str("SessionIdentity, PersistentSession, SandboxPrivacy, typed ");
         text.push_str("StopCondition variants, and residual LaunchConstraint only. ");
@@ -257,7 +265,7 @@ impl PreflightRequest {
         text.push_str(" Hard constraints:");
         for constraint in constraints {
             text.push(' ');
-            text.push_str(&constraint.to_dotos());
+            text.push_str(&textualize(constraint));
         }
     }
 }
@@ -269,19 +277,19 @@ impl PreflightPrompt {
 }
 
 impl PreflightModelOutput {
-    pub fn new(dotos: impl Into<String>) -> Self {
+    pub fn new(datom: impl Into<String>) -> Self {
         Self {
-            dotos: dotos.into(),
+            datom: datom.into(),
         }
     }
 
     pub fn as_str(&self) -> &str {
-        &self.dotos
+        &self.datom
     }
 }
 
 impl VerifiedModelIdentifier {
-    pub fn for_preflight_profile(profile: &PreflightModelProfile) -> Result<Self> {
+    pub fn for_preflight_profile(profile: &PreflightModelProfile) -> crate::Result<Self> {
         match profile.as_str() {
             "cheap-contained-preflight" => Ok(Self {
                 slot: ModelSlot::Preflight,
@@ -295,7 +303,7 @@ impl VerifiedModelIdentifier {
         }
     }
 
-    pub fn for_harness_profile(profile: &HarnessSessionModelProfile) -> Result<Self> {
+    pub fn for_harness_profile(profile: &HarnessSessionModelProfile) -> crate::Result<Self> {
         match profile.as_str() {
             "cheap-harness-session" => Ok(Self {
                 slot: ModelSlot::HarnessSession,
@@ -335,7 +343,7 @@ where
         Self { api }
     }
 
-    pub fn launch(&self, request: &PreflightRequest) -> Result<MentciPreflightLaunch> {
+    pub fn launch(&self, request: &PreflightRequest) -> crate::Result<MentciPreflightLaunch> {
         let preflight_identifier = VerifiedModelIdentifier::for_preflight_profile(
             request.model_selection.preflight_model(),
         )?;
@@ -345,12 +353,16 @@ where
         )?;
         let prompt = request.api_prompt();
         let output = self.api.complete(&prompt, &preflight_identifier)?;
-        let launch = MentciPreflightLaunch::validated_from_dotos(output.as_str())?;
+        let launch = MentciPreflightLaunch::validated_from_datom(output.as_str())?;
         launch.validate_against_request(request)?;
         Ok(launch)
     }
 
-    fn verify_model(&self, identifier: &VerifiedModelIdentifier, profile: &str) -> Result<()> {
+    fn verify_model(
+        &self,
+        identifier: &VerifiedModelIdentifier,
+        profile: &str,
+    ) -> crate::Result<()> {
         match self.api.model_availability(identifier)? {
             ModelAvailability::Verified => Ok(()),
             ModelAvailability::Unavailable => Err(Error::UnverifiedModel {
@@ -363,11 +375,26 @@ where
 }
 
 impl MentciPreflightLaunch {
-    pub fn validated_from_dotos(source: &str) -> Result<Self> {
-        let envelope = DotosSource::new(source)
-            .parse::<PreflightLaunchEnvelope>()
-            .map_err(Error::PreflightDotos)?;
-        let PreflightLaunchEnvelope::MentciPreflightLaunch(launch) = envelope;
+    pub fn new(
+        scaffold: ScaffoldPointer,
+        session_identity: SessionIdentity,
+        persistent_session: PersistentSession,
+        sandbox_privacy: SandboxPrivacy,
+        stop_conditions: Vec<StopCondition>,
+        constraints: Vec<LaunchConstraint>,
+    ) -> Self {
+        Self {
+            scaffold,
+            session_identity,
+            persistent_session,
+            sandbox_privacy,
+            stop_conditions,
+            constraints,
+        }
+    }
+
+    pub fn validated_from_datom(source: &str) -> crate::Result<Self> {
+        let PreflightLaunchEnvelope::MentciPreflightLaunch(launch) = actualize(source)?;
         launch.validate()?;
         Ok(launch)
     }
@@ -396,11 +423,13 @@ impl MentciPreflightLaunch {
         &self.constraints
     }
 
-    pub fn to_dotos(&self) -> String {
-        PreflightLaunchEnvelope::MentciPreflightLaunch(self.clone()).to_dotos()
+    pub fn to_datom_text(&self) -> String {
+        textualize(&PreflightLaunchEnvelope::MentciPreflightLaunch(
+            self.clone(),
+        ))
     }
 
-    fn validate(&self) -> Result<()> {
+    fn validate(&self) -> crate::Result<()> {
         self.scaffold.validate()?;
         self.session_identity.validate()?;
         self.sandbox_privacy.validate();
@@ -412,7 +441,7 @@ impl MentciPreflightLaunch {
         Ok(())
     }
 
-    fn validate_against_request(&self, request: &PreflightRequest) -> Result<()> {
+    fn validate_against_request(&self, request: &PreflightRequest) -> crate::Result<()> {
         if !self
             .constraints
             .iter()
@@ -423,61 +452,6 @@ impl MentciPreflightLaunch {
             ));
         }
         Ok(())
-    }
-}
-
-impl DotosDecode for PreflightLaunchEnvelope {
-    fn from_dotos_block(block: &dotos::Block) -> std::result::Result<Self, DotosDecodeError> {
-        let body = DotosBlock::new(block).expect_body(Delimiter::Parenthesis, "PreflightLaunch")?;
-        let children = body.expect_fields("MentciPreflightLaunch", 7)?;
-        let variant = children[0]
-            .demote_to_string()
-            .ok_or(DotosDecodeError::ExpectedAtom {
-                type_name: "MentciPreflightLaunch variant",
-            })?;
-        match variant {
-            "MentciPreflightLaunch" => Ok(Self::MentciPreflightLaunch(
-                MentciPreflightLaunch::from_root_fields(&children[1..])?,
-            )),
-            other => Err(DotosDecodeError::UnknownVariant {
-                enum_name: "PreflightLaunch",
-                variant: other.to_owned(),
-            }),
-        }
-    }
-}
-
-impl DotosEncode for PreflightLaunchEnvelope {
-    fn to_dotos(&self) -> String {
-        match self {
-            Self::MentciPreflightLaunch(launch) => launch.to_root_dotos(),
-        }
-    }
-}
-
-impl MentciPreflightLaunch {
-    fn from_root_fields(fields: &[dotos::Block]) -> std::result::Result<Self, DotosDecodeError> {
-        Ok(Self {
-            scaffold: ScaffoldPointer::from_dotos_block(&fields[0])?,
-            session_identity: SessionIdentity::from_dotos_block(&fields[1])?,
-            persistent_session: PersistentSession::from_dotos_block(&fields[2])?,
-            sandbox_privacy: SandboxPrivacy::from_dotos_block(&fields[3])?,
-            stop_conditions: Vec::<StopCondition>::from_dotos_block(&fields[4])?,
-            constraints: Vec::<LaunchConstraint>::from_dotos_block(&fields[5])?,
-        })
-    }
-
-    fn to_root_dotos(&self) -> String {
-        DotosBodyEncoding::new(vec![
-            "MentciPreflightLaunch".to_owned(),
-            self.scaffold.to_dotos(),
-            self.session_identity.to_dotos(),
-            self.persistent_session.to_dotos(),
-            self.sandbox_privacy.to_dotos(),
-            self.stop_conditions.to_dotos(),
-            self.constraints.to_dotos(),
-        ])
-        .to_delimited_dotos(Delimiter::Parenthesis)
     }
 }
 
@@ -524,20 +498,23 @@ impl ScaffoldPointer {
         self.reuse_policy
     }
 
-    fn validate(&self) -> Result<()> {
-        if self.expansion_index.as_str() != "skills/skills.dotos" {
-            return Err(Error::PreflightLaunch(
-                "scaffold expansion index must be skills/skills.dotos".to_owned(),
-            ));
+    fn validate(&self) -> crate::Result<()> {
+        if self.expansion_index.as_str() != SKILL_EXPANSION_INDEX {
+            return Err(Error::PreflightLaunch(format!(
+                "scaffold expansion index must be {SKILL_EXPANSION_INDEX}"
+            )));
         }
-        if self.version.value() == 0 {
+        if self.version.value() <= 0 {
             return Err(Error::PreflightLaunch(
-                "scaffold version must be non-zero".to_owned(),
+                "scaffold version must be positive".to_owned(),
             ));
         }
         Ok(())
     }
 }
+
+/// The one expansion index a minimal scaffold is allowed to name.
+pub const SKILL_EXPANSION_INDEX: &str = "skills/skills.dotos";
 
 impl ModelSelection {
     pub fn new(
@@ -590,7 +567,7 @@ impl SessionIdentity {
         &self.lookup_path
     }
 
-    fn validate(&self) -> Result<()> {
+    fn validate(&self) -> crate::Result<()> {
         if self.lane_metadata.is_empty() {
             return Err(Error::PreflightLaunch(
                 "session identity must carry lane metadata".to_owned(),
@@ -604,41 +581,6 @@ impl SandboxPrivacy {
     fn validate(&self) {
         match self {
             Self::SandboxedJjTask(PrimaryScope::PrimaryForbidden, _) => {}
-        }
-    }
-}
-
-impl DotosDecode for SandboxPrivacy {
-    fn from_dotos_block(block: &dotos::Block) -> std::result::Result<Self, DotosDecodeError> {
-        let body = DotosBlock::new(block).expect_body(Delimiter::Parenthesis, "SandboxPrivacy")?;
-        let children = body.expect_fields("SandboxPrivacy", 3)?;
-        let variant = children[0]
-            .demote_to_string()
-            .ok_or(DotosDecodeError::ExpectedAtom {
-                type_name: "SandboxPrivacy variant",
-            })?;
-        match variant {
-            "SandboxedJjTask" => Ok(Self::SandboxedJjTask(
-                PrimaryScope::from_dotos_block(&children[1])?,
-                PrivacySurface::from_dotos_block(&children[2])?,
-            )),
-            other => Err(DotosDecodeError::UnknownVariant {
-                enum_name: "SandboxPrivacy",
-                variant: other.to_owned(),
-            }),
-        }
-    }
-}
-
-impl DotosEncode for SandboxPrivacy {
-    fn to_dotos(&self) -> String {
-        match self {
-            Self::SandboxedJjTask(primary_scope, privacy_surface) => DotosBodyEncoding::new(vec![
-                "SandboxedJjTask".to_owned(),
-                primary_scope.to_dotos(),
-                privacy_surface.to_dotos(),
-            ])
-            .to_delimited_dotos(Delimiter::Parenthesis),
         }
     }
 }

@@ -1,23 +1,25 @@
+//! The daemon's window onto the introspect component.
+//!
+//! `signal-introspect` 2.0 speaks portable rkyv Signal frames of its own
+//! `Query` and `Response` contract; there is no envelope, no route and no
+//! sub-reply layer. What the daemon shows in its introspect pane is the
+//! contract's own datom text, projected straight off the replies.
+
 use std::os::unix::net::UnixStream;
 use std::path::PathBuf;
 
-use dotos::DotosEncode;
-use signal_frame::{
-    ExchangeIdentifier, ExchangeLane, LaneSequence, Reply, RequestPayload, SessionEpoch, SubReply,
-};
+use datom_codec::{Compositional, Datomizable};
 use signal_introspect::{
-    ComponentSnapshot, ComponentTrace, ComponentTraceQuery, DeliveryTrace, EngineSnapshot,
-    IntrospectionDenied, IntrospectionFrame, IntrospectionFrameBody, IntrospectionReply,
-    IntrospectionRequest, IntrospectionTarget, IntrospectionUnimplemented, PrototypeWitness,
-    PrototypeWitnessQuery,
+    ComponentTraceQuery, IntrospectionTarget, PrototypeWitnessObservationQuery, Query, Response,
 };
 use signal_mentci::{ContextBody, PaneContent, PaneLabel};
-use signal_persona::EngineIdentifier;
 
+use crate::Error;
+use crate::datom_text::textualize;
 use crate::frame_codec::FrameCodec;
-use crate::{Error, Result};
 
 const INTROSPECT_PANE_LABEL: &str = "introspect";
+const PROTOTYPE_ENGINE: &str = "prototype";
 
 #[derive(Debug, Clone)]
 pub struct IntrospectionBridge {
@@ -30,9 +32,13 @@ pub struct IntrospectionPane {
     content: PaneContent,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-struct IntrospectionObservation {
-    request: IntrospectionRequest,
+/// What one introspect pane carries, as a value. The pane body is this value's
+/// canonical datom text and nothing else, so every pane the daemon renders can
+/// be read back into this type.
+#[derive(Compositional, Datomizable, Clone, Debug, PartialEq)]
+pub enum IntrospectionObservation {
+    IntrospectOverview(Vec<Response>),
+    IntrospectUnavailable(String),
 }
 
 impl IntrospectionBridge {
@@ -43,176 +49,62 @@ impl IntrospectionBridge {
         }
     }
 
-    pub fn prototype_overview_pane(&self) -> Result<IntrospectionPane> {
-        let replies = vec![
-            self.submit(IntrospectionObservation::prototype_witness())?,
-            self.submit(IntrospectionObservation::prototype_signal_trace())?,
+    pub fn prototype_overview_pane(&self) -> crate::Result<IntrospectionPane> {
+        let responses = vec![
+            self.submit(&Self::prototype_witness_query())?,
+            self.submit(&Self::prototype_signal_trace_query())?,
         ];
-        Ok(IntrospectionPane::from_replies(replies))
+        Ok(IntrospectionPane::from(
+            IntrospectionObservation::IntrospectOverview(responses),
+        ))
     }
 
-    fn submit(&self, observation: IntrospectionObservation) -> Result<IntrospectionReply> {
+    fn submit(&self, query: &Query) -> crate::Result<Response> {
         let mut stream = UnixStream::connect(&self.socket_path)?;
-        self.codec
-            .write_introspection_frame(&mut stream, &observation.into_frame())?;
-        let frame = self.codec.read_introspection_frame(&mut stream)?;
-        match frame.into_body() {
-            IntrospectionFrameBody::Reply { reply, .. } => match reply {
-                Reply::Accepted { per_operation, .. } => match per_operation.into_head() {
-                    SubReply::Ok(output) => Ok(output),
-                    other => Err(Error::UnexpectedIntrospectionReply(format!("{other:?}"))),
-                },
-                Reply::Rejected { reason } => Err(Error::UnexpectedIntrospectionReply(format!(
-                    "rejected: {reason:?}"
-                ))),
-            },
-            other => Err(Error::UnexpectedIntrospectionReply(format!("{other:?}"))),
-        }
-    }
-}
-
-impl IntrospectionObservation {
-    fn prototype_witness() -> Self {
-        Self {
-            request: IntrospectionRequest::PrototypeWitness(PrototypeWitnessQuery {
-                engine: EngineIdentifier::new("prototype"),
-            }),
-        }
+        self.codec.write_introspection_signal(&mut stream, query)?;
+        self.codec.read_introspection_signal(&mut stream)
     }
 
-    fn prototype_signal_trace() -> Self {
-        Self {
-            request: IntrospectionRequest::ComponentTrace(ComponentTraceQuery::new(
-                EngineIdentifier::new("prototype"),
-                IntrospectionTarget::Signal,
-                None,
-            )),
-        }
-    }
-
-    fn into_frame(self) -> IntrospectionFrame {
-        IntrospectionFrame::new(IntrospectionFrameBody::Request {
-            exchange: Self::exchange(),
-            request: self.request.into_request(),
+    fn prototype_witness_query() -> Query {
+        Query::PrototypeWitnessObservation(PrototypeWitnessObservationQuery {
+            engine_identifier: PROTOTYPE_ENGINE.to_owned(),
         })
     }
 
-    fn exchange() -> ExchangeIdentifier {
-        ExchangeIdentifier::new(
-            SessionEpoch::new(0),
-            ExchangeLane::Connector,
-            LaneSequence::first(),
-        )
+    fn prototype_signal_trace_query() -> Query {
+        Query::ComponentTrace(ComponentTraceQuery {
+            engine_identifier: PROTOTYPE_ENGINE.to_owned(),
+            introspection_target: IntrospectionTarget::Signal,
+            optional_trace_event_name: None,
+        })
     }
 }
 
 impl IntrospectionPane {
     pub fn from_error(error: &Error) -> Self {
-        Self::new(format!("(IntrospectUnavailable [{}])", error))
+        Self::from(IntrospectionObservation::IntrospectUnavailable(
+            error.to_string(),
+        ))
     }
 
     pub fn into_content(self) -> PaneContent {
         self.content
     }
+}
 
-    fn new(body: impl Into<String>) -> Self {
+impl From<IntrospectionObservation> for IntrospectionPane {
+    fn from(observation: IntrospectionObservation) -> Self {
         Self {
             content: PaneContent {
                 pane: PaneLabel::new(INTROSPECT_PANE_LABEL),
-                body: ContextBody::new(body.into()),
+                body: ContextBody::new(textualize(&observation)),
             },
         }
     }
-
-    fn from_replies(replies: Vec<IntrospectionReply>) -> Self {
-        let rendered = replies
-            .into_iter()
-            .map(IntrospectionReplyRendering::from)
-            .map(IntrospectionReplyRendering::into_body)
-            .collect::<Vec<_>>()
-            .join(" ");
-        Self::new(format!("(IntrospectOverview {rendered})"))
-    }
-
-    fn wrap(head: &str, payload: String) -> String {
-        format!("({head} {payload})")
-    }
 }
 
-impl From<IntrospectionReply> for IntrospectionPane {
-    fn from(reply: IntrospectionReply) -> Self {
-        Self::new(IntrospectionReplyRendering::from(reply).into_body())
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-struct IntrospectionReplyRendering {
-    body: String,
-}
-
-impl IntrospectionReplyRendering {
-    fn into_body(self) -> String {
-        self.body
-    }
-}
-
-impl From<IntrospectionReply> for IntrospectionReplyRendering {
-    fn from(reply: IntrospectionReply) -> Self {
-        let body = match reply {
-            IntrospectionReply::EngineSnapshot(snapshot) => snapshot.render_payload(),
-            IntrospectionReply::ComponentSnapshot(snapshot) => snapshot.render_payload(),
-            IntrospectionReply::DeliveryTrace(trace) => trace.render_payload(),
-            IntrospectionReply::ComponentTrace(trace) => trace.render_payload(),
-            IntrospectionReply::PrototypeWitness(witness) => witness.render_payload(),
-            IntrospectionReply::Unimplemented(unimplemented) => unimplemented.render_payload(),
-            IntrospectionReply::Denied(denied) => denied.render_payload(),
-        };
-        Self { body }
-    }
-}
-
-trait IntrospectionPanePayload {
-    fn render_payload(&self) -> String;
-}
-
-impl IntrospectionPanePayload for EngineSnapshot {
-    fn render_payload(&self) -> String {
-        IntrospectionPane::wrap("EngineSnapshot", self.to_dotos())
-    }
-}
-
-impl IntrospectionPanePayload for ComponentSnapshot {
-    fn render_payload(&self) -> String {
-        IntrospectionPane::wrap("ComponentSnapshot", self.to_dotos())
-    }
-}
-
-impl IntrospectionPanePayload for DeliveryTrace {
-    fn render_payload(&self) -> String {
-        IntrospectionPane::wrap("DeliveryTrace", self.to_dotos())
-    }
-}
-
-impl IntrospectionPanePayload for ComponentTrace {
-    fn render_payload(&self) -> String {
-        IntrospectionPane::wrap("ComponentTrace", self.to_dotos())
-    }
-}
-
-impl IntrospectionPanePayload for PrototypeWitness {
-    fn render_payload(&self) -> String {
-        IntrospectionPane::wrap("PrototypeWitness", self.to_dotos())
-    }
-}
-
-impl IntrospectionPanePayload for IntrospectionUnimplemented {
-    fn render_payload(&self) -> String {
-        IntrospectionPane::wrap("Unimplemented", self.to_dotos())
-    }
-}
-
-impl IntrospectionPanePayload for IntrospectionDenied {
-    fn render_payload(&self) -> String {
-        IntrospectionPane::wrap("Denied", self.to_dotos())
+impl From<Response> for IntrospectionPane {
+    fn from(response: Response) -> Self {
+        Self::from(IntrospectionObservation::IntrospectOverview(vec![response]))
     }
 }

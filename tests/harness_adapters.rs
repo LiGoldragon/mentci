@@ -106,18 +106,12 @@ impl TerminalSessionSurface for FakeTerminal {
     }
 }
 
-fn valid_claude_launch_dotos() -> &'static str {
-    r#"(MentciPreflightLaunch
-  (mentci-prompt-scaffold 1 [skills/skills.dotos] [ARCHITECTURE.md] skills/skills.dotos ReuseDeferred)
-  (mentci-primary-edm1 [(Bead primary-edm1) (WorkSurface sandboxed-jj-task) (HarnessLabel mentci-harness)] primary-edm1-session orchestrate/lanes/primary-edm1)
-  Persistent
-  (SandboxedJjTask PrimaryForbidden PrivateScopeClosed)
-  [(IdleTimeout 1) (TurnCap 8) CompletionSignal]
-  [(WorkSurface sandboxed-jj-task) (ForbiddenPath /home/li/primary)])"#
+fn valid_claude_launch_datom() -> &'static str {
+    "MentciPreflightLaunch.{ { { mentci-prompt-scaffold } { 1 } [ { skills/skills.dotos } ] [ { ARCHITECTURE.md } ] { skills/skills.dotos } ReuseDeferred } { { mentci-primary-edm1 } [ Bead.{ primary-edm1 } WorkSurface.{ sandboxed-jj-task } HarnessLabel.{ mentci-harness } ] { primary-edm1-session } { orchestrate/lanes/primary-edm1 } } Persistent SandboxedJjTask.{ PrimaryForbidden PrivateScopeClosed } [ IdleTimeout.{ 1 } TurnCap.{ 8 } CompletionSignal ] [ WorkSurface.{ sandboxed-jj-task } ForbiddenPath.{ /home/li/primary } ] }"
 }
 
 fn launch_packet() -> MentciPreflightLaunch {
-    MentciPreflightLaunch::validated_from_dotos(valid_claude_launch_dotos())
+    MentciPreflightLaunch::validated_from_datom(valid_claude_launch_datom())
         .expect("valid claude launch")
 }
 
@@ -296,7 +290,7 @@ fn claude_code_adapter_defaults_to_configured_claude_command() {
 fn claude_code_adapter_does_not_require_harness_model_identifier() {
     let directory = tempfile::tempdir().expect("tempdir");
     let adapter = test_adapter(directory.path());
-    let launch = MentciPreflightLaunch::validated_from_dotos(valid_claude_launch_dotos())
+    let launch = MentciPreflightLaunch::validated_from_datom(valid_claude_launch_datom())
         .expect("valid launch");
 
     let named_launch = adapter
@@ -500,7 +494,7 @@ fn adapter_feed_drives_persistent_session_over_multiple_turns() {
         launcher.sent(),
         vec![
             framed_tui_input(
-                "Mentci sandboxed jj proof session.\nWork only inside the current jj sandbox working copy.\nDo not use /home/li/primary as a jj working copy.\nInitial task:\nshow jj status and wait for the next turn\nPreflight launch:\n(MentciPreflightLaunch (mentci-prompt-scaffold 1 [skills/skills.dotos] [ARCHITECTURE.md] skills/skills.dotos ReuseDeferred) (mentci-primary-edm1 [(Bead primary-edm1) (WorkSurface sandboxed-jj-task) (HarnessLabel mentci-harness)] primary-edm1-session orchestrate/lanes/primary-edm1) Persistent (SandboxedJjTask PrimaryForbidden PrivateScopeClosed) [(IdleTimeout 1) (TurnCap 8) CompletionSignal] [(WorkSurface sandboxed-jj-task) (ForbiddenPath /home/li/primary)])\n"
+                "Mentci sandboxed jj proof session.\nWork only inside the current jj sandbox working copy.\nDo not use /home/li/primary as a jj working copy.\nInitial task:\nshow jj status and wait for the next turn\nPreflight launch:\nMentciPreflightLaunch.{ { { mentci-prompt-scaffold } { 1 } [ { skills/skills.dotos } ] [ { ARCHITECTURE.md } ] { skills/skills.dotos } ReuseDeferred } { { mentci-primary-edm1 } [ Bead.{ primary-edm1 } WorkSurface.{ sandboxed-jj-task } HarnessLabel.{ mentci-harness } ] { primary-edm1-session } { orchestrate/lanes/primary-edm1 } } Persistent SandboxedJjTask.{ PrimaryForbidden PrivateScopeClosed } [ IdleTimeout.{ 1 } TurnCap.{ 8 } CompletionSignal ] [ WorkSurface.{ sandboxed-jj-task } ForbiddenPath.{ /home/li/primary } ] }\n"
             ),
             framed_tui_input("first"),
             framed_tui_input("second"),

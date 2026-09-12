@@ -19,8 +19,16 @@ dependencies. The temporary PoC transport in `/tmp/mentci-poc` proved the
 shape, but production code should use the shared `mentci-lib` model and the
 generated contract nouns.
 
-## Protos estate status
+## Stack status
 
-Stack: correct-new destination
-Status: active component, current checkout legacy-wired
-This checkout is not proof of correct-new adoption.
+Every dependency is pinned by immutable git rev. Never introduce a branch pin.
+
+On the Datom stack: the introspect wire (`signal-introspect` 2.0 rkyv `Signal`
+frames, rendered as canonical datom text) and the preflight launch packet
+(`mentci::preflight`, `schema/preflight-launch.datom.md`).
+
+Still on the retired stack, and not this repository's to move: `signal-mentci`,
+`meta-signal-mentci`, `meta-signal-criome`, `signal-criome` and `mentci-lib`.
+They keep `signal-frame` envelopes and the DOTOS codec. When those contracts
+are rewritten, update this consumer — do not add a shim, a feature alias, or a
+dual decode path here.

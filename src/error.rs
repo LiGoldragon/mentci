@@ -53,8 +53,11 @@ pub enum Error {
     #[error("unexpected criome meta reply")]
     UnexpectedCriomeMetaReply,
 
-    #[error("unexpected introspection reply: {0}")]
-    UnexpectedIntrospectionReply(String),
+    #[error("introspection Signal frame did not decode: {0}")]
+    IntrospectionSignal(String),
+
+    #[error("frame length {found} exceeds the {limit} byte limit")]
+    FrameLength { limit: usize, found: usize },
 
     #[error("shared observation model did not produce a mentci request")]
     ClientObservationCommandUnavailable,
@@ -77,8 +80,8 @@ pub enum Error {
     #[error("frame body is not a request")]
     ExpectedRequest,
 
-    #[error("preflight DOTOS does not match MentciPreflightLaunch: {0}")]
-    PreflightDotos(dotos::DotosDecodeError),
+    #[error("datom text did not compose the expected value: {0}")]
+    Datom(String),
 
     #[error("preflight API failed: {0}")]
     PreflightApi(String),

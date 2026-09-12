@@ -371,16 +371,16 @@ mod tests {
         ExchangeIdentifier, ExchangeLane, LaneSequence, RequestPayload, SessionEpoch,
     };
     use signal_introspect::{
-        ComponentTrace, ComponentTraceQuery, IntrospectionFrame, IntrospectionFrameBody,
-        IntrospectionReply, IntrospectionRequest, IntrospectionTarget, PrototypeWitness,
-        PrototypeWitnessQuery,
+        ComponentTrace, ComponentTraceQuery, IntrospectionTarget, PrototypeWitnessObservation,
+        PrototypeWitnessObservationQuery, Query, Response,
     };
+
+    use crate::introspection_bridge::IntrospectionObservation;
     use signal_mentci::{
         InterfaceInterest, InterfaceMutation, InterfaceObservationOpened, InterfaceProjection,
         InterfaceStateObservation, InterfaceUpdate, MentciFrame, MentciFrameBody, MentciRequest,
         StatusText, SubscriberName, UpdateIdentifier,
     };
-    use signal_persona::EngineIdentifier;
 
     use super::*;
 
@@ -495,55 +495,49 @@ mod tests {
             for expected_request in 0..2 {
                 let (mut stream, _address) = listener.accept().expect("accept introspect");
                 let codec = FrameCodec::new();
-                let frame = codec
-                    .read_introspection_frame(&mut stream)
-                    .expect("read introspect request");
-                match frame.into_body() {
-                    IntrospectionFrameBody::Request { request, exchange } => {
-                        let reply = match (expected_request, request.payloads.into_head()) {
-                            (
-                                0,
-                                IntrospectionRequest::PrototypeWitness(PrototypeWitnessQuery {
-                                    ..
-                                }),
-                            ) => IntrospectionReply::PrototypeWitness(PrototypeWitness {
-                                engine: EngineIdentifier::new("prototype"),
-                                manager_seen: None,
-                                router_seen: None,
-                                terminal_seen: None,
-                                delivery_status: None,
-                            }),
-                            (
-                                1,
-                                IntrospectionRequest::ComponentTrace(ComponentTraceQuery {
-                                    engine,
-                                    component,
-                                    event_name,
-                                }),
-                            ) => {
-                                assert_eq!(engine, EngineIdentifier::new("prototype"));
-                                assert_eq!(component, IntrospectionTarget::Signal);
-                                assert_eq!(event_name, None);
-                                IntrospectionReply::ComponentTrace(ComponentTrace::new(
-                                    EngineIdentifier::new("prototype"),
-                                    IntrospectionTarget::Signal,
-                                    Vec::new(),
-                                ))
-                            }
-                            (index, other) => {
-                                panic!("unexpected introspect request {index}: {other:?}")
-                            }
-                        };
-                        let reply = IntrospectionFrame::new(IntrospectionFrameBody::Reply {
-                            exchange,
-                            reply: Reply::committed(NonEmpty::single(SubReply::Ok(reply))),
-                        });
-                        codec
-                            .write_introspection_frame(&mut stream, &reply)
-                            .expect("write introspect reply");
+                let query: Query = codec
+                    .read_introspection_signal(&mut stream)
+                    .expect("read introspect query");
+                let response = match (expected_request, query) {
+                    (
+                        0,
+                        Query::PrototypeWitnessObservation(PrototypeWitnessObservationQuery {
+                            engine_identifier,
+                        }),
+                    ) => {
+                        assert_eq!(engine_identifier, "prototype");
+                        Response::PrototypeWitnessObservation(PrototypeWitnessObservation {
+                            engine_identifier,
+                            first_optional_component_readiness: None,
+                            second_optional_component_readiness: None,
+                            third_optional_component_readiness: None,
+                            delivery_trace_observation_status_option: None,
+                        })
                     }
-                    other => panic!("expected introspect request, got {other:?}"),
-                }
+                    (
+                        1,
+                        Query::ComponentTrace(ComponentTraceQuery {
+                            engine_identifier,
+                            introspection_target,
+                            optional_trace_event_name,
+                        }),
+                    ) => {
+                        assert_eq!(engine_identifier, "prototype");
+                        assert_eq!(introspection_target, IntrospectionTarget::Signal);
+                        assert_eq!(optional_trace_event_name, None);
+                        Response::ComponentTrace(ComponentTrace {
+                            engine_identifier,
+                            introspection_target,
+                            component_trace_events: Vec::new(),
+                        })
+                    }
+                    (index, other) => {
+                        panic!("unexpected introspect query {index}: {other:?}")
+                    }
+                };
+                codec
+                    .write_introspection_signal(&mut stream, &response)
+                    .expect("write introspect response");
             }
         });
         let daemon = Daemon::from_configuration(introspect_configuration(
@@ -583,8 +577,22 @@ mod tests {
                         InterfaceProjection::FullProjection(full) => {
                             assert_eq!(full.panes().len(), 1);
                             assert_eq!(full.panes()[0].pane.as_str(), "introspect");
-                            assert!(full.panes()[0].body.as_str().contains("PrototypeWitness"));
-                            assert!(full.panes()[0].body.as_str().contains("ComponentTrace"));
+                            let body = full.panes()[0].body.as_str();
+                            let observation: IntrospectionObservation =
+                                crate::datom_text::actualize(body)
+                                    .expect("pane body is canonical datom");
+                            let IntrospectionObservation::IntrospectOverview(responses) =
+                                observation
+                            else {
+                                panic!("expected an overview observation, got {observation:?}")
+                            };
+                            assert!(matches!(
+                                responses.as_slice(),
+                                [
+                                    Response::PrototypeWitnessObservation(_),
+                                    Response::ComponentTrace(_)
+                                ]
+                            ));
                         }
                         other => panic!("expected full projection, got {other:?}"),
                     },

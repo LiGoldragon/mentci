@@ -53,19 +53,33 @@ crates, not local path dependencies:
 - `mentci` is the thin CLI client. It takes exactly one request input: a
   length-prefixed binary `signal-mentci` frame file, a `.dotos` request file, or
   inline DOTOS text. It connects to the local daemon socket and writes the binary
-  reply frame to stdout.
+  reply frame to stdout. The text form is `signal-mentci`'s own, and
+  `signal-mentci` is still a DOTOS contract; when that contract is rewritten
+  onto the Datom stack this input becomes datom text and this crate follows it.
 - The same one-argument CLI also accepts observation atoms:
   `observe`, `observe:full`, `observe:pending`, `observe:status`, and
   `observe:notifications`. These commands still talk only to the mentci daemon
-  and render the reply through `mentci-lib`'s shared `ObservationModel` and
-  `RenderDotos`.
+  and render the reply through `mentci-lib`'s shared `ObservationModel`.
 - The CLI also accepts answer atoms:
   `answer:approve:<question>`, `answer:reject:<question>`, and
   `answer:defer:<question>`. These lower to `AnswerQuestion` on the mentci
-  socket and render the typed daemon reply as DOTOS text; they do not open a
-  criome socket directly.
-- The daemon speaks `signal-mentci` over Unix sockets with the shared
-  `signal-frame` envelope and generated rkyv/DOTOS nouns.
+  socket and render the typed daemon reply through `mentci-lib`; they do not
+  open a criome socket directly.
+- The daemon speaks two wires. The Mentci wire carries `signal-mentci` over
+  Unix sockets inside the shared `signal-frame` envelope, because that contract
+  has not yet moved. The introspect wire carries `signal-introspect` 2.0
+  portable rkyv `Signal` frames of its `Query` and `Response` types: four
+  big-endian length bytes and exactly that many contract bytes, with no
+  envelope, no route and no sub-reply layer.
+- What the daemon shows of an introspect reply is the contract's own canonical
+  datom text. `IntrospectionObservation` is the pane body as a value, so every
+  pane the daemon renders can be read straight back into that type.
+- Preflight launch packets are datom values, described in
+  `schema/preflight-launch.datom.md` and defined by
+  `mentci::preflight::MentciPreflightLaunch`. The model is asked for one
+  canonical datom value; the type is the whole schema, and a packet that does
+  not compose is refused by arity and variant head before any validation rule
+  runs.
 - `CriomeApprovalBridge` is daemon-owned. It lists criome's parked
   authorizations and submits closed decisions by `AuthorizationRequestSlot`;
   it never resubmits an `AuthorizationEvaluation` by value.

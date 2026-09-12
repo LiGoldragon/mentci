@@ -130,18 +130,12 @@ fn terminal_launch_with_liveness(liveness: LivenessPolicy) -> LaunchRequest {
     .with_liveness(liveness)
 }
 
-fn valid_launch_dotos() -> &'static str {
-    r#"(MentciPreflightLaunch
-  (mentci-prompt-scaffold 1 [skills/skills.dotos] [ARCHITECTURE.md] skills/skills.dotos ReuseDeferred)
-  (mentci-primary-vxu6 [(Bead primary-vxu6) (WorkSurface sandboxed-jj-task) (HarnessLabel mentci-harness)] primary-vxu6-session orchestrate/lanes/primary-vxu6)
-  Persistent
-  (SandboxedJjTask PrimaryForbidden PrivateScopeClosed)
-  [CompletionSignal]
-  [(WorkSurface sandboxed-jj-task) (ForbiddenPath /home/li/primary)])"#
+fn valid_launch_datom() -> &'static str {
+    "MentciPreflightLaunch.{ { { mentci-prompt-scaffold } { 1 } [ { skills/skills.dotos } ] [ { ARCHITECTURE.md } ] { skills/skills.dotos } ReuseDeferred } { { mentci-primary-vxu6 } [ Bead.{ primary-vxu6 } WorkSurface.{ sandboxed-jj-task } HarnessLabel.{ mentci-harness } ] { primary-vxu6-session } { orchestrate/lanes/primary-vxu6 } } Persistent SandboxedJjTask.{ PrimaryForbidden PrivateScopeClosed } [ CompletionSignal ] [ WorkSurface.{ sandboxed-jj-task } ForbiddenPath.{ /home/li/primary } ] }"
 }
 
 fn launch_packet() -> MentciPreflightLaunch {
-    MentciPreflightLaunch::validated_from_dotos(valid_launch_dotos()).expect("valid launch packet")
+    MentciPreflightLaunch::validated_from_datom(valid_launch_datom()).expect("valid launch packet")
 }
 
 fn launch_metadata() -> HarnessLaunchMetadata {
@@ -172,23 +166,23 @@ fn different_harness_launch_metadata() -> HarnessLaunchMetadata {
 }
 
 fn ephemeral_launch_packet() -> MentciPreflightLaunch {
-    MentciPreflightLaunch::validated_from_dotos(
-        &valid_launch_dotos().replace("Persistent", "Ephemeral"),
+    MentciPreflightLaunch::validated_from_datom(
+        &valid_launch_datom().replace("Persistent", "Ephemeral"),
     )
     .expect("ephemeral launch packet")
 }
 
 fn conflicting_identity_launch_packet() -> MentciPreflightLaunch {
-    MentciPreflightLaunch::validated_from_dotos(&valid_launch_dotos().replace(
-        "(HarnessLabel mentci-harness)",
-        "(HarnessLabel different-address-target)",
+    MentciPreflightLaunch::validated_from_datom(&valid_launch_datom().replace(
+        "HarnessLabel.{ mentci-harness }",
+        "HarnessLabel.{ different-address-target }",
     ))
     .expect("conflicting identity packet remains valid")
 }
 
 fn duplicate_handle_launch_packet() -> MentciPreflightLaunch {
-    MentciPreflightLaunch::validated_from_dotos(
-        &valid_launch_dotos().replace("mentci-primary-vxu6", "mentci-primary-other"),
+    MentciPreflightLaunch::validated_from_datom(
+        &valid_launch_datom().replace("mentci-primary-vxu6", "mentci-primary-other"),
     )
     .expect("duplicate handle packet remains valid")
 }
