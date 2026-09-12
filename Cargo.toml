@@ -12,19 +12,19 @@ default = []
 terminal-cell-runtime = ["dep:terminal-cell"]
 
 [dependencies]
-criome             = { git = "https://github.com/LiGoldragon/criome", rev = "2eb5050808648ab928062fbb43e8dfc976bee9ce" }
+criome             = { git = "https://github.com/LiGoldragon/criome", rev = "e644d25127d14ef5cba98fd57aea2d90ca53da6c" }
 datom-codec        = { git = "https://github.com/LiGoldragon/datom-codec", rev = "627db67f2655efd9f786864009955005fd8ab2ad" }
 kameo              = { git = "https://github.com/LiGoldragon/kameo.git", rev = "f491b45d7dcb55e5837eddde3d5d7ca8ceaa9f01", default-features = false, features = ["macros", "tracing"] }
-meta-signal-criome = { git = "https://github.com/LiGoldragon/meta-signal-criome", rev = "1c3bd8784142c54856e031d74b897382204cec21" }
-meta-signal-mentci = { git = "https://github.com/LiGoldragon/meta-signal-mentci", rev = "cb93443d3d50716314c98e5d2d6ca4b5bd5dceba" }
-mentci-lib         = { git = "https://github.com/LiGoldragon/mentci-lib", rev = "d14f096f69509f378adbfdc0967010a7f2bf0030" }
+meta-signal-criome = { git = "https://github.com/LiGoldragon/meta-signal-criome", rev = "5acfedafd63964da1a4d1082245f3943c6d371b5" }
+meta-signal-mentci = { git = "https://github.com/LiGoldragon/meta-signal-mentci", rev = "b063a33d93fbe86e7423edcc4897f534047fb1a9" }
+mentci-lib         = { git = "https://github.com/LiGoldragon/mentci-lib", rev = "2e89543d023cc48ccec0e4d955c290a527c3b9f8" }
 protos             = { git = "https://github.com/LiGoldragon/protos", rev = "171b21f65337983ab624b7b906397a4f1f92c5a3" }
 rkyv               = { version = "0.8", default-features = false, features = ["std", "bytecheck", "little_endian", "pointer_width_32", "unaligned"] }
 signal-criome      = { git = "https://github.com/LiGoldragon/signal-criome", rev = "b85fe3408faa24b8439a3685396430a68bfbcb71" }
 signal-frame       = { git = "https://github.com/LiGoldragon/signal-frame", rev = "80f70d929ae6d72707052f097be2264872913983" }
 signal-harness     = { git = "https://github.com/LiGoldragon/signal-harness.git", rev = "90e2878d96283d800d71699bb03e0a4ed4d05a8c", default-features = false }
 signal-introspect  = { git = "https://github.com/LiGoldragon/signal-introspect.git", rev = "8de16e35a1aa993b059fcab72a2c2aa4b3a785bf", features = ["datom"] }
-signal-mentci      = { git = "https://github.com/LiGoldragon/signal-mentci", rev = "bf105eac59caa43ca25f7ca263bdc7d2b9080d94" }
+signal-mentci      = { git = "https://github.com/LiGoldragon/signal-mentci", rev = "293ea752ae1acb56f7977bcee4032fb714b150e7" }
 signal-persona     = { git = "https://github.com/LiGoldragon/signal-persona.git", rev = "48118557368f26b7292f6b0fb2f98df5cec29fc5" }
 terminal-cell      = { git = "https://github.com/LiGoldragon/terminal-cell", rev = "bd1defd9295d21104d6def5d0a2519eb1bbb558e", optional = true }
 thiserror          = "2"
