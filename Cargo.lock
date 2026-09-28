@@ -277,6 +277,18 @@ dependencies = [
 
 [[package]]
 name = "core-nomos"
+version = "0.41.0"
+source = "git+https://github.com/LiGoldragon/core-nomos.git?rev=ff675b264e3650afb88291036ec2bdd97292a2e7#ff675b264e3650afb88291036ec2bdd97292a2e7"
+dependencies = [
+ "content-identity 0.5.0",
+ "core-ethos 0.29.0",
+ "core-logos 0.26.0",
+ "signal-sema-translator 0.4.0",
+ "thiserror 2.0.20",
+]
+
+[[package]]
+name = "core-nomos"
 version = "0.41.1"
 source = "git+https://github.com/LiGoldragon/core-nomos.git?rev=7b60721d199551b648d42a49934a2f0ef950c595#7b60721d199551b648d42a49934a2f0ef950c595"
 dependencies = [
@@ -802,15 +814,15 @@ dependencies = [
 
 [[package]]
 name = "meta-signal-criome"
-version = "0.8.0"
-source = "git+https://github.com/LiGoldragon/meta-signal-criome?rev=1c3bd8784142c54856e031d74b897382204cec21#1c3bd8784142c54856e031d74b897382204cec21"
+version = "0.8.1"
+source = "git+https://github.com/LiGoldragon/meta-signal-criome?rev=1c3bd8784142c54856e031d74b897382204cec21#5acfedafd63964da1a4d1082245f3943c6d371b5"
 dependencies = [
  "core-ethos 0.29.0",
  "dotos 0.10.1 (git+https://github.com/LiGoldragon/dotos.git?rev=b3c2c76fe7a18ba026ab054d1fa7162e55860b9e)",
  "name-table 0.3.0",
  "rkyv",
  "rust-logos 0.30.0",
- "schema-rust 0.17.0 (git+https://github.com/LiGoldragon/schema-rust.git?rev=37b7d1035a472a15081f3e2e8a93b95bf733c3ee)",
+ "schema-rust 0.15.0",
  "sema-translator 0.7.0",
  "signal-criome",
  "signal-frame 0.3.2 (git+https://github.com/LiGoldragon/signal-frame?rev=80f70d929ae6d72707052f097be2264872913983)",
@@ -1347,6 +1359,18 @@ dependencies = [
  "syn 2.0.119",
  "thiserror 2.0.20",
  "triad-runtime 0.8.0",
+]
+
+[[package]]
+name = "schema-rust"
+version = "0.15.0"
+source = "git+https://github.com/LiGoldragon/schema-rust.git?rev=9e36587c85bd69357e9042729ba2df0052799756#9e36587c85bd69357e9042729ba2df0052799756"
+dependencies = [
+ "core-ethos 0.29.0",
+ "core-nomos 0.41.0",
+ "rust-logos 0.30.0",
+ "sema-translator 0.7.0",
+ "thiserror 2.0.20",
 ]
 
 [[package]]
