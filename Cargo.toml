@@ -12,7 +12,7 @@ default = []
 terminal-cell-runtime = ["dep:terminal-cell"]
 
 [dependencies]
-criome             = { git = "https://github.com/LiGoldragon/criome", rev = "2eb5050808648ab928062fbb43e8dfc976bee9ce" }
+criome             = { git = "https://github.com/LiGoldragon/criome", rev = "95a704417f9bd66dfc2caae0adfcd3de98d37c7d" }
 kameo              = { git = "https://github.com/LiGoldragon/kameo.git", branch = "main", default-features = false, features = ["macros", "tracing"] }
 meta-signal-criome = { git = "https://github.com/LiGoldragon/meta-signal-criome", rev = "1c3bd8784142c54856e031d74b897382204cec21" }
 meta-signal-mentci = { git = "https://github.com/LiGoldragon/meta-signal-mentci", rev = "cb93443d3d50716314c98e5d2d6ca4b5bd5dceba" }
