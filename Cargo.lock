@@ -311,7 +311,7 @@ dependencies = [
 [[package]]
 name = "criome"
 version = "0.9.0"
-source = "git+https://github.com/LiGoldragon/criome?rev=2eb5050808648ab928062fbb43e8dfc976bee9ce#2eb5050808648ab928062fbb43e8dfc976bee9ce"
+source = "git+https://github.com/LiGoldragon/criome?rev=95a704417f9bd66dfc2caae0adfcd3de98d37c7d#95a704417f9bd66dfc2caae0adfcd3de98d37c7d"
 dependencies = [
  "blake3",
  "blst",
@@ -1396,7 +1396,7 @@ checksum = "94143f37725109f92c262ed2cf5e59bce7498c01bcc1502d7b9afe439a4e9f49"
 [[package]]
 name = "sema"
 version = "0.1.1"
-source = "git+https://github.com/LiGoldragon/sema.git?rev=51d7927c872f0df12791bad8d39a4db6433b01a1#51d7927c872f0df12791bad8d39a4db6433b01a1"
+source = "git+https://github.com/LiGoldragon/memory.git?rev=51d7927c872f0df12791bad8d39a4db6433b01a1#51d7927c872f0df12791bad8d39a4db6433b01a1"
 dependencies = [
  "redb",
  "rkyv",
@@ -1406,7 +1406,7 @@ dependencies = [
 [[package]]
 name = "sema-engine"
 version = "0.15.1"
-source = "git+https://github.com/LiGoldragon/sema-engine.git?branch=main#7158e5503f37fd2fbca1d707f134e38a3fda1176"
+source = "git+https://github.com/LiGoldragon/memory-engine.git?rev=abb1c6b59108c7f9f03a6d1edeb663ac4b5a2cac#abb1c6b59108c7f9f03a6d1edeb663ac4b5a2cac"
 dependencies = [
  "blake3",
  "rkyv",
